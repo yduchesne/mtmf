@@ -146,7 +146,7 @@ Stable resource identifiers are used for references. Mutable display names are n
 
 Service operations explicitly perform state changes.
 
-For Tenant, Organization, Principal, Identity, Group, and Role DTOs, application-owned `extension` data is transported as detached arbitrary JSON. LocalConnector and HttpConnector MUST preserve equivalent extension semantics and round-trip the data without MTMF interpreting application-defined keys.
+For Tenant, Organization, Principal, Identity, Group, and Role DTOs, application-owned `extension` data is transported as a detached JSON object. The canonical empty value is `{}`; `null` is not a valid domain representation. LocalConnector and HttpConnector MUST preserve equivalent extension semantics and round-trip the data without MTMF interpreting application-defined keys.
 
 The PostgreSQL provider is expected to represent extension data using `jsonb`. This storage choice does not make extension contents part of MTMF domain or authorization semantics.
 
@@ -305,7 +305,7 @@ The same behavioral expectations should be exercised against:
 
 A semantic difference between connectors should be treated as a defect unless explicitly documented by the public contract.
 
-Authorization should have independent conformance tests covering the security constitution and Permission-rule resolution.
+Authorization should have independent conformance tests covering the security constitution, Tenant-scoped session isolation, and PermissionSet/Permission resolution.
 
 ## 16. Deferred Architecture Decisions
 
