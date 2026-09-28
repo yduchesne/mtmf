@@ -40,7 +40,7 @@ Implements the initial domain entities and relationships: Tenant, Organization, 
 
 Establishes the global Principal/Identity model and the security-significant `(Tenant, Principal, Identity)` session context.
 
-### PR 3 — Role policy model and Action catalog foundation
+### PR 3 — Role policy model and Action catalog foundation [DONE]
 
 Implement Role, PermissionSet, Permission, and Action domain concepts and URN validation.
 

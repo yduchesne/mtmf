@@ -7,15 +7,19 @@ scope boundary without depending on brittle introspection.
 import importlib
 
 import pytest
-from helpers import make_group, make_identity, make_organization, make_principal, make_tenant
-
-from mtmf_core import (
-    Group,
-    Identity,
-    Organization,
-    Principal,
-    Tenant,
+from helpers import (
+    make_group,
+    make_identity,
+    make_organization,
+    make_principal,
+    make_tenant,
 )
+from helpers import (
+    make_role as _make_role,
+)
+
+import mtmf_core
+from mtmf_core import Group, Identity, Organization, Principal, Role, Tenant
 
 DOMAIN = importlib.import_module("mtmf_core.domain")
 
@@ -80,3 +84,40 @@ def test_principal_kind_enum_is_absent() -> None:
     principal = make_principal()
     assert not hasattr(principal, "kind")
     assert "kind" not in Principal.__dataclass_fields__
+
+
+# --- PR 3 scope boundaries (U60-U63) ---
+# These guard the PR 3/PR 4 seam: policy definitions and matcher facts
+# exist, but no assignment, Authorizer, decision engine, or built-in
+# Role policy mapping may leak into PR 3.
+
+
+def test_role_assignments_are_absent() -> None:
+    assert not hasattr(DOMAIN, "RoleAssignment")
+    assert not hasattr(mtmf_core, "RoleAssignment")
+    role = _make_role()
+    assert not hasattr(role, "assignments")
+    assert "assignments" not in Role.__dataclass_fields__
+
+
+def test_authorizer_is_absent() -> None:
+    assert not hasattr(mtmf_core, "Authorizer")
+    assert not hasattr(mtmf_core.domain, "Authorizer")
+    assert "Authorizer" not in mtmf_core.__all__
+
+
+def test_default_deny_decision_engine_is_absent() -> None:
+    for name in ("Authorizer", "Decision", "AuthorizationDecision", "PermissionEvaluator"):
+        assert not hasattr(mtmf_core, name)
+        assert not hasattr(mtmf_core.domain, name)
+    role = _make_role()
+    assert not hasattr(role, "decide")
+    assert not hasattr(role, "authorize")
+
+
+def test_builtin_role_policy_mapping_is_absent() -> None:
+    assert not hasattr(mtmf_core, "BUILTIN_ROLE_POLICY")
+    assert not hasattr(mtmf_core, "RolePolicy")
+    policy = importlib.import_module("mtmf_core.domain.policy")
+    assert not hasattr(policy, "BUILTIN_ROLE_POLICY")
+    assert "mapping" not in Role.__dataclass_fields__

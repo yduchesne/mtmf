@@ -1,5 +1,6 @@
-"""MTMF core domain: entities, typed memberships, session, and invariants."""
+"""MTMF core domain: entities, typed memberships, session, invariants, and policy."""
 
+from mtmf_core.domain.action import BASELINE_ACTIONS, Action
 from mtmf_core.domain.errors import (
     DomainInvariantError,
     ImmutabilityError,
@@ -8,6 +9,7 @@ from mtmf_core.domain.errors import (
     TenantBoundaryError,
 )
 from mtmf_core.domain.group import Group
+from mtmf_core.domain.iam_urn import ActionUrn, PermissionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
 from mtmf_core.domain.invariants import (
@@ -29,14 +31,30 @@ from mtmf_core.domain.memberships import (
     PrincipalTenantMembership,
 )
 from mtmf_core.domain.organization import Organization
+from mtmf_core.domain.permission import Permission
+from mtmf_core.domain.permission_matching import (
+    NO_MATCH,
+    MatchResult,
+    MatchSpecificity,
+    match_permission,
+    match_permission_urn,
+)
+from mtmf_core.domain.permission_set import PermissionSet
+from mtmf_core.domain.policy import DefinitionNamespace, PermissionEffect
 from mtmf_core.domain.principal import Principal
+from mtmf_core.domain.role import Role
 from mtmf_core.domain.scope import SecurityScope
 from mtmf_core.domain.session import SessionContext
 from mtmf_core.domain.tenant import Tenant
 from mtmf_core.domain.urn import Urn
 
 __all__ = [
+    "BASELINE_ACTIONS",
+    "NO_MATCH",
+    "Action",
+    "ActionUrn",
     "ActiveStatus",
+    "DefinitionNamespace",
     "DeletionStatus",
     "DomainId",
     "DomainInvariantError",
@@ -51,16 +69,26 @@ __all__ = [
     "JsonObject",
     "JsonScalar",
     "JsonValue",
+    "MatchResult",
+    "MatchSpecificity",
     "MembershipPrerequisiteError",
     "Organization",
+    "Permission",
+    "PermissionEffect",
+    "PermissionSet",
+    "PermissionUrn",
     "Principal",
     "PrincipalTenantMembership",
+    "Role",
+    "RoleUrn",
     "SecurityScope",
     "SessionContext",
     "SessionContextError",
     "Tenant",
     "TenantBoundaryError",
     "Urn",
+    "match_permission",
+    "match_permission_urn",
     "new_extension",
     "validate_group_org_membership",
     "validate_group_tenant_membership",
