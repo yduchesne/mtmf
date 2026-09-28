@@ -4,7 +4,7 @@
 
 This document describes the technical architecture of the Multi-Tenant Management Framework (MTMF): package boundaries, layers, deployment modes, persistence abstractions, transport behavior, and cross-cutting infrastructure.
 
-Security semantics are defined by [SECURITY_MODEL.md](SECURITY_MODEL.md). Authorization-engine behavior is described in [AUTHORIZATION.md](AUTHORIZATION.md).
+Security semantics are defined by [SECURITY_MODEL.md](SECURITY_MODEL.md). Authorization-engine behavior is described in [AUTHORIZATION.md](AUTHORIZATION.md). The structural domain model is defined in [DOMAIN_MODEL.md](DOMAIN_MODEL.md).
 
 ## 2. Technology Baseline
 
@@ -145,6 +145,10 @@ Retrieving the same MTMF resource twice does not imply Python object identity. M
 Stable resource identifiers are used for references. Mutable display names are not identity.
 
 Service operations explicitly perform state changes.
+
+For Tenant, Organization, Principal, Identity, Group, and Role DTOs, application-owned `extension` data is transported as detached arbitrary JSON. LocalConnector and HttpConnector MUST preserve equivalent extension semantics and round-trip the data without MTMF interpreting application-defined keys.
+
+The PostgreSQL provider is expected to represent extension data using `jsonb`. This storage choice does not make extension contents part of MTMF domain or authorization semantics.
 
 ## 7. Error Contract
 
