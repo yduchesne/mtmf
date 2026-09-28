@@ -9,6 +9,7 @@ Multitenant Management Framework
 Bootstrap a clean checkout:
 
 ```bash
+./install.sh   # idempotent: installs uv + uv-managed Python 3.14 when missing
 uv sync --locked
 ```
 
