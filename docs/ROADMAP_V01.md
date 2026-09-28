@@ -62,11 +62,13 @@ Add authorization conformance tests for the settled security constitution.
 
 The implemented foundation lives in ``mtmf_core.authorization``: a pure, deterministic :class:`PermissionEvaluator` (reusing PR 3 matching), a strict-scope dominance primitive, a narrow internal request/context seam with explicit same-Tenant targets, and an :class:`Authorizer` that validates the structural session context, enforces Tenant isolation, delegates policy resolution, and fails closed on missing/unsupported required constraints. Role assignments, effective-Role loading, persistence, stewardship, TenantManagementGroup delegation, built-in Role policies, public DTOs, and audit schemas remain owned by later PRs.
 
-### PR 5 — Persistence SPI and UnitOfWork contracts
+### PR 5 — Persistence SPI and UnitOfWork contracts [DONE]
 
 Define `MtmfSpi`, repository contracts, UnitOfWork semantics, transaction boundaries, and persistence-provider composition without leaking database-driver types through architectural interfaces.
 
 Use in-memory/test implementations where useful to validate contracts before PostgreSQL details dominate the design.
+
+The implemented persistence boundary lives in ``mtmf_core.persistence``: one provider-level :class:`MtmfSpi`, an explicit :class:`UnitOfWork` transaction contract (opt-in commit, normal-exit rollback, exceptional-exit rollback with exception propagation, no reuse after completion), typed repository contracts for the current persistable aggregates (Tenant, Organization, Principal, Identity, Group, Role, Action) and all typed memberships, and a minimal provider-neutral error hierarchy. A deterministic in-memory contract provider (``mtmf_core.persistence.testing.InMemoryMtmfSpi``, clearly test/internal) proves transaction isolation, multi-repository atomicity, duplicate-identity failure, and detached snapshot semantics. Role persistence preserves the ``Role -> PermissionSet -> Permission`` aggregate; memberships remain typed with no polymorphic ``member_type``/``member_id`` model; repositories persist state and do not authorize. PostgreSQL, SQL, stored functions, Alembic/migrations, Docker, Role assignments/effective-Role loading, stewardship, TenantManagementGroup persistence, public DTOs, connectors, IdP integrations, and observability remain out of scope (PRs 6+).
 
 ### PR 6 — PostgreSQL schema and migration foundation
 
