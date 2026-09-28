@@ -810,7 +810,25 @@ The exact rule identifying which manager-Tenant Identities or Groups are eligibl
 
 ---
 
-## 21. Cross-Tenant Isolation
+## 21. Application Extension Data
+
+Tenant, Organization, Principal, Identity, Group, and Role expose an application-owned `extension` field containing arbitrary valid JSON.
+
+MTMF stores and returns this data as an application convenience but MUST NOT interpret it or use it to determine MTMF-defined identity, ownership, membership, scope, authorization, stewardship, lifecycle, or other framework behavior.
+
+Permission does not expose this application extension field.
+
+Extension mutation uses a distinct `<resource>:update-extension` Action.
+
+For an object belonging to an ordinary Tenant, `update-extension` MUST be authorized through applicable TENANT-defined application authorization belonging to that same Tenant. SYSTEM-defined MTMF Roles and Permissions MUST NOT authorize an ordinary Tenant actor to mutate application extension data, even when a SYSTEM wildcard Permission would otherwise match `update-extension`.
+
+This application-policy requirement does not replace ordinary security evaluation. Tenant isolation, assignment context, scope dominance, stewardship/delegation rules where applicable, and other target constraints continue to apply independently.
+
+A lesser-scoped Tenant therefore cannot use its application-defined Role to update extension data of an object belonging to a dominant or different Tenant. The existing scope and Tenant-boundary rules enforce that restriction; extension data does not introduce a separate scope hierarchy.
+
+---
+
+## 22. Cross-Tenant Isolation
 
 Tenant isolation is a fundamental invariant.
 
@@ -826,7 +844,7 @@ A caller-supplied URN, identifier, Role assignment, membership identifier, or ot
 
 ---
 
-## 22. Authorization Evaluation Principles
+## 23. Authorization Evaluation Principles
 
 An authorization decision MAY require multiple independent inputs. Implementations MUST NOT collapse them into a single undifferentiated "is admin" flag.
 
@@ -855,7 +873,7 @@ Authorization MUST be deny-by-default. An operation MUST NOT proceed unless auth
 
 ---
 
-## 23. Invariant Enforcement
+## 24. Invariant Enforcement
 
 Security invariants are not merely UI rules.
 
@@ -877,7 +895,7 @@ Operations that establish multiple required invariants MUST be atomic where part
 
 ---
 
-## 24. Explicitly Unresolved Security Design
+## 25. Explicitly Unresolved Security Design
 
 The following security details have not yet been fully specified and MUST NOT be invented by an implementation:
 
@@ -895,7 +913,7 @@ Until these matters are explicitly defined, implementations MUST choose the more
 
 ---
 
-## 25. Constitutional Summary
+## 26. Constitutional Summary
 
 The MTMF security model rests on these non-negotiable principles:
 
@@ -913,6 +931,7 @@ The MTMF security model rests on these non-negotiable principles:
 - stable identifiers, not mutable names, establish resource identity;
 - deletion is soft deletion;
 - TenantManagementGroups provide explicitly bounded cross-Tenant delegated administration;
+- application extension data is opaque to MTMF and extension mutation requires same-Tenant application-defined authorization;
 - Role/Permission definition ownership is distinct from security Scope and assignment context;
 - ownership is immutable creator provenance;
 - Tenant Stewardship is separate from ownership and Roles;

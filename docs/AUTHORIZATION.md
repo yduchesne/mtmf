@@ -114,6 +114,14 @@ The Authorizer must also enforce the security-model constraints applicable to th
 
 Scope and Permission are independent.
 
+### 6.1 Application extension mutation
+
+For `<resource>:update-extension`, Permission matching alone is insufficient.
+
+When the target belongs to an ordinary Tenant, the Authorizer must establish that the applicable authorization is TENANT-defined application policy belonging to that same Tenant. A SYSTEM-defined MTMF Permission MUST NOT authorize that Tenant actor's extension mutation merely because an exact or wildcard rule matches the Action.
+
+Normal Tenant-boundary and scope/dominance evaluation then applies independently. This prevents application policy from a lesser-scoped or unrelated Tenant from modifying extension data outside its authorized Tenant context.
+
 ## 7. TenantManagementGroup Context
 
 TenantManagementGroup elevation is contextual.
