@@ -1,0 +1,34 @@
+# Pre-commit hooks for the MTMF workspace.
+#
+# Install with:
+#   uv run pre-commit install
+#
+# Every commit runs, in order (failing fast):
+#   1. Gitleaks   secret scanning over the staged diff
+#                 (official hook; pre-commit builds the Go binary)
+#   2. --qa       canonical quality gate: Ruff format, Ruff lint,
+#                 strict Mypy, unit tests with >= 85% coverage
+#   3. --sec      security scan: Bandit + Semgrep over packages/ and tests/
+#
+# The workspace-level gates run with pass_filenames: false so a full
+# tree is scanned on every commit rather than only the staged files.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: mtmf-qa
+        name: MTMF quality gate (./build.sh --qa)
+        entry: ./build.sh --qa
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: mtmf-sec
+        name: MTMF security scan (./build.sh --sec)
+        entry: ./build.sh --sec
+        language: system
+        pass_filenames: false
+        always_run: true

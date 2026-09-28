@@ -6,6 +6,7 @@
 #   1. `uv`            (package/workspace/dependency manager)
 #   2. Python >= 3.14  (project baseline)
 #   3. project environment (`uv sync --locked`)
+#   4. pre-commit hooks (Gitleaks, quality gate, security scan)
 #
 # Installation strategy:
 #   - `uv` is installed via the official astral installer when curl or
@@ -259,6 +260,16 @@ ensure_project_env() {
     ok "workspace environment synchronized"
 }
 
+ensure_pre_commit_hooks() {
+    if [[ ! -d ".git" ]]; then
+        skip "pre-commit hooks (no .git directory present)"
+        return 0
+    fi
+    info "Installing pre-commit hooks (Gitleaks, --qa, --sec) ..."
+    uv run pre-commit install
+    ok "pre-commit hooks installed"
+}
+
 # ---------------------------------------------------------------------------
 
 main() {
@@ -274,6 +285,7 @@ main() {
     ensure_uv
     ensure_python
     ensure_project_env
+    ensure_pre_commit_hooks
     ok "All MTMF development dependencies are installed."
 }
 
