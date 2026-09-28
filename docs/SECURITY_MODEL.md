@@ -478,7 +478,7 @@ Tenant-defined Permissions MAY represent application-specific capabilities. MTMF
 For example, an application may define:
 
 ```text
-urn:mtmf:iam:permissions:tenant:1234:investigation:approve
+urn:mtmf:iam:permissions:tenant:1234:investigation:approve-result
 ```
 
 MTMF can evaluate whether an Identity has that Permission without interpreting what approval of an investigation means.
@@ -841,7 +841,7 @@ Depending on the operation, evaluation may include:
 7. Group memberships;
 8. Group Role assignments;
 9. assignment context;
-10. effective Permissions;
+10. effective Permission rules;
 11. subject security scope;
 12. target security scope;
 13. strict scope dominance;
