@@ -34,19 +34,25 @@ Ownership is immutable creator provenance. It is distinct from current administr
 
 ### 2.3 Lifecycle
 
-MTMF distinguishes at least:
+Soft deletion is represented independently from active/inactive state:
 
-```text
-ACTIVE
-INACTIVE
-DELETED (soft-deleted)
+```python
+class DeletionStatus(IntEnum):
+    DELETED = 1
+    NOT_DELETED = 2
+
+class ActiveStatus(IntEnum):
+    INACTIVE = 0
+    ACTIVE = 1
 ```
 
-where the state is relevant to a particular object type.
+The corresponding domain fields are `deletion_status: DeletionStatus` and, where active/inactive lifecycle applies, `active_status: ActiveStatus`.
+
+The `DeletionStatus` numeric values are enum values, not Boolean semantics; implementations MUST NOT infer deletion through truthiness.
 
 Soft deletion does not physically destroy object identity or security/audit provenance.
 
-Activation and deactivation are explicit state transitions. Reactivating an inactive object does not restore a soft-deleted object.
+Activation and deactivation are explicit state transitions. Setting an object active does not restore a soft-deleted object.
 
 Whether restoration of soft-deleted objects is supported remains **UNRESOLVED**.
 
@@ -466,31 +472,44 @@ flowchart TD
     I[Identity]
     G[Group]
     R[Role]
+    PS[PermissionSet]
     PM[Permission]
-    TM[TenantMembership]
-    OM[OrgMembership]
-    GM[IdentityGroupMembership]
+    A[Action]
+    PTM[PrincipalTenantMembership]
+    ITM[IdentityTenantMembership]
+    GTM[GroupTenantMembership]
+    IOM[IdentityOrgMembership]
+    GOM[GroupOrgMembership]
+    IGM[IdentityGroupMembership]
     RA[Role Assignment]
     TMG[TenantManagementGroup]
 
     T -->|contains| O
-    T -->|membership| TM
     P -->|has 1..*| I
-    P --> TM
-    I --> TM
-    G --> TM
 
-    I --> GM
-    GM --> G
+    P --> PTM
+    PTM --> T
+    I --> ITM
+    ITM --> T
+    G --> GTM
+    GTM --> T
 
-    I --> OM
-    G --> OM
-    OM --> O
+    I --> IGM
+    IGM --> G
+
+    I --> IOM
+    IOM --> O
+    G --> GOM
+    GOM --> O
 
     I --> RA
     G --> RA
+    RA -->|bound to| T
     RA --> R
-    R -->|contains rules| PM
+
+    R -->|owns| PS
+    PS -->|owns| PM
+    PM -.->|matches| A
 
     T -->|manager| TMG
     TMG -->|manages| T
