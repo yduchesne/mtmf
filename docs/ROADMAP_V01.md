@@ -54,11 +54,13 @@ with PermissionSet carrying ALLOW/DENY effect, Permission carrying matching sema
 
 Add deterministic matching tests for exact and constrained wildcard forms.
 
-### PR 4 — Authorizer foundation
+### PR 4 — Authorizer foundation [DONE]
 
 Implement the core Authorizer and Permission evaluator with default deny, Tenant-context isolation, exact-versus-wildcard specificity, equal-specificity DENY precedence, and separation between policy matching and authorization-context retrieval.
 
 Add authorization conformance tests for the settled security constitution.
+
+The implemented foundation lives in ``mtmf_core.authorization``: a pure, deterministic :class:`PermissionEvaluator` (reusing PR 3 matching), a strict-scope dominance primitive, a narrow internal request/context seam with explicit same-Tenant targets, and an :class:`Authorizer` that validates the structural session context, enforces Tenant isolation, delegates policy resolution, and fails closed on missing/unsupported required constraints. Role assignments, effective-Role loading, persistence, stewardship, TenantManagementGroup delegation, built-in Role policies, public DTOs, and audit schemas remain owned by later PRs.
 
 ### PR 5 — Persistence SPI and UnitOfWork contracts
 
