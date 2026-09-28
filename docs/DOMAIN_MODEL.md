@@ -137,7 +137,7 @@ Tenant 1 ---- * Organization
 
 An Organization has immutable creator-Identity ownership.
 
-The creator/owner Identity must automatically receive OrgMembership in the Organization. Organization creation and establishment of the owner's OrgMembership form one invariant-preserving operation.
+The creator/owner Identity must automatically receive OrganizationMembership in the Organization. Organization creation and establishment of the owner's OrganizationMembership form one invariant-preserving operation.
 
 Organizations do not currently define their own Roles or Permissions. Tenant-defined Roles may be assigned in an Organization context within their defining Tenant.
 
@@ -242,9 +242,9 @@ Nested Groups have not been specified and remain **UNRESOLVED**. They MUST NOT b
 
 ---
 
-## 9. OrgMembership
+## 9. Typed Organization Memberships
 
-OrgMembership represents explicit membership in an Organization.
+OrganizationMembership represents explicit membership in an Organization.
 
 Organization membership is typed. The currently defined relationships are:
 
@@ -257,23 +257,17 @@ Conceptually:
 
 ```text
 Identity * ---- * Organization
-          via OrgMembership
+          via IdentityOrgMembership
 
 Group    * ---- * Organization
-          via OrgMembership
+          via GroupOrgMembership
 ```
 
-OrgMembership refines Tenant membership:
+Each typed Organization membership refines the corresponding Tenant membership. The member must already be valid in the Organization's containing Tenant.
 
-```text
-OrgMembership(member, organization)
-    implies
-TenantMembership(member, organization.tenant)
-```
+Cross-Tenant Organization membership is invalid.
 
-Cross-Tenant OrgMembership is invalid.
-
-Principal OrgMembership has not been specified and remains **UNRESOLVED**.
+Principal Organization membership has not been specified and remains **UNRESOLVED**.
 
 ---
 
@@ -523,7 +517,7 @@ The diagram is structural and intentionally omits security-evaluation details.
 
 At minimum, the following operations must preserve their related invariants atomically where partial completion would produce invalid domain state:
 
-- Organization creation and owner OrgMembership;
+- Organization creation and owner IdentityOrgMembership;
 - Tenant Stewardship transfer;
 - steward deactivation combined with replacement stewardship, if supported as one operation;
 - creation or mutation of security relationships whose Tenant consistency must be validated;
@@ -542,7 +536,7 @@ The following remain intentionally unsettled:
 5. which manager-Tenant Identities or Groups exercise TenantManagementGroup authority;
 6. exact TenantManagementGroup persistence representation;
 7. nested Group support;
-8. Principal OrgMembership;
+8. Principal Organization membership;
 9. Principal kinds, including service and agent principals;
 10. exact local/federated Identity representation;
 11. complete active/inactive applicability and transition rules by object type;
