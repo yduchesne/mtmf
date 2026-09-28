@@ -25,25 +25,25 @@ MODE="${1:-}"
 
 case "${MODE}" in
     --qa)
-        echo "==> ruff format --check"
+        echo "==> Running formatting check with ruff (format --check)"
         uv run ruff format --check .
 
-        echo "==> ruff check"
+        echo "==> Running lint with ruff (ruff check)"
         uv run ruff check .
 
-        echo "==> mypy (strict)"
+        echo "==> Running static analysis with mypy (strict mode)"
         uv run mypy packages
 
-        echo "==> pytest unit suite (coverage >= 85%)"
+        echo "==> Running unit tests with pytest (coverage gate >= 85%)"
         uv run pytest tests/unit
         ;;
     --sec)
-        echo "==> bandit (security lint)"
+        echo "==> Running security lint with bandit (Medium/High severity gate)"
         # The default Low threshold reports test-only noise (e.g. B101
         # asserts in tests); fail on Medium/High findings instead.
         uv run bandit -r packages tests -ll
 
-        echo "==> semgrep (static analysis)"
+        echo "==> Running static analysis with semgrep (registry rules)"
         uv run semgrep scan --config=auto packages tests
         ;;
     *)

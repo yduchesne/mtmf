@@ -17,6 +17,7 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks
+        verbose: true
 
   - repo: local
     hooks:
@@ -26,9 +27,11 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+        verbose: true
       - id: mtmf-sec
         name: MTMF security scan (./build.sh --sec)
         entry: ./build.sh --sec
         language: system
         pass_filenames: false
         always_run: true
+        verbose: true
