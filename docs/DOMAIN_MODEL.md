@@ -16,13 +16,15 @@ Where a relationship remains unsettled, it is explicitly marked **UNRESOLVED**. 
 
 ### 2.1 Stable identity and mutable names
 
-Tenants, Organizations, and Groups have immutable, globally unique UUID identifiers.
+Tenants, Organizations, Principals, Identities, Groups, PermissionSets, and Permissions have immutable, globally unique UUID object identifiers.
 
-Their names are mutable and non-unique. A name is presentation metadata and does not establish object identity.
+Their mutable names, where present, are presentation metadata and do not establish object identity.
 
-Roles and Permissions use immutable, unique URNs as their canonical authorization identity. Their names and descriptions are mutable presentation metadata.
+Roles use immutable, unique URNs as their canonical authorization identity. Actions use immutable, globally unique URNs as their canonical identity.
 
-The exact identifier representation for Principal and Identity remains to be finalized; their identifiers MUST nevertheless be stable and MUST NOT be derived from mutable display names or external identity-provider labels.
+A Permission has both a UUID object identity and a Permission URN describing its Action-matching expression. A Permission URN is not the Permission object's identity and is not required to be globally unique: multiple owned Permission instances may express the same matcher.
+
+Domain objects are mutable where the domain permits mutation. Identity and provenance fields—including UUID identity, immutable Role and Action URNs, and creator ownership—MUST NOT be mutated after creation.
 
 ### 2.2 Ownership
 
@@ -32,19 +34,25 @@ Ownership is immutable creator provenance. It is distinct from current administr
 
 ### 2.3 Lifecycle
 
-MTMF distinguishes at least:
+Soft deletion is represented independently from active/inactive state:
 
-```text
-ACTIVE
-INACTIVE
-DELETED (soft-deleted)
+```python
+class DeletionStatus(IntEnum):
+    DELETED = 1
+    NOT_DELETED = 2
+
+class ActiveStatus(IntEnum):
+    INACTIVE = 0
+    ACTIVE = 1
 ```
 
-where the state is relevant to a particular object type.
+The corresponding domain fields are `deletion_status: DeletionStatus` and, where active/inactive lifecycle applies, `active_status: ActiveStatus`.
+
+The `DeletionStatus` numeric values are enum values, not Boolean semantics; implementations MUST NOT infer deletion through truthiness.
 
 Soft deletion does not physically destroy object identity or security/audit provenance.
 
-Activation and deactivation are explicit state transitions. Reactivating an inactive object does not restore a soft-deleted object.
+Activation and deactivation are explicit state transitions. Setting an object active does not restore a soft-deleted object.
 
 Whether restoration of soft-deleted objects is supported remains **UNRESOLVED**.
 
@@ -66,10 +74,10 @@ The field contains arbitrary valid JSON intended solely as a convenience for app
 Conceptually:
 
 ```python
-extension: dict[str, Any] | None
+extension: dict[str, JsonValue] = field(default_factory=dict)
 ```
 
-This Python form is illustrative; the public DTO representation is determined by `mtmf-api`.
+The extension value is always a JSON object. An empty object (`{}`) means that no application extension data is present; `None` / JSON `null` is not a valid domain representation. This Python form is illustrative; the public DTO representation is determined by `mtmf-api`.
 
 MTMF stores and returns extension data but does not interpret its contents.
 
@@ -101,13 +109,15 @@ A Tenant is the primary tenancy and security boundary.
 
 There is exactly one root Tenant created during bootstrap. The root Tenant has ROOT scope. All ordinary Tenants have TENANT scope.
 
-A Tenant may contain:
+A Tenant may contain or contextualize:
 
 - Organizations;
-- Principals and their Identities;
+- explicit memberships for global Principals and selected Identities;
 - Groups;
-- Tenant-defined Roles and Permissions;
+- Tenant-defined Roles;
 - memberships and Role assignments applicable to that Tenant.
+
+Principal and Identity objects are global MTMF objects rather than objects owned by one Tenant.
 
 A Tenant has immutable ownership provenance through its creator Identity.
 
@@ -127,7 +137,7 @@ Tenant 1 ---- * Organization
 
 An Organization has immutable creator-Identity ownership.
 
-The creator/owner Identity must automatically receive OrgMembership in the Organization. Organization creation and establishment of the owner's OrgMembership form one invariant-preserving operation.
+The creator/owner Identity must automatically receive OrganizationMembership in the Organization. Organization creation and establishment of the owner's OrganizationMembership form one invariant-preserving operation.
 
 Organizations do not currently define their own Roles or Permissions. Tenant-defined Roles may be assigned in an Organization context within their defining Tenant.
 
@@ -147,7 +157,9 @@ Principal 1 ---- 1..* Identity
 
 Every Principal has exactly one mandatory MTMF-local, non-federated Identity and may have additional federated Identities.
 
-A Principal belongs to a Tenant through the applicable TenantMembership semantics.
+A Principal is global to MTMF and may belong to multiple Tenants through typed PrincipalTenantMembership relationships.
+
+Different Tenants may expose different subsets of the Principal's Identities. The mandatory local Identity does not automatically become usable in every Tenant the Principal joins.
 
 Authorization is not performed against the Principal as an aggregate of all its Identities. The specific acting Identity is security-significant.
 
@@ -159,13 +171,14 @@ Principal kinds such as human, service, or agent remain **UNRESOLVED**.
 
 An Identity is a concrete identity associated with exactly one Principal.
 
-Each Identity is tenant-bound consistently with its Principal and has the required TenantMembership semantics.
+An Identity is global to MTMF. Its usability in a Tenant is explicit through IdentityTenantMembership and is independent of the Principal's other Identities.
 
 An Identity may:
 
-- belong to zero or more Groups within its Tenant;
-- belong to zero or more Organizations within its Tenant;
-- receive zero or more direct Role assignments in valid assignment contexts;
+- be usable in zero or more Tenants in which its Principal is a member;
+- belong to zero or more Groups within an applicable Tenant;
+- belong to zero or more Organizations within an applicable Tenant;
+- receive zero or more direct Role assignments in valid Tenant contexts;
 - derive additional Roles from Groups to which it belongs.
 
 Two Identities belonging to the same Principal do not implicitly share Group memberships, Role assignments, or authorization.
@@ -174,37 +187,54 @@ The exact external/federated identity representation is deferred to IdP design.
 
 ---
 
-## 7. TenantMembership
+## 7. Typed Tenant Memberships
 
-Tenant membership is explicit domain state.
+Tenant membership is explicit, typed domain state. MTMF does not use a polymorphic `member_type/member_id` TenantMembership relationship.
 
-TenantMembership applies to Principal, Identity, and Group as required by the security model.
+The model includes distinct relationships for the applicable member kinds, including:
 
-The following invariants hold:
+- PrincipalTenantMembership;
+- IdentityTenantMembership;
+- GroupTenantMembership.
 
-- a tenant-bound Identity cannot exist outside its Tenant;
-- a tenant-bound Group cannot exist outside its Tenant;
-- every Identity of a Tenant Principal is bound to that same Tenant;
-- Tenant-bound authorization relationships cannot cross Tenant boundaries.
+A Principal may have PrincipalTenantMembership in multiple Tenants. An Identity may have IdentityTenantMembership in a subset of the Tenants in which its Principal is a member. Identity membership in Tenant T requires the Identity's Principal to have valid PrincipalTenantMembership in T.
 
-The exact persistence/domain representation of the different member kinds—such as a polymorphic TenantMembership versus separate typed relationships—remains **UNRESOLVED**.
+A Group is tenant-bound and has GroupTenantMembership in exactly its Tenant.
 
-Tenant Stewardship belongs semantically to TenantMembership at the Principal level.
+Tenant-bound authorization relationships MUST NOT cross Tenant boundaries.
+
+Tenant Stewardship belongs semantically to PrincipalTenantMembership.
+
+Authentication establishes a session context:
+
+```text
+Session = (Tenant, Principal, Identity)
+```
+
+A valid session requires:
+
+1. the Identity belongs to the Principal;
+2. the Principal has valid active PrincipalTenantMembership in the Tenant;
+3. the Identity has valid active IdentityTenantMembership in the Tenant.
+
+Authorization considers only memberships, Groups, Organizations, Role assignments, and other authorization state applicable to the session Tenant. Authorization state from another Tenant MUST NOT be unioned into the current session.
+
+Switching Tenant context requires authorization context to be re-evaluated; authorization state MUST NOT carry over implicitly.
 
 ---
 
-## 8. Group and GroupMembership
+## 8. Group and IdentityGroupMembership
 
 A Group is a tenant-bound collection of Identities.
 
-A Group does not embed Identities directly. Membership is represented by GroupMembership:
+A Group does not embed Identities directly. Membership is represented by IdentityGroupMembership:
 
 ```text
 Identity * ---- * Group
-          via GroupMembership
+          via IdentityGroupMembership
 ```
 
-The Identity and Group in a GroupMembership must belong to the same Tenant.
+The Identity and Group in a IdentityGroupMembership must belong to the same Tenant.
 
 A Group may receive multiple Role assignments. An Identity derives Roles from Groups of which that Identity is a member.
 
@@ -212,42 +242,38 @@ Nested Groups have not been specified and remain **UNRESOLVED**. They MUST NOT b
 
 ---
 
-## 9. OrgMembership
+## 9. Typed Organization Memberships
 
-OrgMembership represents explicit membership in an Organization.
+OrganizationMembership represents explicit membership in an Organization.
 
-The currently defined member kinds are:
+Organization membership is typed. The currently defined relationships are:
 
-- Identity;
-- Group.
+- IdentityOrgMembership;
+- GroupOrgMembership.
+
+A polymorphic Organization membership relationship is not used.
 
 Conceptually:
 
 ```text
 Identity * ---- * Organization
-          via OrgMembership
+          via IdentityOrgMembership
 
 Group    * ---- * Organization
-          via OrgMembership
+          via GroupOrgMembership
 ```
 
-OrgMembership refines Tenant membership:
+Each typed Organization membership refines the corresponding Tenant membership. The member must already be valid in the Organization's containing Tenant.
 
-```text
-OrgMembership(member, organization)
-    implies
-TenantMembership(member, organization.tenant)
-```
+Cross-Tenant Organization membership is invalid.
 
-Cross-Tenant OrgMembership is invalid.
-
-Principal OrgMembership has not been specified and remains **UNRESOLVED**.
+Principal Organization membership has not been specified and remains **UNRESOLVED**.
 
 ---
 
 ## 10. Role
 
-A Role is a uniquely identified set of Permission rules.
+A Role is a uniquely identified policy composed of owned PermissionSets.
 
 A Role is defined in either the SYSTEM definition namespace or a TENANT definition namespace.
 
@@ -267,7 +293,7 @@ Identity * ---- * Role
 Group    * ---- * Role
 ```
 
-Role assignment also has an authorization assignment context. The exact Role-assignment domain object and context representation remain **UNRESOLVED**.
+Every Role assignment is Tenant-bound. An assignment associates a Role with an Identity or Group in exactly one Tenant context and may optionally refine that context to an Organization belonging to the same Tenant. The exact Role-assignment domain object representation remains **UNRESOLVED**.
 
 A Role has:
 
@@ -280,19 +306,34 @@ For TENANT-defined Roles, the Tenant encoded in the URN and structural defining 
 
 ---
 
-## 11. Permission
+## 11. PermissionSet and Permission
 
-A Permission is a uniquely identified authorization rule associated with an ALLOW or DENY effect and Action-matching semantics.
+A Role owns an ordered list of PermissionSets. A PermissionSet belongs to exactly one Role and is not shared between Roles.
 
-A Permission is defined in either the SYSTEM or TENANT definition namespace.
+A PermissionSet has:
 
-Permissions do not expose the application-owned `extension` field.
+- an immutable UUID object identity;
+- an effect of `ALLOW` or `DENY`;
+- an ordered list of owned Permissions.
 
-A Role may contain multiple Permission rules, and a Permission may participate in Role composition according to the eventual Role/Permission representation.
+A Permission belongs to exactly one PermissionSet and is not shared between PermissionSets or Roles.
 
-The exact persistence representation of Role-to-Permission composition remains an implementation/domain-design detail to be finalized.
+A Permission has:
 
-Detailed matching semantics belong to [AUTHORIZATION.md](AUTHORIZATION.md).
+- an immutable UUID object identity;
+- a Permission URN that expresses Action-matching semantics.
+
+The Permission URN is not the Permission object's identity and is not required to be globally unique. Two Permission objects may carry the same Permission URN and are semantically equivalent matchers while remaining distinct owned domain objects.
+
+A Permission has no independent effect. It inherits the effect of its containing PermissionSet.
+
+Permission and PermissionSet list ordering is structural and MUST NOT imply authorization precedence.
+
+A Permission URN may identify either an exact Action matcher or the constrained qualifier-wildcard matcher defined by the authorization model.
+
+PermissionSets and Permissions are not independently assignable. Roles are the assignable policy objects.
+
+Detailed matching and conflict-resolution semantics belong to [AUTHORIZATION.md](AUTHORIZATION.md).
 
 ---
 
@@ -308,7 +349,7 @@ Actions use:
 
 An Action is distinct from a Permission. Permissions match Actions; callers request Actions.
 
-The exact question of whether tenant-defined Actions are persisted first-class definitions or are validated request values following the grammar remains **UNRESOLVED**.
+Actions are shared definitions and are uniquely identified by immutable URNs. Action URNs always identify exact Actions; wildcard expressions exist only in Permission URNs.
 
 ---
 
@@ -316,19 +357,19 @@ The exact question of whether tenant-defined Actions are persisted first-class d
 
 A Role assignment associates a Role with an Identity or Group in an applicable context.
 
-For an Identity:
+For a session Tenant and Identity:
 
 ```text
-EffectiveRoles(identity)
+EffectiveRoles(identity, tenant)
     =
-    DirectRoles(identity)
+    DirectRoles(identity, tenant)
     union
-    GroupRoles(identity)
+    GroupRoles(identity, tenant)
 ```
 
 Role definitions and assignment contexts are distinct.
 
-SYSTEM-defined Roles may be assigned in appropriate Tenant or Organization contexts. TENANT-defined Roles may be assigned only within their defining Tenant and its Organizations.
+SYSTEM-defined Roles may be assigned in appropriate Tenant or Organization contexts, but every assignment is still bound to exactly one Tenant. TENANT-defined Roles may be assigned only within their defining Tenant and its Organizations.
 
 Role assignment must not create cross-Tenant authorization.
 
@@ -405,9 +446,9 @@ group:update-extension
 role:update-extension
 ```
 
-For an object owned by an ordinary Tenant, extension mutation can be authorized only through applicable TENANT-defined application authorization belonging to that same Tenant.
+For an object owned by an ordinary Tenant, extension mutation can be authorized only through applicable TENANT-defined application Role policy belonging to that same Tenant.
 
-SYSTEM-defined MTMF Roles and Permissions do not grant an ordinary Tenant actor authority to mutate application extension data, even when a SYSTEM Permission wildcard would otherwise match `update-extension`.
+SYSTEM-defined MTMF Roles do not grant an ordinary Tenant actor authority to mutate application extension data, even when a Permission in such a Role would otherwise match `update-extension`.
 
 The normal security model still applies independently. In particular, Tenant boundaries, assignment context, and scope dominance prevent a lesser-scoped Tenant from using its own application Role to modify extension data belonging to a dominant or different Tenant.
 
@@ -425,31 +466,44 @@ flowchart TD
     I[Identity]
     G[Group]
     R[Role]
+    PS[PermissionSet]
     PM[Permission]
-    TM[TenantMembership]
-    OM[OrgMembership]
-    GM[GroupMembership]
+    A[Action]
+    PTM[PrincipalTenantMembership]
+    ITM[IdentityTenantMembership]
+    GTM[GroupTenantMembership]
+    IOM[IdentityOrgMembership]
+    GOM[GroupOrgMembership]
+    IGM[IdentityGroupMembership]
     RA[Role Assignment]
     TMG[TenantManagementGroup]
 
     T -->|contains| O
-    T -->|membership| TM
     P -->|has 1..*| I
-    P --> TM
-    I --> TM
-    G --> TM
 
-    I --> GM
-    GM --> G
+    P --> PTM
+    PTM --> T
+    I --> ITM
+    ITM --> T
+    G --> GTM
+    GTM --> T
 
-    I --> OM
-    G --> OM
-    OM --> O
+    I --> IGM
+    IGM --> G
+
+    I --> IOM
+    IOM --> O
+    G --> GOM
+    GOM --> O
 
     I --> RA
     G --> RA
+    RA -->|bound to| T
     RA --> R
-    R -->|contains rules| PM
+
+    R -->|owns| PS
+    PS -->|owns| PM
+    PM -.->|matches| A
 
     T -->|manager| TMG
     TMG -->|manages| T
@@ -463,11 +517,11 @@ The diagram is structural and intentionally omits security-evaluation details.
 
 At minimum, the following operations must preserve their related invariants atomically where partial completion would produce invalid domain state:
 
-- Organization creation and owner OrgMembership;
+- Organization creation and owner IdentityOrgMembership;
 - Tenant Stewardship transfer;
 - steward deactivation combined with replacement stewardship, if supported as one operation;
 - creation or mutation of security relationships whose Tenant consistency must be validated;
-- Role/Permission writes where structural Tenant ownership and URN Tenant ownership must agree.
+- Role policy writes where Role definition ownership and owned Permission structure must remain consistent.
 
 Additional aggregate boundaries will be identified during detailed implementation planning.
 
@@ -477,19 +531,16 @@ Additional aggregate boundaries will be identified during detailed implementatio
 
 The following remain intentionally unsettled:
 
-1. exact Principal and Identity identifier representation;
-2. exact TenantMembership representation across Principal, Identity, and Group;
-3. exact Role-assignment entity/entities and assignment-context representation;
+1. exact Role-assignment entity/entities and assignment-context representation;
 4. which acting Identity of a steward Principal exercises stewardship authority;
 5. which manager-Tenant Identities or Groups exercise TenantManagementGroup authority;
 6. exact TenantManagementGroup persistence representation;
 7. nested Group support;
-8. Principal OrgMembership;
+8. Principal Organization membership;
 9. Principal kinds, including service and agent principals;
 10. exact local/federated Identity representation;
 11. complete active/inactive applicability and transition rules by object type;
 12. whether soft-deleted objects can be restored;
-13. whether tenant-defined Actions are persisted definitions or validated action values;
-14. exact Role-to-Permission composition representation.
+
 
 These questions should be resolved deliberately before schema or API choices depend on them.

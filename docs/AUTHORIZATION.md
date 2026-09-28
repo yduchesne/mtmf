@@ -14,7 +14,7 @@ This document is intentionally shallow while the security model is still evolvin
 
 Its fundamental question is:
 
-> May this specific acting Identity perform this exact Action against this target in this authorization context?
+> May this specific acting Identity, in this (Tenant, Principal, Identity) session, perform this exact Action against this target in this authorization context?
 
 Callers request an **Action**, not a Permission. The caller MUST NOT reconstruct MTMF authorization by selecting a Permission itself.
 
@@ -32,7 +32,8 @@ An infrastructure failure while evaluating policy is not itself a policy DENY, b
 
 An authorization decision may require:
 
-- acting Identity and its Principal;
+- session Tenant, acting Principal, and acting Identity;
+- valid active PrincipalTenantMembership and IdentityTenantMembership in the session Tenant;
 - requested exact Action;
 - target resource and security scope;
 - Tenant and Organization context;
@@ -40,7 +41,7 @@ An authorization decision may require:
 - direct Role assignments;
 - Group memberships and Group Role assignments;
 - Role-assignment context;
-- applicable Permission rules and their effects;
+- applicable Role-owned PermissionSets, their effects, and owned Permissions;
 - Tenant Stewardship;
 - TenantManagementGroup delegation and contextual scope;
 - operation-specific invariants.
@@ -49,9 +50,13 @@ The final input model remains to be designed.
 
 ## 5. Permission Resolution
 
-An Identity may have multiple direct Roles and multiple Group-derived Roles. Groups may themselves have multiple Roles. Roles have no evaluation precedence.
+An Identity may have multiple direct Roles and multiple Group-derived Roles in the session Tenant. Groups may themselves have multiple Roles. Roles have no evaluation precedence.
 
-For a requested Action, the Authorizer considers all applicable Permission rules from all effective Roles.
+A Role owns an ordered list of PermissionSets. Each PermissionSet carries one `ALLOW` or `DENY` effect and owns an ordered list of Permissions. Ordering does not establish authorization precedence.
+
+A Permission is an Action matcher. Its UUID identifies the owned Permission instance; its Permission URN expresses matching semantics. The Permission itself has no effect; it inherits the effect of its containing PermissionSet.
+
+Actions are shared exact definitions uniquely identified by Action URNs. Action URNs never contain wildcards.
 
 The canonical Action grammar is:
 
@@ -59,7 +64,7 @@ The canonical Action grammar is:
 <resource>:<verb>-<qualifier>
 ```
 
-A Permission rule uses an exact resource and verb. Its qualifier is either exact or the complete wildcard `*`.
+A Permission uses an exact resource and verb. Its qualifier is either exact or the complete wildcard `*`.
 
 For example:
 
@@ -68,22 +73,21 @@ principal:set-alias
 principal:set-*
 ```
 
-The first rule is more specific than the second for Action `principal:set-alias`.
-
 Resolution rules are:
 
-1. discard rules that do not apply to the current assignment/context;
-2. find rules matching the requested Action;
-3. select the most-specific matching rule or rules;
+1. discard Roles and PermissionSets that do not apply to the session Tenant and current assignment/context;
+2. collect Permissions matching the requested Action;
+3. select the most-specific matching Permission or Permissions;
 4. exact qualifier match is more specific than wildcard qualifier match;
-5. if equally specific matching rules have conflicting effects, DENY wins;
-6. if no applicable rule matches, DENY.
+5. derive each matching Permission's effect from its containing PermissionSet;
+6. if equally specific matching Permissions have conflicting effects, `DENY` wins;
+7. if no applicable Permission matches, `DENY`.
 
 Example:
 
 ```text
-principal:set-*       ALLOW
-principal:set-alias   DENY
+PermissionSet(ALLOW): principal:set-*
+PermissionSet(DENY):  principal:set-alias
 ```
 
 For `principal:set-alias`, the exact DENY wins.
@@ -91,11 +95,13 @@ For `principal:set-alias`, the exact DENY wins.
 Conversely:
 
 ```text
-principal:set-*       DENY
-principal:set-alias   ALLOW
+PermissionSet(DENY):  principal:set-*
+PermissionSet(ALLOW): principal:set-alias
 ```
 
 For `principal:set-alias`, the exact ALLOW wins.
+
+---
 
 ## 6. Additional Authorization Constraints
 
@@ -118,7 +124,7 @@ Scope and Permission are independent.
 
 For `<resource>:update-extension`, Permission matching alone is insufficient.
 
-When the target belongs to an ordinary Tenant, the Authorizer must establish that the applicable authorization is TENANT-defined application policy belonging to that same Tenant. A SYSTEM-defined MTMF Permission MUST NOT authorize that Tenant actor's extension mutation merely because an exact or wildcard rule matches the Action.
+When the target belongs to an ordinary Tenant, the Authorizer must establish that the applicable authorization originates from a TENANT-defined application Role belonging to that same Tenant. A SYSTEM-defined MTMF Role MUST NOT authorize that Tenant actor's extension mutation merely because one of its Permissions matches the Action.
 
 Normal Tenant-boundary and scope/dominance evaluation then applies independently. This prevents application policy from a lesser-scoped or unrelated Tenant from modifying extension data outside its authorized Tenant context.
 
@@ -143,7 +149,7 @@ A likely internal shape is:
 ```text
 Authorizer
   +-- load/validate authorization context
-  +-- PermissionEvaluator
+  +-- PermissionEvaluator (PermissionSet/Permission matching)
   +-- apply scope/delegation/stewardship/operation constraints
   +-- produce decision
 ```
@@ -167,8 +173,8 @@ The following remain intentionally unresolved:
 - exact `Authorizer` and `PermissionEvaluator` Python interfaces;
 - exact authorization-context representation;
 - manager-side actor eligibility for TenantManagementGroups;
-- complete Action and Permission catalogs;
-- built-in Role-to-Permission mappings;
+- complete Action catalog and built-in Role policy compositions;
+- built-in Role-to-PermissionSet/Permission mappings;
 - caching, invalidation, and compiled permission-index design;
 - exact audit decision record;
 - Rust implementation threshold and benchmarking criteria.
