@@ -23,7 +23,7 @@ MTMF uses the following distinct concepts:
 - **Group** — a tenant-bound collection of Identities, represented through IdentityGroupMembership.
 - **PrincipalTenantMembership**, **IdentityTenantMembership**, and **GroupTenantMembership** — typed, explicit Tenant memberships.
 - **IdentityOrgMembership** and **GroupOrgMembership** — typed, explicit Organization memberships.
-- **IdentityIdentityGroupMembership** — explicit association of an Identity with a Group.
+- **IdentityGroupMembership** — explicit association of an Identity with a Group.
 - **Role** — a uniquely identified assignable policy composed of owned PermissionSets.
 - **PermissionSet** — a Role-owned ordered list of Permissions carrying one `ALLOW` or `DENY` effect.
 - **Permission** — a PermissionSet-owned Action matcher. It has a UUID object identity and a Permission URN describing exact or constrained-wildcard matching semantics.
@@ -32,7 +32,7 @@ MTMF uses the following distinct concepts:
 - **Ownership** — immutable creator provenance recorded as the Identity that created an object.
 - **Scope** — the privilege/protection hierarchy used for security dominance.
 - **Tenant Stewardship** — tenant-specific ultimate administrative authority used to resolve selected same-scope administrative operations.
-- **Definition Namespace** — whether a Role or Permission is defined by MTMF globally or by a particular Tenant.
+- **Definition Namespace** — whether a Role is defined by MTMF globally or by a particular Tenant.
 - **Assignment Context** — the system, Tenant, or Organization context in which a Role grant applies.
 
 These concepts MUST remain distinct. In particular:
@@ -263,8 +263,8 @@ Organization membership is explicit and typed. Identities use **IdentityOrgMembe
 Conceptually:
 
 ```text
-Identity --> OrgMembership --> Organization
-Group    --> OrgMembership --> Organization
+Identity --> IdentityOrgMembership --> Organization
+Group    --> GroupOrgMembership --> Organization
 ```
 
 ### 9.1 Tenant membership prerequisite
@@ -275,12 +275,12 @@ If Organization O belongs to Tenant T:
 
 ```text
 IdentityOrgMembership/GroupOrgMembership(member, O)
-    implies TenantMembership(member, T)
+    requires the corresponding member to be valid in Tenant T
 ```
 
-An Identity or Group MUST NOT receive OrgMembership in an Organization unless it already has valid Tenant membership in the Organization's containing Tenant.
+An Identity or Group MUST NOT receive the applicable typed Organization membership in an Organization unless it already has valid Tenant membership in the Organization's containing Tenant.
 
-Cross-Tenant OrgMembership MUST be rejected.
+Cross-Tenant Organization membership MUST be rejected.
 
 ### 9.2 Organization owner membership
 
@@ -289,9 +289,9 @@ The Identity that creates and owns an Organization MUST automatically become a m
 Organization creation MUST atomically establish both:
 
 1. the Organization with the creator Identity as immutable owner; and
-2. the owner's OrgMembership in that Organization.
+2. the owner's IdentityOrgMembership in that Organization.
 
-The operation MUST NOT leave an Organization whose owner lacks the required OrgMembership.
+The operation MUST NOT leave an Organization whose owner lacks the required IdentityOrgMembership.
 
 ---
 
@@ -683,7 +683,7 @@ Groups can be used to delegate Tenant administration.
 
 A Tenant administration Group:
 
-1. belongs to its Tenant through TenantMembership;
+1. belongs to its Tenant through GroupTenantMembership;
 2. contains Identities through IdentityGroupMembership;
 3. receives the applicable Tenant Administrator Role through a Role assignment.
 
@@ -752,7 +752,7 @@ It MUST:
 1. be managed by the root Tenant;
 2. have `ROOT` scope;
 3. implicitly manage every Tenant, including Tenants created after bootstrap;
-4. use implicit universal managed-Tenant membership rather than materialized TenantManagementIdentityGroupMembership rows.
+4. use implicit universal managed-Tenant membership rather than materialized TenantManagementGroupMembership rows.
 
 A ROOT TenantManagementGroup MUST NOT require or contain explicit managed-Tenant membership rows.
 
@@ -795,7 +795,7 @@ Tenant isolation is a fundamental invariant.
 MTMF MUST reject security relationships that improperly cross Tenant boundaries, including at minimum:
 
 - IdentityGroupMembership between a Group and Identity from different Tenants;
-- OrgMembership involving a member outside the Organization's containing Tenant;
+- IdentityOrgMembership or GroupOrgMembership involving a member outside the Organization's containing Tenant;
 - assignment or use of a Tenant-defined Role outside its defining Tenant;
 - mismatches between structural Tenant IDs and Tenant IDs encoded in Role URNs.
 
