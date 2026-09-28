@@ -34,11 +34,11 @@ Establish the monorepo/workspace with `mtmf-api`, `mtmf-core`, `mtmf-client`, an
 
 This PR should not introduce PostgreSQL, Alembic, FastAPI, or the persistence SPI implementation.
 
-### PR 2 — Core domain entities and typed memberships
+### PR 2 — Core domain entities and typed memberships [DONE]
 
-Implement the initial domain entities and relationships: Tenant, Organization, Principal, Identity, Group, typed Tenant/Organization/Group memberships, ownership/provenance, lifecycle behavior, and cross-object Tenant invariants.
+Implements the initial domain entities and relationships: Tenant, Organization, Principal, Identity, Group, typed Tenant/Organization/Group memberships, ownership/provenance, lifecycle behavior, and cross-object Tenant invariants.
 
-Establish the global Principal/Identity model and the security-significant `(Tenant, Principal, Identity)` session context.
+Establishes the global Principal/Identity model and the security-significant `(Tenant, Principal, Identity)` session context.
 
 ### PR 3 — Role policy model and Action catalog foundation
 
