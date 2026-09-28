@@ -24,8 +24,10 @@ MTMF uses the following distinct concepts:
 - **TenantMembership** — explicit membership of a Principal, Identity, or Group in a Tenant, as applicable to the domain model.
 - **OrgMembership** — explicit membership of an Identity or Group in an Organization.
 - **GroupMembership** — explicit association of an Identity with a Group.
-- **Role** — a uniquely identified set of uniquely identified Permissions.
-- **Permission** — a uniquely identified authorization capability.
+- **Role** — a uniquely identified set of Permission rules.
+- **Action** — an exact operation requested against a resource, expressed using the MTMF action grammar.
+- **Permission** — a uniquely identified authorization rule that matches one or more Actions and has an `ALLOW` or `DENY` effect.
+- **Permission Evaluation Rule** — the matching semantics encoded by a Permission, including exact-action and constrained wildcard matching.
 - **Role Assignment** — an assignment of a Role to an Identity or Group in an applicable authorization context.
 - **Ownership** — immutable creator provenance recorded as the Identity that created an object.
 - **Scope** — the privilege/protection hierarchy used for security dominance.
@@ -39,7 +41,8 @@ These concepts MUST remain distinct. In particular:
 2. Stewardship is not a Role.
 3. Scope is not a Role/Permission definition namespace.
 4. A Principal is not interchangeable with one of its Identities.
-5. Membership is not implicit merely because another authorization relationship exists.
+5. Membership is not implicit merely because another authorization relationship exists, except for the explicitly defined ROOT TenantManagementGroup universal managed-Tenant relationship.
+6. An Action is not a Permission: callers request Actions; Permissions are rules used to decide whether those Actions are authorized.
 
 ---
 
@@ -370,9 +373,20 @@ The exact mechanism by which an Identity of the steward Principal is authorized 
 
 ---
 
-## 11. Roles and Permissions
+## 11. Roles, Actions, and Permissions
 
-A Role is fundamentally a uniquely identified set of uniquely identified Permissions.
+A Role is fundamentally a uniquely identified set of Permission rules.
+
+An Action describes the exact operation an actor is attempting. A Permission is an authorization rule that may match an Action and carries an `ALLOW` or `DENY` effect.
+
+Roles and Permissions have stable identity independent of their presentation metadata:
+
+- a Role URN is immutable and unique;
+- a Permission URN is immutable and unique;
+- Role and Permission `name` and `description` fields are mutable;
+- names and descriptions MUST NOT participate in authorization identity or matching.
+
+An Identity MAY have multiple directly assigned Roles and MAY derive additional Roles from multiple Groups. A Group MAY have multiple assigned Roles. Roles MUST NOT have precedence merely because of assignment order or source.
 
 Roles are assignable to:
 
@@ -393,22 +407,21 @@ effective_roles(identity)
     roles_assigned_to_groups(identity belongs to)
 ```
 
-### 11.2 Effective Permissions
+### 11.2 Effective Permission rules
 
-For a specific Identity:
+For a specific acting Identity, the Authorizer evaluates all applicable Permission rules from all effective Roles. Permission resolution is not a simple union of grants.
 
-```text
-effective_permissions(identity)
-    =
-    union(
-        permissions(role)
-        for role in effective_roles(identity)
-    )
-```
+For the requested Action:
 
-Effective authorization MUST additionally respect assignment context, Tenant/Organization membership, scope/dominance requirements, stewardship rules, and operation-specific constraints.
+1. all applicable matching Permission rules are considered;
+2. the most-specific matching rule wins;
+3. an exact action match is more specific than a wildcard-qualifier match;
+4. if multiple rules of equal specificity conflict, `DENY` wins;
+5. if no applicable rule matches, the decision is `DENY`.
 
-The existence of an effective Permission alone does not necessarily authorize an operation.
+Roles themselves have no precedence.
+
+Effective authorization MUST additionally respect assignment context, Tenant/Organization membership, scope/dominance requirements, TenantManagementGroup delegation, stewardship rules, and operation-specific constraints.
 
 ---
 
@@ -465,7 +478,7 @@ Tenant-defined Permissions MAY represent application-specific capabilities. MTMF
 For example, an application may define:
 
 ```text
-urn:mtmf:iam:permissions:tenant:1234:investigation:approve
+urn:mtmf:iam:permissions:tenant:1234:investigation:approve-result
 ```
 
 MTMF can evaluate whether an Identity has that Permission without interpreting what approval of an investigation means.
@@ -578,49 +591,95 @@ This consistency MUST eventually be enforced at trusted persistence/write bounda
 
 ---
 
-## 15. Permission Granularity
+## 15. Actions and Permission-Rule Grammar
 
-Permission names use semantic resource/operation components:
+MTMF Actions MUST use the canonical form:
 
 ```text
-<resource>:<operation>
+<resource>:<verb>-<qualifier>
 ```
 
-The URN wraps these components using the applicable namespace.
+The verb is mandatory and literal. MTMF does not impose a finite vocabulary of verbs, but the verb MUST NOT be wildcarded.
+
+A Permission rule MUST specify an exact resource and exact verb. The complete qualifier MAY be replaced by `*`. No other wildcard form is valid. In particular, wildcard resources, wildcard verbs, partial qualifier globs, arbitrary glob syntax, and regular expressions MUST NOT be used.
+
+Examples:
+
+```text
+principal:set-alias     # exact
+principal:set-*         # valid wildcard rule
+
+principal:*-alias       # invalid
+principal:*             # invalid
+*:set-alias             # invalid
+principal:set-a*        # invalid
+```
+
+Thus `principal:set-*` can match `principal:set-alias` and `principal:set-active`, but cannot match `principal:delete-object`.
+
+### 15.1 Baseline object actions
+
+Where applicable, MTMF-managed objects including Tenants, Organizations, Principals, Roles, and Permissions support the baseline CRUD actions:
+
+```text
+<resource>:create-object
+<resource>:get-object
+<resource>:update-object
+<resource>:delete-object
+```
+
+Deletion is soft deletion. An object's immutable identifier and security/audit provenance MUST survive logical deletion.
+
+Security-sensitive operations with distinct semantics MUST use distinct Actions rather than being silently implied by `update-object` or another broad CRUD Action.
+
+Where activation state is relevant, MTMF uses explicit state Actions such as:
+
+```text
+principal:set-active
+principal:set-inactive
+tenant:set-active
+tenant:set-inactive
+```
+
+Active/inactive state is distinct from soft-deleted state. `set-active` MUST NOT implicitly restore a soft-deleted object. If restoration is supported, it requires a distinct Action such as `restore-object`.
+
+### 15.2 Permission granularity
+
+Permission rules use the resource/action components defined above. The URN wraps these components using the applicable definition namespace.
 
 Permissions SHOULD represent the smallest meaningful security-relevant operation when that operation has distinct authorization, dominance, stewardship, audit, or lifecycle semantics.
 
 Examples include:
 
 ```text
-principal:read
-principal:create
-principal:deactivate
-principal:reactivate
-principal:rename
+principal:create-object
+principal:get-object
+principal:update-object
+principal:delete-object
+principal:set-active
+principal:set-inactive
 
-identity:add
-identity:remove
+role:create-object
+role:get-object
+role:update-object
+role:delete-object
 
-role:create
-role:assign
-role:unassign
-role:delete
-
-tenant:read
-tenant:create
-tenant:deactivate
-tenant:reactivate
+tenant:create-object
+tenant:get-object
+tenant:update-object
+tenant:delete-object
+tenant:set-active
+tenant:set-inactive
 tenant:transfer-stewardship
 ```
 
 Granular semantic operations are preferred over overly broad CRUD permissions where semantics differ. For example:
 
-- `deactivate` is distinct from `delete`;
-- `approve` is distinct from generic `modify`;
-- `role:assign` is distinct from generic Role modification.
+- `set-inactive` is distinct from `delete-object`;
+- an approval Action is distinct from `update-object`;
+- Role assignment is distinct from generic Role modification.
 
-Permissions SHOULD be atomic. A broad Permission such as `principal:modify` MUST NOT silently imply a security-sensitive Permission such as `principal:deactivate` unless such implication is explicitly defined by this constitution.
+Permission rules SHOULD remain narrowly scoped. Generic CRUD Actions MUST NOT silently imply security-sensitive Actions.
 
 Roles compose the atomic Permissions required for a persona.
 
@@ -695,7 +754,63 @@ This prevents an Identity from self-escalating merely because it possesses a Per
 
 ---
 
-## 19. Cross-Tenant Isolation
+## 19. Resource Identity, Names, and Lifecycle
+
+Tenants, Organizations, and Groups use immutable, globally unique UUID identifiers. Their names are mutable and non-unique.
+
+An object's UUID establishes identity. A mutable name is presentation metadata and MUST NOT be used as a foreign key, authorization identity, ownership reference, membership identity, or security boundary.
+
+Name lookup MUST NOT be assumed to return a unique object.
+
+Roles and Permissions use their immutable, unique URNs as their stable authorization identity. Their names and descriptions are mutable presentation metadata.
+
+Soft deletion MUST preserve stable identity and security/audit references.
+
+---
+
+## 20. Tenant Management Groups
+
+A `TenantManagementGroup` represents explicit delegated cross-Tenant administration. It is distinct from an IAM Group.
+
+A TenantManagementGroup has:
+
+- one manager Tenant;
+- zero or more managed Tenants according to the membership rules below;
+- one Role defining the delegated tenant-management Permission rules;
+- a security scope of either `ROOT` for the bootstrap root management group or `SYSTEM` for delegated management groups.
+
+The Role determines **what** operations may be performed. Management-group scope and managed-Tenant membership determine **where** that authority may be exercised. Scope and Permission remain independent.
+
+A manager Tenant MUST NOT acquire intrinsic global SYSTEM or ROOT scope merely because it manages another Tenant. Elevated scope is contextual and applies only while authorizing operations against Tenants managed through the applicable TenantManagementGroup.
+
+### 20.1 ROOT TenantManagementGroup
+
+System bootstrap MUST create exactly one ROOT TenantManagementGroup.
+
+It MUST:
+
+1. be managed by the root Tenant;
+2. have `ROOT` scope;
+3. implicitly manage every Tenant, including Tenants created after bootstrap;
+4. use implicit universal managed-Tenant membership rather than materialized TenantManagementGroupMembership rows.
+
+A ROOT TenantManagementGroup MUST NOT require or contain explicit managed-Tenant membership rows.
+
+The implicit-universal membership behavior is a root invariant and MUST NOT be configurable for ordinary management groups.
+
+### 20.2 SYSTEM TenantManagementGroups
+
+A non-root TenantManagementGroup has `SYSTEM` scope and MUST use explicit managed-Tenant memberships.
+
+When an eligible actor of its manager Tenant performs an operation against an explicitly managed Tenant, the management relationship MAY provide contextual SYSTEM scope. That contextual elevation MUST NOT apply to any Tenant outside the management group's explicit membership.
+
+Membership in a TenantManagementGroup does not by itself grant an Action. The applicable management Role must also produce an authorization result permitting the requested Action, and all other required invariants must hold.
+
+The exact rule identifying which manager-Tenant Identities or Groups are eligible to exercise a TenantManagementGroup's delegated Role remains unresolved and MUST NOT be inferred permissively.
+
+---
+
+## 21. Cross-Tenant Isolation
 
 Tenant isolation is a fundamental invariant.
 
@@ -711,7 +826,7 @@ A caller-supplied URN, identifier, Role assignment, membership identifier, or ot
 
 ---
 
-## 20. Authorization Evaluation Principles
+## 22. Authorization Evaluation Principles
 
 An authorization decision MAY require multiple independent inputs. Implementations MUST NOT collapse them into a single undifferentiated "is admin" flag.
 
@@ -726,18 +841,21 @@ Depending on the operation, evaluation may include:
 7. Group memberships;
 8. Group Role assignments;
 9. assignment context;
-10. effective Permissions;
+10. effective Permission rules;
 11. subject security scope;
 12. target security scope;
 13. strict scope dominance;
 14. Tenant Stewardship, where explicitly applicable;
-15. operation-specific invariants.
+15. TenantManagementGroup delegation and contextual scope, where applicable;
+16. requested Action and matching Permission rules;
+17. rule specificity and DENY precedence;
+18. operation-specific invariants.
 
-Authorization MUST be deny-by-default when required security context is absent, inconsistent, or invalid.
+Authorization MUST be deny-by-default. An operation MUST NOT proceed unless authorization can be positively established. Missing, unknown, inconsistent, invalid, or insufficient authorization context MUST NOT result in an allow decision. Operational inability to evaluate authorization is not semantically equivalent to a policy DENY, but the protected operation MUST still fail closed.
 
 ---
 
-## 21. Invariant Enforcement
+## 23. Invariant Enforcement
 
 Security invariants are not merely UI rules.
 
@@ -759,7 +877,7 @@ Operations that establish multiple required invariants MUST be atomic where part
 
 ---
 
-## 22. Explicitly Unresolved Security Design
+## 24. Explicitly Unresolved Security Design
 
 The following security details have not yet been fully specified and MUST NOT be invented by an implementation:
 
@@ -769,13 +887,15 @@ The following security details have not yet been fully specified and MUST NOT be
 4. the precise domain/persistence representation of Role assignments and their contexts;
 5. detailed Principal/Identity lifecycle and tombstone/soft-deletion behavior required to preserve immutable provenance;
 6. agent/service-principal authentication and authorization details;
-7. IdP-specific federation semantics beyond the invariant that every Principal retains a mandatory local MTMF Identity.
+7. IdP-specific federation semantics beyond the invariant that every Principal retains a mandatory local MTMF Identity;
+8. which manager-Tenant Identities or Groups are eligible to exercise TenantManagementGroup delegated authority;
+9. whether soft-deleted objects can be restored and, if so, their restoration lifecycle semantics.
 
 Until these matters are explicitly defined, implementations MUST choose the more restrictive behavior when a security decision would otherwise require an unstated assumption.
 
 ---
 
-## 23. Constitutional Summary
+## 25. Constitutional Summary
 
 The MTMF security model rests on these non-negotiable principles:
 
@@ -785,7 +905,14 @@ The MTMF security model rests on these non-negotiable principles:
 - membership relationships are explicit;
 - Groups contain Identities through GroupMembership;
 - Roles are assigned to Identities and Groups;
-- effective Permissions may be direct or Group-derived;
+- effective Permission rules may be direct or Group-derived;
+- authorization is deny-by-default;
+- callers request exact Actions while Permissions define ALLOW/DENY matching rules;
+- the most-specific matching Permission rule wins and equal-specificity DENY overrides ALLOW;
+- Action verbs are never wildcardable;
+- stable identifiers, not mutable names, establish resource identity;
+- deletion is soft deletion;
+- TenantManagementGroups provide explicitly bounded cross-Tenant delegated administration;
 - Role/Permission definition ownership is distinct from security Scope and assignment context;
 - ownership is immutable creator provenance;
 - Tenant Stewardship is separate from ownership and Roles;
