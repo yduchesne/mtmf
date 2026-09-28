@@ -29,10 +29,13 @@ members = [
 
 [dependency-groups]
 dev = [
+    "bandit>=1.9.4",
     "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.9",
+    "semgrep>=1.178.0",
 ]
 
 [tool.ruff]
