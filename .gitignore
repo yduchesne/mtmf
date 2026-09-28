@@ -1,3 +1,8 @@
+# Misc
+
+out/
+.plans/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -156,6 +161,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.env.bak
 
 # Spyder project settings
 .spyderproject
@@ -171,6 +177,9 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# ruff
+.ruff_cache/
 
 # Pyre type checker
 .pyre/

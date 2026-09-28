@@ -28,7 +28,7 @@ External IdP implementations, aggressive authorization caching, and non-Python e
 
 ## 3. Planned PR Sequence
 
-### PR 1 — Python workspace and foundational domain primitives
+### PR 1 — Python workspace and foundational domain primitives [DONE]
 
 Establish the monorepo/workspace with `mtmf-api`, `mtmf-core`, `mtmf-client`, and `mtmf-service`; baseline tooling and CI; package dependency boundaries; UUID/URN value types; lifecycle/status enums; JSON extension conventions; and the smallest dependency-free domain primitives.
 

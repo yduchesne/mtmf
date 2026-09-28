@@ -1,0 +1,26 @@
+name: Python Quality
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  quality:
+    name: Python quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      - name: Synchronize locked dependencies
+        run: uv sync --locked
+
+      - name: Run canonical quality gate
+        run: ./build.sh --qa

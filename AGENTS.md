@@ -60,6 +60,15 @@ In particular:
 
 Use type hints for production code.
 
+Canonical Python tooling:
+
+- `uv` is the package/workspace/dependency tool; `uv sync --locked` is the canonical workspace bootstrap.
+- Ruff is authoritative for formatting, linting, and import sorting.
+- Mypy strict mode is required for production code; `uv run mypy packages` is the canonical type-check command.
+- Pytest is the unit-test runner; the canonical unit suite lives under `tests/unit`.
+- Unit-test coverage must remain at least **85%** for all production MTMF packages; the gate fails below that threshold.
+- `./build.sh --qa` is the canonical quality command and runs the full gate (Ruff format check, Ruff lint, strict Mypy, unit tests with the coverage gate).
+
 Keep domain objects independent of transport, HTTP frameworks, PostgreSQL drivers, and persistence implementations.
 
 Core domain objects should use plain Python/dataclass-style modeling. Pydantic belongs at the public API/DTO boundary unless an approved architecture change says otherwise.
