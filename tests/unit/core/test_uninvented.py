@@ -86,10 +86,12 @@ def test_principal_kind_enum_is_absent() -> None:
     assert "kind" not in Principal.__dataclass_fields__
 
 
-# --- PR 3 scope boundaries (U60-U63) ---
-# These guard the PR 3/PR 4 seam: policy definitions and matcher facts
-# exist, but no assignment, Authorizer, decision engine, or built-in
-# Role policy mapping may leak into PR 3.
+# --- PR 3/PR 4 scope boundaries (U60-U63) ---
+# These guard the PR 3/PR 4 seam: PR 3 owns policy definitions and
+# matcher facts; PR 4 owns the Authorizer foundation and decision
+# engine, which live in mtmf_core.authorization and never leak into
+# mtmf_core.domain or Role objects. Role assignments, effective-Role
+# loading, and built-in Role policy mapping remain absent (PR 8/PR 9).
 
 
 def test_role_assignments_are_absent() -> None:
@@ -100,19 +102,45 @@ def test_role_assignments_are_absent() -> None:
     assert "assignments" not in Role.__dataclass_fields__
 
 
-def test_authorizer_is_absent() -> None:
-    assert not hasattr(mtmf_core, "Authorizer")
+def test_authorizer_lives_only_in_the_authorization_foundation() -> None:
+    authorization = importlib.import_module("mtmf_core.authorization")
+    assert hasattr(authorization, "Authorizer")
+    assert hasattr(mtmf_core, "Authorizer")
+    assert "Authorizer" in mtmf_core.__all__
     assert not hasattr(mtmf_core.domain, "Authorizer")
-    assert "Authorizer" not in mtmf_core.__all__
+    assert not hasattr(DOMAIN, "Authorizer")
+    role = _make_role()
+    assert not hasattr(role, "decide")
+    assert not hasattr(role, "authorize")
 
 
-def test_default_deny_decision_engine_is_absent() -> None:
-    for name in ("Authorizer", "Decision", "AuthorizationDecision", "PermissionEvaluator"):
-        assert not hasattr(mtmf_core, name)
+def test_default_deny_decision_engine_lives_only_in_authorization_foundation() -> None:
+    authorization = importlib.import_module("mtmf_core.authorization")
+    for name in (
+        "Authorizer",
+        "AuthorizationDecision",
+        "AuthorizationEffect",
+        "DenyReason",
+        "PermissionEvaluator",
+    ):
+        assert hasattr(authorization, name)
+        assert hasattr(mtmf_core, name)
         assert not hasattr(mtmf_core.domain, name)
     role = _make_role()
     assert not hasattr(role, "decide")
     assert not hasattr(role, "authorize")
+
+
+def test_authorizer_foundation_has_no_assignment_or_effective_role_model() -> None:
+    # PR 8 owns Role assignments and effective-Role loading. The
+    # Authorizer foundation consumes caller-supplied applicable_roles and
+    # carries no assignment objects.
+    authorization = importlib.import_module("mtmf_core.authorization")
+    for name in ("RoleAssignment", "EffectiveRole", "RoleAssignmentContext"):
+        assert not hasattr(authorization, name)
+    context = importlib.import_module("mtmf_core.authorization.context")
+    assert not hasattr(context, "RoleAssignment")
+    assert not hasattr(context, "EffectiveRole")
 
 
 def test_builtin_role_policy_mapping_is_absent() -> None:
