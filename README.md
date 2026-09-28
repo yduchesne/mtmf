@@ -1,5 +1,9 @@
-# mtmf
-Multitenant Management Framework
+# mtmf: Multitenant Management Framework
+
+A Python package implementing an Identity and Access Management framework.
+
+Current status: WIP.
+
 
 ## Development
 
