@@ -1,14 +1,13 @@
 """Private capability adapter for the Rust permission engine.
 
 This module is the internal Python-owned seam to the private
-``_mtmf_permission_engine`` PyO3 native module.
-
-PR 8A exposed only a deterministic smoke/capability surface. PR 8B adds
-the smallest primitive matcher bridge: ``native_match_permission_urn``
+``_mtmf_permission_engine`` PyO3 native module. It exposes the
+primitive capability surface (``engine_version``), the smallest
+primitive matcher bridge (``native_match_permission_urn``, which
 computes a single-Permission match fact (``"exact"``,
 ``"qualifier-wildcard"``, or ``None`` for a valid non-match) for one
-detached Permission matcher URN against one detached exact Action URN.
-PR 8C adds the primitive native evaluator bridge:
+detached Permission matcher URN against one detached exact Action URN),
+and the primitive native evaluator bridge:
 ``native_evaluate`` evaluates one exact Action against zero or more
 already-applicable detached PermissionSets entirely in Rust and returns
 a validated :class:`RustEvaluation` aggregate result (decision, highest
@@ -36,6 +35,13 @@ Boundary invariants:
   or the :class:`~mtmf_core.authorization.authorizer.Authorizer`: no
   active authorization path depends on Rust, and Rust never determines
   which policy is applicable.
+
+``native_evaluate`` and ``native_match_permission_urn`` are the only
+bridges on the active authorization path (through
+:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`).
+Wrong primitive types or container shapes at the native boundary are
+normalized into the malformed-input ``ValueError`` contract instead of
+leaking an unclassified ``TypeError``.
 """
 
 from __future__ import annotations
@@ -147,10 +153,11 @@ def native_match_permission_urn(action_urn: str, permission_urn: str) -> str | N
     - ``"qualifier-wildcard"`` - complete-qualifier ``*`` match;
     - ``None`` - valid input, no match.
 
-    Malformed input raises :class:`ValueError` from the native parser: a
-    parsing failure is deliberately distinct from a valid ``NO_MATCH``.
-    No effect and no authorization decision are computed here: the call
-    produces a match fact only.
+    Malformed input raises :class:`ValueError` from the native parser or
+    from the adapter's type/shape normalization: a parsing failure is
+    deliberately distinct from a valid ``NO_MATCH``. No effect and no
+    authorization decision are computed here: the call produces a match
+    fact only.
 
     :raises ValueError: for malformed Action/Permission URN text.
     :raises RustEngineUnavailableError: when the native module is absent.
@@ -164,7 +171,18 @@ def native_match_permission_urn(action_urn: str, permission_urn: str) -> str | N
             f"native module {_NATIVE_MODULE_NAME!r} does not expose the primitive "
             "matcher 'match_permission'"
         )
-    result = matcher(action_urn, permission_urn)
+    try:
+        result = matcher(action_urn, permission_urn)
+    except TypeError as exc:
+        # PyO3 rejects wrong primitive types (e.g. an int or None where
+        # an exact Action/Permission URN 'str' is required) with
+        # TypeError. Normalize that into the documented ValueError
+        # contract so every malformed-input class classifies identically
+        # and none can be misread as a valid non-match.
+        raise ValueError(
+            f"malformed primitive input to the native {_NATIVE_MODULE_NAME!r} boundary; "
+            "expected exact Action and Permission URN 'str' values"
+        ) from exc
     if result is None:
         return None
     if not isinstance(result, str) or result not in _NATIVE_MATCH_FACTS:
@@ -264,8 +282,9 @@ def native_evaluate(
     to DENY on no match, and stay independent of set order, Permission
     order, and duplicates.
 
-    :raises ValueError: for malformed Action/Permission URNs or unknown
-        PermissionSet effects; malformed input is never a policy DENY.
+    :raises ValueError: for malformed Action/Permission URNs, unknown
+        PermissionSet effects, or wrong primitive types/container
+        shapes; malformed input is never a policy DENY.
     :raises RustEngineUnavailableError: when the native module is absent.
     :raises RustEngineCapabilityError: when the native evaluator is
         missing or its response is malformed/unknown/incoherent.
@@ -277,6 +296,18 @@ def native_evaluate(
             f"native module {_NATIVE_MODULE_NAME!r} does not expose the primitive "
             "evaluator 'evaluate'"
         )
-    primitive_sets = [(effect, list(permissions)) for effect, permissions in permission_sets]
-    native_response = evaluator(action_urn, primitive_sets)
+    try:
+        primitive_sets = [(effect, list(permissions)) for effect, permissions in permission_sets]
+        native_response = evaluator(action_urn, primitive_sets)
+    except TypeError as exc:
+        # PyO3 rejects wrong primitive types/container shapes (an int
+        # Action URN, a non-iterable Permission collection, an int
+        # Permission text, ...) with TypeError. Normalize that into the
+        # documented ValueError contract so malformed input is always a
+        # parsing/boundary failure, never a policy decision.
+        raise ValueError(
+            f"malformed primitive input to the native {_NATIVE_MODULE_NAME!r} boundary; "
+            "expected an exact Action URN 'str' and a list of "
+            "(effect: 'str', permissions: list['str']) pairs"
+        ) from exc
     return _validate_native_evaluation(native_response)

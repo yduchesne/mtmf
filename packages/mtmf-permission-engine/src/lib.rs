@@ -1,35 +1,36 @@
-//! Private MTMF permission-engine crate root (PR 8A foundation, PR 8B
-//! model + matcher, PR 8C evaluator).
+//! Private MTMF permission-engine crate root.
 //!
 //! The crate is the deterministic in-memory permission-policy kernel for
-//! MTMF. Rust evaluates policy only: it never retrieves session, Tenant,
+//! MTMF: a detached native policy model (`model.rs`), SYSTEM Action/
+//! Permission URN parsers (`urn.rs`), exact/wildcard single-Permission
+//! matching with match specificity (`matcher.rs`), and a complete
+//! policy-decision algorithm (`evaluator.rs`): one exact Action against
+//! zero or more already-applicable PermissionSets, maximum specificity
+//! selection, lower-specificity elimination, PermissionSet effect
+//! propagation, equal-specificity DENY precedence, default DENY, and a
+//! deterministic aggregate result - inside the private native kernel
+//! only.
+//!
+//! Rust evaluates policy only: it never retrieves session, Tenant,
 //! membership, assignment, stewardship, or delegation context, and
 //! performs no I/O (no PostgreSQL, `MtmfSpi`, repositories, network,
 //! filesystem policy discovery, async runtime, background thread, or
 //! cache).
 //!
-//! PR 8B adds the detached native policy model (`model.rs`), the SYSTEM
-//! Action/Permission URN parsers (`urn.rs`), and the single-Permission
-//! matcher with match specificity (`matcher.rs`). PR 8C adds the first
-//! complete policy-decision algorithm (`evaluator.rs`): one exact Action
-//! against zero or more already-applicable PermissionSets, maximum
-//! specificity selection, lower-specificity elimination, PermissionSet
-//! effect propagation, equal-specificity DENY precedence, default DENY,
-//! and a deterministic aggregate result - inside the private native
-//! kernel only.
-//!
 //! Rust does NOT determine applicable policy, consume Roles, retrieve
-//! context, or persist anything: Python (the `Authorizer`) determines which
-//! policy is applicable and supplies it detached. Since PR 8D the
-//! `Authorizer` defaults to the `RustPermissionEvaluator` seam and evaluates
-//! policy through this kernel; the Python `PermissionEvaluator` remains the
-//! semantic reference and systematic differential tests prove equivalence.
+//! context, or persist anything: Python (the `Authorizer`) determines
+//! which policy is applicable and supplies it detached. The `Authorizer`
+//! defaults to the `RustPermissionEvaluator` seam and evaluates policy
+//! through this kernel; the Python `PermissionEvaluator` remains the
+//! semantic reference and systematic differential tests prove
+//! equivalence.
 //!
 //! The only surface exposed to Python is the private PyO3 module plus
 //! small primitive bridges (a matcher fact bridge and an evaluator
 //! bridge). Inputs are detached primitive values only: no live MTMF
 //! Python domain object crosses the FFI boundary and no JSON
-//! serialization carries policy.
+//! serialization carries policy. Malformed/incoherent native input or
+//! output is an infrastructure failure, never a policy decision.
 
 use pyo3::prelude::*;
 
@@ -56,11 +57,10 @@ pub fn native_engine_version() -> &'static str {
 
 /// Python module: private `_mtmf_permission_engine` surface.
 ///
-/// Exposes the deterministic capability API (PR 8A), the smallest
-/// primitive single-Permission matcher bridge (PR 8B), and a primitive
-/// PermissionSet evaluator bridge (PR 8C). No policy classes are
-/// exposed and nothing here authorizes: Python determines which policy
-/// is applicable.
+/// Exposes the deterministic capability API, the smallest primitive
+/// single-Permission matcher bridge, and a primitive PermissionSet
+/// evaluator bridge. No policy classes are exposed and nothing here
+/// authorizes: Python determines which policy is applicable.
 #[pymodule]
 mod _mtmf_permission_engine {
     use pyo3::exceptions::PyValueError;

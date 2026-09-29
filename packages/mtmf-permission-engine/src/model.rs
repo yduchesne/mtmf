@@ -1,12 +1,11 @@
-//! Detached native MTMF permission-policy model (PR 8B).
+//! Detached native MTMF permission-policy model.
 //!
 //! These are the primitive, detached policy-input shapes the private
-//! Rust kernel will consume once evaluation exists (PR 8C). PR 8B only
-//! defines the structures: nothing in this module evaluates policy,
-//! resolves PermissionSet effects, or produces an authorization
-//! decision, and no live MTMF Python domain object (`Action`, `Role`,
-//! `PermissionSet`, `Permission`) crosses the FFI boundary into these
-//! types.
+//! Rust kernel consumes: the model defines the structures only.
+//! Nothing in this module evaluates policy, resolves PermissionSet
+//! effects, or produces an authorization decision, and no live MTMF
+//! Python domain object (`Action`, `Role`, `PermissionSet`,
+//! `Permission`) crosses the FFI boundary into these types.
 //!
 //! The shapes intentionally carry no Tenant, Organization, Principal,
 //! Identity, Group, RoleAssignment, membership, session, target, scope,
@@ -17,8 +16,8 @@
 
 /// The effect attached to a detached PermissionSet.
 ///
-/// Exactly `Allow` and `Deny` exist. The PR 8C evaluator reads the
-/// effect from the containing [`PermissionSetInput`]; the single
+/// Exactly `Allow` and `Deny` exist. The evaluator reads the effect
+/// from the containing [`PermissionSetInput`]; the single
 /// Permission matcher in `matcher.rs` never inspects this value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionEffect {
@@ -40,7 +39,7 @@ pub struct PermissionInput {
 
 /// Detached PermissionSet input: one effect plus the owned Permissions.
 ///
-/// The PR 8C evaluator consumes this value but never mutates it; the
+/// The evaluator consumes this value but never mutates it; the
 /// matcher still never consults `effect` (that is the evaluator's
 /// job). The effect is the only source of ALLOW/DENY authority for the
 /// Permissions it owns.

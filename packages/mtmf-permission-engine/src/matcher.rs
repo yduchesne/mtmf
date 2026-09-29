@@ -1,4 +1,4 @@
-//! Single-Permission matching and specificity (PR 8B).
+//! Single-Permission matching and specificity.
 //!
 //! Port of the Python reference (`mtmf_core.domain.permission_matching`)
 //! for one Permission matcher URN against one exact Action URN. A match
@@ -26,7 +26,7 @@ impl MatchSpecificity {
     /// The model defines exactly one documented ordering: EXACT is more
     /// specific than QUALIFIER_WILDCARD. No value is more specific than
     /// itself. The ordering is declared explicitly rather than relying
-    /// on enum declaration order. The PR 8C evaluator uses this to
+    /// on enum declaration order. The evaluator uses this to
     /// select the maximum specificity across PermissionSets.
     pub fn is_more_specific_than(self, other: Self) -> bool {
         matches!((self, other), (Self::Exact, Self::QualifierWildcard))
@@ -94,10 +94,10 @@ pub fn match_permission_urns(
 /// Parse and match one detached Action input against one detached
 /// Permission input.
 ///
-/// This is the detached-input matcher shape the PR 8C evaluator will
-/// consume: primitive detached inputs in, a single-Permission match fact
-/// out. Parsing failures are `Err` (`ValueError` at the Python
-/// boundary), never a valid non-match.
+/// This is the detached-input matcher shape the evaluator consumes:
+/// primitive detached inputs in, a single-Permission match fact out.
+/// Parsing failures are `Err` (`ValueError` at the Python boundary),
+/// never a valid non-match.
 pub fn match_detached_inputs(
     action: &ActionInput,
     permission: &PermissionInput,

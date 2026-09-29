@@ -1,11 +1,11 @@
-//! Collection-level PermissionSet evaluation (PR 8C).
+//! Collection-level PermissionSet evaluation.
 //!
-//! This module implements the first complete policy-decision algorithm
-//! of the private Rust kernel: one exact [`ActionInput`] against zero or
-//! more already-applicable detached [`PermissionSetInput`] values.
+//! This module implements the complete policy-decision algorithm of the
+//! private Rust kernel: one exact [`ActionInput`] against zero or more
+//! already-applicable detached [`PermissionSetInput`] values.
 //!
-//! The evaluator reuses the PR 8B parser (`urn.rs`) and the single
-//! Permission matcher (`matcher.rs`) - there is exactly one canonical
+//! The evaluator reuses the parser (`urn.rs`) and the single Permission
+//! matcher (`matcher.rs`) - there is exactly one canonical
 //! matcher and parser in the crate. It adds the collection-level
 //! semantics:
 //!

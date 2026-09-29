@@ -1,4 +1,4 @@
-//! SYSTEM Action/Permission URN parsing (PR 8B).
+//! SYSTEM Action/Permission URN parsing.
 //!
 //! This is a narrow port of the ACTION and PERMISSION grammar from the
 //! Python semantic reference (`mtmf_core.domain.iam_urn`). It is not a
