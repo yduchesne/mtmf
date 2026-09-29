@@ -105,3 +105,72 @@ artifact. Characterizing the optimized `--release` wheel instead is an
 explicit optional step (build with `maturin build --release`, install
 into a scratch environment, run, then restore the canonical build); both
 are characterization only and neither is part of CI.
+
+## PR 8G experiment: compiled-policy benchmark
+
+PR 8G (`dev/compiled-policy-perf`, branching directly from the PR 8E
+baseline `af9daec`) is an independent, **experimental sibling** of PR 8F
+and intentionally does not depend on PR 8F or msgspec. It tests a
+different hypothesis: compile already-applicable policy **once** into an
+immutable native indexed representation, then evaluate many Actions
+without repeatedly traversing Roles/PermissionSets, transferring policy,
+parsing Permission URNs, or scanning all Permissions.
+
+Experimental code and harness:
+
+```text
+benchmarks/compiled_policy_evaluator.py     # experimental Python adapter
+benchmarks/compiled_policy_benchmark.py     # compile/eval/lifecycle harness
+packages/mtmf-permission-engine/src/compiled_policy.rs  # native kernel
+```
+
+Producer-side API:
+
+```text
+compiled = native.compile_policy(permission_sets)   # once
+result  = compiled.evaluate(action_urn)             # repeated
+```
+
+The compiled object is opaque and read-only from Python (private Rust
+fields, frozen, no setters, no mutable map exposure) and performs no
+resend/reparse/sort/scan on repeated evaluation. There is no
+sorted-list contract: compilation owns normalization and the caller
+supplies ordinary applicable Roles.
+
+Usage:
+
+```bash
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py --extended \
+  --warmup 100 --samples 20
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py \
+  --json /tmp/mtmf-compiled-policy-bench.json --extended
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py --smoke
+```
+
+- preserves the PR 8E scenarios unchanged (no_roles, tiny_exact,
+  tiny_wildcard, tiny_equal_conflict, small, medium, large,
+  large_no_match, late_match);
+- adds deterministic policy scales 1/25/200/1000/5000 Permissions in
+  mixed multi-Action workloads (exact hit, wildcard-only hit, wildcard
+  DENY, no-match);
+- measures the one-time compile cost, the repeated compiled-evaluation
+  cost, and the compile + 1/10/100/1000 lifecycle cost separately;
+- characterizes unrelated-policy scaling (25/200/1000/5000, exact
+  hit/wildcard-only hit/no-match) to detect any hidden full-policy scan;
+- requires P == R == C complete-decision parity before every timing
+  run, reports median primary with dispersion, alternates implementation
+  order across samples, and records the environment; no timing
+  correctness gate exists;
+- `--extended` enables the 5000-Permission scenarios; `--smoke` verifies
+  native availability, construction, parity, timing-loop execution, and
+  human/JSON output with tiny counts.
+
+**Experimental status:** PR 8G is not a production cutover. After 8G the
+production authorization path remains
+`Authorizer() -> RustPermissionEvaluator -> native_evaluate(action, policy)`;
+no Authorizer/RustPermissionEvaluator change, backend selection,
+environment-var selection, fallback, or production cache exists, and
+results characterize an architectural hypothesis, not adoption. The PR
+is expected to remain unmerged until experimental review compares 8G
+with PR 8F evidence.

@@ -7,12 +7,16 @@ primitive matcher bridge (``native_match_permission_urn``, which
 computes a single-Permission match fact (``"exact"``,
 ``"qualifier-wildcard"``, or ``None`` for a valid non-match) for one
 detached Permission matcher URN against one detached exact Action URN),
-and the primitive native evaluator bridge:
+the primitive native evaluator bridge:
 ``native_evaluate`` evaluates one exact Action against zero or more
 already-applicable detached PermissionSets entirely in Rust and returns
 a validated :class:`RustEvaluation` aggregate result (decision, highest
 specificity, ALLOW/DENY presence at that specificity, coarse deny
-reason).
+reason), and - PR 8G experiment only - the ``native_compile_policy``
+compiled-policy bridge: compile already-applicable detached
+PermissionSets once into an opaque immutable native object whose
+``evaluate`` method handles repeated Actions without resending,
+reparsing, sorting, or scanning policy.
 
 Boundary invariants:
 
@@ -39,9 +43,11 @@ Boundary invariants:
 ``native_evaluate`` and ``native_match_permission_urn`` are the only
 bridges on the active authorization path (through
 :class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`).
-Wrong primitive types or container shapes at the native boundary are
-normalized into the malformed-input ``ValueError`` contract instead of
-leaking an unclassified ``TypeError``.
+``native_compile_policy`` is experimental (PR 8G) and is reached only by
+benchmark/experimental code, never by a production evaluator or the
+Authorizer. Wrong primitive types or container shapes at the native
+boundary are normalized into the malformed-input ``ValueError`` contract
+instead of leaking an unclassified ``TypeError``.
 """
 
 from __future__ import annotations
@@ -311,3 +317,60 @@ def native_evaluate(
             "(effect: 'str', permissions: list['str']) pairs"
         ) from exc
     return _validate_native_evaluation(native_response)
+
+
+def native_compile_policy(permission_sets: list[tuple[str, list[str]]]) -> Any:
+    """Compile already-applicable detached PermissionSets once (PR 8G).
+
+    Experimental compiled-policy bridge: primitive data in, an opaque
+    immutable native :class:`_mtmf_permission_engine.NativeCompiledPolicy`
+    object out. The object exposes exactly one capability, ``evaluate``
+    (one exact Action URN -> the same validated
+    :class:`RustEvaluation`-compatible native 5-tuple as
+    :func:`native_evaluate`), and repeated evaluation NEVER resends,
+    reparses, sorts, or scans policy.
+
+    ``permission_sets`` has the same shape as :func:`native_evaluate`:
+    a list of ``(effect, permissions)`` pairs where ``effect`` is
+    exactly ``"allow"`` or ``"deny"`` and ``permissions`` is a list of
+    Permission matcher URN texts. Empty policy is valid and compiles to
+    an object that returns ``DENY / NO_MATCH`` for every Action.
+
+    Malformed Permission URNs, unknown effects, and wrong primitive
+    types/container shapes raise :class:`ValueError` (never a policy
+    decision, and never a usable policy object). The returned object is
+    opaque and read-only: private Rust fields, no setters, no mutable
+    map exposure, deterministic evaluation that never mutates the
+    policy. There is no registry, global cache, serialization, pickling,
+    or invalidation mechanism; the accepted lifetime is only construct
+    -> evaluate zero or more times -> drop.
+
+    :raises ValueError: for malformed Permission URNs, unknown
+        PermissionSet effects, or wrong primitive types/container
+        shapes; malformed input is never a policy DENY.
+    :raises RustEngineUnavailableError: when the native module is absent.
+    :raises RustEngineCapabilityError: when the native module does not
+        expose the ``compile_policy`` capability or its response is not
+        the documented opaque compiled object.
+    """
+    module = _load_native_module()
+    compiler = getattr(module, "compile_policy", None)
+    if not callable(compiler):
+        raise RustEngineCapabilityError(
+            f"native module {_NATIVE_MODULE_NAME!r} does not expose the primitive "
+            "compiled-policy compiler 'compile_policy'"
+        )
+    try:
+        primitive_sets = [(effect, list(permissions)) for effect, permissions in permission_sets]
+        compiled = compiler(primitive_sets)
+    except TypeError as exc:
+        raise ValueError(
+            f"malformed primitive input to the native {_NATIVE_MODULE_NAME!r} boundary; "
+            "expected a list of (effect: 'str', permissions: list['str']) pairs"
+        ) from exc
+    if not callable(getattr(compiled, "evaluate", None)):
+        raise RustEngineCapabilityError(
+            f"native module {_NATIVE_MODULE_NAME!r} returned a compiled-policy "
+            "object without the documented 'evaluate' capability"
+        )
+    return compiled

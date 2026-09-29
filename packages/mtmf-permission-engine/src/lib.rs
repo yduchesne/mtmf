@@ -3,13 +3,17 @@
 //! The crate is the deterministic in-memory permission-policy kernel for
 //! MTMF: a detached native policy model (`model.rs`), SYSTEM Action/
 //! Permission URN parsers (`urn.rs`), exact/wildcard single-Permission
-//! matching with match specificity (`matcher.rs`), and a complete
+//! matching with match specificity (`matcher.rs`), a complete
 //! policy-decision algorithm (`evaluator.rs`): one exact Action against
 //! zero or more already-applicable PermissionSets, maximum specificity
 //! selection, lower-specificity elimination, PermissionSet effect
 //! propagation, equal-specificity DENY precedence, default DENY, and a
 //! deterministic aggregate result - inside the private native kernel
-//! only.
+//! only. (PR 8G experiment only) an indexed compiled-policy module
+//! (`compiled_policy.rs`) compiles already-applicable PermissionSets
+//! once into exact/wildcard effect-aggregate maps for repeated
+//! scan-free evaluation; it is experimental and never used by a
+//! production authorization path.
 //!
 //! Rust evaluates policy only: it never retrieves session, Tenant,
 //! membership, assignment, stewardship, or delegation context, and
@@ -34,6 +38,7 @@
 
 use pyo3::prelude::*;
 
+mod compiled_policy;
 mod evaluator;
 mod matcher;
 mod model;
@@ -58,15 +63,18 @@ pub fn native_engine_version() -> &'static str {
 /// Python module: private `_mtmf_permission_engine` surface.
 ///
 /// Exposes the deterministic capability API, the smallest primitive
-/// single-Permission matcher bridge, and a primitive PermissionSet
-/// evaluator bridge. No policy classes are exposed and nothing here
-/// authorizes: Python determines which policy is applicable.
+/// single-Permission matcher bridge, a primitive PermissionSet
+/// evaluator bridge, and (PR 8G experiment only) an opaque
+/// compiled-policy object bridge. No policy classes are exposed and
+/// nothing here authorizes: Python determines which policy is
+/// applicable.
 #[pymodule]
 mod _mtmf_permission_engine {
     use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
 
-    use crate::evaluator::{DenyReason, EvaluationDecision};
+    use crate::compiled_policy::CompiledPolicy;
+    use crate::evaluator::{DenyReason, EvaluationDecision, EvaluationResult};
     use crate::matcher::{MatchResult, MatchSpecificity, match_permission_urns};
     use crate::model::{ActionInput, PermissionEffect, PermissionInput, PermissionSetInput};
     use crate::native_engine_version;
@@ -118,6 +126,68 @@ mod _mtmf_permission_engine {
     /// without suppressing the lint.
     type NativeEvaluationResult = (String, Option<String>, bool, bool, Option<String>);
 
+    /// Map a native [`EvaluationResult`] onto the documented primitive
+    /// 5-tuple. Shared by the scan evaluator bridge and the compiled
+    /// policy object so both emit exactly the same evidence texts.
+    fn native_evaluation_result(evaluation: EvaluationResult) -> NativeEvaluationResult {
+        let decision = match evaluation.decision {
+            EvaluationDecision::Allow => "allow".to_string(),
+            EvaluationDecision::Deny => "deny".to_string(),
+        };
+        let specificity = match evaluation.matched_specificity {
+            None => None,
+            Some(MatchSpecificity::Exact) => Some("exact".to_string()),
+            Some(MatchSpecificity::QualifierWildcard) => Some("qualifier-wildcard".to_string()),
+        };
+        let reason = match evaluation.deny_reason {
+            None => None,
+            Some(DenyReason::NoMatch) => Some("no-match".to_string()),
+            Some(DenyReason::MatchedDeny) => Some("matched-deny".to_string()),
+        };
+        (
+            decision,
+            specificity,
+            evaluation.matched_allow,
+            evaluation.matched_deny,
+            reason,
+        )
+    }
+
+    /// Convert the primitive `(effect, [permission URNs])` sequence
+    /// into detached [`PermissionSetInput`] values, rejecting unknown
+    /// effects exactly like the scan evaluator bridge.
+    fn parse_primitive_sets(
+        permission_sets: Vec<(String, Vec<String>)>,
+    ) -> PyResult<Vec<PermissionSetInput>> {
+        let mut sets = Vec::new();
+        for (effect_text, permission_texts) in permission_sets {
+            if effect_text == "allow" {
+                sets.push(PermissionSetInput {
+                    effect: PermissionEffect::Allow,
+                    permissions: Vec::from_iter(permission_texts.into_iter().map(|text| {
+                        PermissionInput {
+                            permission_urn: text.to_string(),
+                        }
+                    })),
+                });
+            } else if effect_text == "deny" {
+                sets.push(PermissionSetInput {
+                    effect: PermissionEffect::Deny,
+                    permissions: Vec::from_iter(permission_texts.into_iter().map(|text| {
+                        PermissionInput {
+                            permission_urn: text.to_string(),
+                        }
+                    })),
+                });
+            } else {
+                return Err(PyValueError::new_err(format!(
+                    "invalid PermissionSet effect {effect_text:?}; expected exactly 'allow' or 'deny'"
+                )));
+            }
+        }
+        Ok(sets)
+    }
+
     /// Evaluate one exact Action URN against already-applicable
     /// PermissionSets.
     ///
@@ -148,61 +218,12 @@ mod _mtmf_permission_engine {
         action_urn: String,
         permission_sets: Vec<(String, Vec<String>)>,
     ) -> PyResult<NativeEvaluationResult> {
-        let mut sets = Vec::new();
-        for (effect_text, permission_texts) in permission_sets {
-            if effect_text == "allow" {
-                sets.push(PermissionSetInput {
-                    effect: PermissionEffect::Allow,
-                    permissions: Vec::from_iter(permission_texts.into_iter().map(|text| {
-                        PermissionInput {
-                            permission_urn: text.to_string(),
-                        }
-                    })),
-                });
-            } else if effect_text == "deny" {
-                sets.push(PermissionSetInput {
-                    effect: PermissionEffect::Deny,
-                    permissions: Vec::from_iter(permission_texts.into_iter().map(|text| {
-                        PermissionInput {
-                            permission_urn: text.to_string(),
-                        }
-                    })),
-                });
-            } else {
-                return Err(PyValueError::new_err(format!(
-                    "invalid PermissionSet effect {effect_text:?}; expected exactly 'allow' or 'deny'"
-                )));
-            }
-        }
+        let sets = parse_primitive_sets(permission_sets)?;
         let action = ActionInput {
             action_urn: action_urn.to_string(),
         };
         match crate::evaluator::evaluate(&action, &sets) {
-            Ok(evaluation) => {
-                let decision = match evaluation.decision {
-                    EvaluationDecision::Allow => "allow".to_string(),
-                    EvaluationDecision::Deny => "deny".to_string(),
-                };
-                let specificity = match evaluation.matched_specificity {
-                    None => None,
-                    Some(MatchSpecificity::Exact) => Some("exact".to_string()),
-                    Some(MatchSpecificity::QualifierWildcard) => {
-                        Some("qualifier-wildcard".to_string())
-                    }
-                };
-                let reason = match evaluation.deny_reason {
-                    None => None,
-                    Some(DenyReason::NoMatch) => Some("no-match".to_string()),
-                    Some(DenyReason::MatchedDeny) => Some("matched-deny".to_string()),
-                };
-                Ok((
-                    decision,
-                    specificity,
-                    evaluation.matched_allow,
-                    evaluation.matched_deny,
-                    reason,
-                ))
-            }
+            Ok(evaluation) => Ok(native_evaluation_result(evaluation)),
             Err(error) => {
                 let description = error.describe();
                 Err(PyValueError::new_err(format!(
@@ -210,6 +231,60 @@ mod _mtmf_permission_engine {
                 )))
             }
         }
+    }
+
+    /// Opaque compiled-policy native object (PR 8G experiment only).
+    ///
+    /// Constructed by `compile_policy`; frozen (immutable from
+    /// Python), private fields, no setters, no mutable map exposure.
+    /// Lifetime for 8G is only construct -> evaluate zero or more
+    /// times -> drop; there is no registry, cache, serialization, or
+    /// invalidation mechanism. Evaluation is deterministic and never
+    /// mutates the compiled policy.
+    #[pyclass(module = "_mtmf_permission_engine", frozen)]
+    struct NativeCompiledPolicy {
+        policy: CompiledPolicy,
+    }
+
+    #[pymethods]
+    impl NativeCompiledPolicy {
+        /// Evaluate one exact Action URN against the compiled policy.
+        ///
+        /// Returns the same documented primitive 5-tuple as the scan
+        /// evaluator bridge. Parses the single Action per call and
+        /// performs indexed lookups; it never re-parses Permissions,
+        /// never scans the maps or the original policy, and never
+        /// mutates the object. A malformed Action URN raises
+        /// `ValueError` (a parsing failure, never a policy decision).
+        fn evaluate(&self, action_urn: String) -> PyResult<NativeEvaluationResult> {
+            match self.policy.evaluate(&action_urn) {
+                Ok(evaluation) => Ok(native_evaluation_result(evaluation)),
+                Err(error) => Err(PyValueError::new_err(error.describe())),
+            }
+        }
+    }
+
+    /// Compile already-applicable PermissionSets once (PR 8G
+    /// experiment only).
+    ///
+    /// The primitive input shape is identical to `evaluate`: a
+    /// sequence of `(effect, permissions)` pairs. Compilation performs
+    /// every one-time policy cost (URN parsing/validation, exact vs
+    /// wildcard classification, effect aggregation, index construction)
+    /// and returns an opaque immutable object whose `evaluate` method
+    /// handles repeated Actions without resending, reparsing, sorting,
+    /// or scanning policy.
+    ///
+    /// Unknown effects and malformed Permission URNs raise `ValueError`
+    /// and never produce a usable policy object; empty policy is valid.
+    #[pyfunction]
+    fn compile_policy(
+        permission_sets: Vec<(String, Vec<String>)>,
+    ) -> PyResult<NativeCompiledPolicy> {
+        let sets = parse_primitive_sets(permission_sets)?;
+        let policy = CompiledPolicy::compile(&sets)
+            .map_err(|error| PyValueError::new_err(error.describe()))?;
+        Ok(NativeCompiledPolicy { policy })
     }
 }
 

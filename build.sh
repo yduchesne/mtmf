@@ -35,12 +35,15 @@
 #   5. installed-native capability probe (fails fast on a stale/clobbered
 #      install, e.g. one silently swapped by a uv environment sync)
 #   6. focused Python native-boundary, domain-conversion, differential,
-#      boundary-hardening, stress, and Authorizer-cutover tests
+#      boundary-hardening, stress, Authorizer-cutover, and PR 8G
+#      compiled-policy evaluator/differential tests
 #   7. clean wheel build/install/import/use verification in an isolated
-#      temporary environment
+#      temporary environment (including the PR 8G compiled-policy
+#      capability)
 #   8. benchmark smoke verification (native availability, fixture
-#      construction, Python/Rust parity, timing-loop and output-
-#      formatting checks with tiny counts; no timing threshold)
+#      construction, Python/Rust/compiled parity, timing-loop,
+#      lifecycle, and output-formatting checks with tiny counts; no
+#      timing threshold)
 #   The Rust gate never uses Podman, PostgreSQL, MTMF_POSTGRES_*,
 #   --integration resources, network services, or external credentials.
 #
@@ -112,7 +115,12 @@ case "${MODE}" in
         "${PYO3_PYTHON}" - <<'PY'
 import _mtmf_permission_engine as native
 
-required = ("engine_version", "match_permission", "evaluate")
+required = (
+    "engine_version",
+    "match_permission",
+    "evaluate",
+    "compile_policy",
+)
 missing = [name for name in required if not callable(getattr(native, name, None))]
 if missing:
     raise SystemExit(
@@ -133,8 +141,9 @@ PY
         # domain-conversion/mapping tests, the hand-authored and generated
         # Python/Rust differential suite (including bounded stress
         # conformance), the boundary-hardening suite (malformed/incoherent
-        # FFI states), and the Authorizer cutover/fail-closed tests; the
-        # full coverage gate stays with --qa.
+        # FFI states), the Authorizer cutover/fail-closed tests, and the PR
+        # 8G compiled-policy evaluator/differential tests; the full coverage
+        # gate stays with --qa.
         uv run --no-sync pytest \
             tests/unit/authorization/test_rust_engine.py \
             tests/unit/authorization/test_rust_matcher.py \
@@ -143,6 +152,8 @@ PY
             tests/unit/authorization/test_permission_evaluator_differential.py \
             tests/unit/authorization/test_rust_boundary_hardening.py \
             tests/unit/authorization/test_authorizer_rust.py \
+            tests/unit/authorization/test_compiled_policy_evaluator.py \
+            tests/unit/authorization/test_compiled_policy_differential.py \
             --no-cov
 
         echo "==> Verifying a clean wheel build/install/import/use (isolated environment)"
@@ -150,6 +161,7 @@ PY
 
         echo "==> Running benchmark smoke verification (no timing threshold)"
         uv run --no-sync python benchmarks/permission_evaluator_benchmark.py --smoke
+        uv run --no-sync python benchmarks/compiled_policy_benchmark.py --smoke
         ;;
     --integration)
         echo "==> Running PostgreSQL integration tests (MTMF-owned database only)"
