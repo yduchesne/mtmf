@@ -1,7 +1,7 @@
 """Tenant domain entity.
 
 A Tenant is the primary tenancy and security boundary. Exactly one root
-Tenant is created during bootstrap (PR 9 owns bootstrap/root invariants);
+Tenant is created during bootstrap (PR 10 owns bootstrap/root invariants);
 this representation only records the settled legal scope values and does
 not invent any global root-uniqueness mechanism.
 """

@@ -24,7 +24,7 @@ The initial implementation targets:
 - observability and security/audit foundations;
 - deterministic unit, integration, authorization-conformance, and connector-contract testing.
 
-External IdP implementations, aggressive authorization caching, and non-Python evaluator optimization are not required to establish the initial framework foundation.
+External IdP implementations and aggressive authorization caching are not required to establish the initial framework foundation. Rust is intentionally included from the PR 8 series onward as a Rust/Python integration showcase and as a deterministic native policy kernel; no profiling evidence claims a performance bottleneck.
 
 ## 3. Planned PR Sequence
 
@@ -84,47 +84,57 @@ No functioning ``PostgresMtmfSpi``, PostgreSQL repositories, UnitOfWork implemen
 
 Implement PostgreSQL-backed UnitOfWork/repositories and stored-function operations for the core domain model, including soft deletion, lifecycle state, ownership/provenance, extension JSON objects, and atomic multi-object invariants.
 
-### PR 8 — Role assignments and effective authorization state
+### PR 8 — Rust Permission Engine series
+
+Rust is intentionally included in MTMF as a Rust/Python integration showcase and as a deterministic native policy kernel (AUTHORIZATION.md section 8.1). Python keeps ownership of authorization context, policy applicability, and fail-closed orchestration: the Python `Authorizer` remains authoritative and the Python `PermissionEvaluator` remains the semantic reference through the migration. The series is split into:
+
+- **PR 8A — Rust Permission Engine foundation [DONE]** — private `mtmf-permission-engine` crate with PyO3/maturin packaging, the private `_mtmf_permission_engine` native module, the internal Python adapter (`mtmf_core.authorization.rust_engine`), the deterministic `./build.sh --rust` gate, and this roadmap resequencing. No permission semantics are implemented in Rust and no PostgreSQL/Podman dependency is introduced.
+- **PR 8B — Rust permission model and matcher** — detached Action/PermissionSet/Permission native inputs, URN parsing needed by evaluation, exact and complete-qualifier wildcard matching, specificity, native tests, and parity with the Python matcher; no full decision algorithm.
+- **PR 8C — Rust permission evaluation engine** — evaluate an exact Action against already-applicable PermissionSets: select maximum specificity, discard lower specificity, apply equal-specificity DENY, default to DENY, return a deterministic result, and remain order-independent; no context retrieval.
+- **PR 8D — Python/Rust evaluator integration and differential testing** — Rust evaluator adapter, domain-to-primitive conversion, differential/generated/property tests against the Python reference, Authorizer integration behind an internal abstraction, and fail-closed native error mapping.
+- **PR 8E — Rust engine hardening and performance characterization** — malformed-input/FFI hardening, benchmark harness, Python-vs-Rust performance characterization, packaging/build verification, and final conformance/docs.
+
+### PR 9 — Role assignments and effective authorization state
 
 Implement Tenant-bound Role assignments to Identity and Group, optional Organization refinement, effective Role loading, and persisted Role/PermissionSet/Permission policy composition.
 
 Ensure assignments never contribute authorization outside their Tenant context.
 
-### PR 9 — Bootstrap, root invariants, and Tenant Stewardship
+### PR 10 — Bootstrap, root invariants, and Tenant Stewardship
 
 Implement system bootstrap, root Principal/root Tenant invariants, mandatory local Identity establishment, root membership, built-in Roles/policy, ordinary Tenant stewardship, transfer/recovery rules that are sufficiently specified, and atomic stewardship constraints.
 
 Any still-unresolved acting-Identity stewardship rule must be settled before its dependent behavior is implemented.
 
-### PR 10 — TenantManagementGroup delegation
+### PR 11 — TenantManagementGroup delegation
 
 Implement ROOT and SYSTEM TenantManagementGroup behavior, implicit universal ROOT management, explicit managed-Tenant relationships for SYSTEM groups, and contextual scope evaluation.
 
 Manager-side actor eligibility must be explicitly settled before enabling delegated authority.
 
-### PR 11 — Public API contract and detached DTOs
+### PR 12 — Public API contract and detached DTOs
 
 Implement `mtmf-api` service interfaces, detached Pydantic DTOs, stable transport-independent errors, Connector contract, and mappings that preserve remote-service semantics.
 
 Public contracts must not leak core domain, PostgreSQL, FastAPI, or persistence internals.
 
-### PR 12 — LocalConnector
+### PR 13 — LocalConnector
 
 Implement LocalConnector against core application use cases while preserving the same detached, failure-aware semantics expected of a remote Connector.
 
 Begin the shared Connector contract suite.
 
-### PR 13 — HTTP service and HttpConnector
+### PR 14 — HTTP service and HttpConnector
 
 Implement the thin FastAPI/Uvicorn service adapter and HttpConnector, including DTO/error mapping, timeouts/failure semantics, and the same authorization path used by LocalConnector.
 
 Run the shared Connector contract suite against both implementations.
 
-### PR 14 — Observability and security/audit hardening
+### PR 15 — Observability and security/audit hardening
 
 Add OpenTelemetry instrumentation across application use cases, authorization, UnitOfWork, repositories, PostgreSQL, and HTTP transport. Establish the intended Collector/Prometheus/Jaeger/Loki integration boundaries and security/audit event foundations without leaking sensitive authorization details.
 
-### PR 15 — v0.1 integration and conformance hardening
+### PR 16 — v0.1 integration and conformance hardening
 
 Exercise complete local and HTTP flows against isolated PostgreSQL; expand security-constitution tests, connector equivalence tests, migration tests, concurrency/transaction tests, and failure-path coverage.
 
@@ -136,12 +146,13 @@ The following should be introduced only when their dependent design questions an
 
 - concrete external IdP providers and durable cross-boundary IdP workflows;
 - authorization-state caching and invalidation;
-- Rust/PyO3 permission-evaluator optimization;
 - additional persistence providers;
 - nested Groups;
 - Principal Organization membership;
 - restoration of soft-deleted objects;
 - broader service/agent Principal semantics.
+
+Rust/PyO3 permission-engine work is owned by the PR 8 series above and is not deferred.
 
 ## 5. Roadmap Maintenance
 

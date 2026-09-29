@@ -30,6 +30,13 @@ Run the security scans (Bandit + Semgrep):
 ./build.sh --sec
 ```
 
+Run the deterministic Rust/native gate for the private permission-engine
+crate (PR 8A; requires the Rust toolchain on `PATH`):
+
+```bash
+./build.sh --rust
+```
+
 ### PostgreSQL integration (PR 6+)
 
 The MTMF-owned physical schema, migrations, and stored-function

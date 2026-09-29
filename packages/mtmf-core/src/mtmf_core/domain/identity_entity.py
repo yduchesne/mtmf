@@ -7,7 +7,7 @@ through IdentityTenantMembership relationships, independent of sibling
 Identities of the same Principal.
 
 The exact external/federated Identity representation is deferred to IdP
-design (PR 9 territory) and is deliberately not represented here.
+design (PR 10 territory) and is deliberately not represented here.
 """
 
 from __future__ import annotations

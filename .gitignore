@@ -3,6 +3,9 @@
 out/
 .plans/
 
+# Rust / native extension workspace (PR 8A)
+/target/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
