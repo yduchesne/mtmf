@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from mtmf_core.authorization.decision import AuthorizationDecision, DenyReason
+from mtmf_core.authorization.evaluator import PermissionEvaluatorProtocol
 from mtmf_core.domain.action import Action
 from mtmf_core.domain.errors import DomainInvariantError
 from mtmf_core.domain.permission_matching import MatchSpecificity, match_permission
@@ -37,8 +38,16 @@ class PermissionEvaluationError(DomainInvariantError):
     """
 
 
-class PermissionEvaluator:
-    """Pure policy-resolution engine (evaluate only; retrieve nothing)."""
+class PermissionEvaluator(PermissionEvaluatorProtocol):
+    """Pure Python policy-resolution engine (evaluate only; retrieve nothing).
+
+    This implementation is the semantic reference/oracle for the whole
+    policy-evaluation surface: every
+    :class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`
+    decision is differentially tested against this one. It consumes an
+    exact Action and already-applicable Roles, reuses PR 3 matching,
+    and never retrieves authorization context.
+    """
 
     def evaluate(self, action: Action, roles: Iterable[Role]) -> AuthorizationDecision:
         """Decide one exact Action against caller-supplied applicable Roles.

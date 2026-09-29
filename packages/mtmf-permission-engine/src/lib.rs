@@ -19,8 +19,11 @@
 //! kernel only.
 //!
 //! Rust does NOT determine applicable policy, consume Roles, retrieve
-//! context, or participate in the Python `Authorizer`: the Python
-//! `PermissionEvaluator`/`Authorizer` remain authoritative and unchanged.
+//! context, or persist anything: Python (the `Authorizer`) determines which
+//! policy is applicable and supplies it detached. Since PR 8D the
+//! `Authorizer` defaults to the `RustPermissionEvaluator` seam and evaluates
+//! policy through this kernel; the Python `PermissionEvaluator` remains the
+//! semantic reference and systematic differential tests prove equivalence.
 //!
 //! The only surface exposed to Python is the private PyO3 module plus
 //! small primitive bridges (a matcher fact bridge and an evaluator

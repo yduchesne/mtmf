@@ -27,14 +27,15 @@
 #   2. Semgrep (static analysis) over packages/ and tests/
 #
 # --rust runs the deterministic Rust/native gate for the private
-#   mtmf-permission-engine crate (PR 8A/8B/8C), in order and failing fast:
+#   mtmf-permission-engine crate (PR 8A/8B/8C/8D), in order and failing fast:
 #   1. cargo fmt --check
 #   2. cargo clippy --all-targets --all-features -- -D warnings
 #   3. cargo test
 #   4. maturin develop (native build + development install)
 #   5. installed-native capability probe (fails fast on a stale/clobbered
 #      install, e.g. one silently swapped by a uv environment sync)
-#   6. focused Python native-boundary tests
+#   6. focused Python native-boundary, domain-conversion, differential,
+#      and Authorizer-cutover tests
 #   The Rust gate never uses Podman, PostgreSQL, MTMF_POSTGRES_*,
 #   --integration resources, network services, or external credentials.
 #
@@ -122,13 +123,19 @@ print(f"native module OK (engine_version={version!r})")
 PY
 
         echo "==> Running focused Python native-boundary tests"
-        # Focused on the 8A boundary, the 8B matcher parity matrix, and
-        # the 8C evaluator contract; the full coverage gate stays with
+        # Focused on the 8A boundary, the 8B matcher parity matrix, the
+        # 8C evaluator contract, the 8D RustPermissionEvaluator
+        # domain-conversion/mapping tests, the 8D hand-authored and
+        # generated Python/Rust differential suite, and the 8D Authorizer
+        # cutover/fail-closed tests; the full coverage gate stays with
         # --qa.
         uv run --no-sync pytest \
             tests/unit/authorization/test_rust_engine.py \
             tests/unit/authorization/test_rust_matcher.py \
             tests/unit/authorization/test_rust_evaluator.py \
+            tests/unit/authorization/test_rust_permission_evaluator.py \
+            tests/unit/authorization/test_permission_evaluator_differential.py \
+            tests/unit/authorization/test_authorizer_rust.py \
             --no-cov
         ;;
     --integration)
