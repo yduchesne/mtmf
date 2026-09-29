@@ -93,9 +93,12 @@ case "${MODE}" in
         uv run maturin develop --manifest-path "${RUST_CRATE_DIR}/Cargo.toml"
 
         echo "==> Running focused Python native-boundary tests"
-        # Focused on the 8A native boundary; the full coverage gate stays
-        # with --qa.
-        uv run pytest tests/unit/authorization/test_rust_engine.py --no-cov
+        # Focused on the 8A boundary and the 8B matcher parity matrix; the
+        # full coverage gate stays with --qa.
+        uv run pytest \
+            tests/unit/authorization/test_rust_engine.py \
+            tests/unit/authorization/test_rust_matcher.py \
+            --no-cov
         ;;
     --integration)
         echo "==> Running PostgreSQL integration tests (MTMF-owned database only)"

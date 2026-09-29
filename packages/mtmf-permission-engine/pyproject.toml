@@ -1,6 +1,6 @@
 # Maturin packaging for the private MTMF permission-engine native module.
 #
-# PR 8A: the wheel produced here is the private `_mtmf_permission_engine`
+# PR 8A/8B: the wheel produced here is the private `_mtmf_permission_engine`
 # module, installed into development environments by `./build.sh --rust`
 # (`maturin develop`). It is NOT exposed through `mtmf-api`, Connectors,
 # HTTP, or any public contract.
@@ -11,7 +11,7 @@ build-backend = "maturin"
 [project]
 name = "mtmf-permission-engine"
 dynamic = ["version"]
-description = "Private deterministic Rust permission-kernel foundation for MTMF (PR 8A)."
+description = "Private deterministic Rust permission kernel for MTMF (PR 8A foundation; PR 8B model and matcher)."
 license = "AGPL-3.0"
 requires-python = ">=3.14"
 classifiers = [
