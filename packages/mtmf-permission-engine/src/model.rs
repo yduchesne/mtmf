@@ -17,15 +17,9 @@
 
 /// The effect attached to a detached PermissionSet.
 ///
-/// Exists so [`PermissionSetInput`] has the correct future shape.
-/// PR 8B matching is defined over matcher URNs alone: the single
-/// Permission matcher in `matcher.rs` must never inspect this value.
-///
-/// PR 8B deliberately has no production consumer for this type (the
-/// matcher must not see effects and no evaluation exists yet); it is
-/// the documented PR 8C input contract, pinned here and exercised by
-/// the native model structure tests.
-#[allow(dead_code)]
+/// Exactly `Allow` and `Deny` exist. The PR 8C evaluator reads the
+/// effect from the containing [`PermissionSetInput`]; the single
+/// Permission matcher in `matcher.rs` never inspects this value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionEffect {
     Allow,
@@ -46,14 +40,10 @@ pub struct PermissionInput {
 
 /// Detached PermissionSet input: one effect plus the owned Permissions.
 ///
-/// Structural preparation for PR 8C only. PR 8B never evaluates this
-/// value; in particular the matcher never consults `effect`.
-///
-/// PR 8B has no production consumer for this type for the same reason
-/// [`PermissionEffect`] does not: it is the documented PR 8C input
-/// contract, pinned here and exercised by the native model structure
-/// tests.
-#[allow(dead_code)]
+/// The PR 8C evaluator consumes this value but never mutates it; the
+/// matcher still never consults `effect` (that is the evaluator's
+/// job). The effect is the only source of ALLOW/DENY authority for the
+/// Permissions it owns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionSetInput {
     pub effect: PermissionEffect,
