@@ -43,7 +43,6 @@ PERSISTENCE_MODULES = (
 
 FORBIDDEN_MODULE_FRAGMENTS = (
     "psycopg",
-    "postgres",
     "sqlalchemy",
     "alembic",
     "sqlite",
@@ -172,9 +171,41 @@ def test_persistence_modules_import_no_sql_driver_or_migration_machinery() -> No
                     )
 
 
-def test_persistence_import_does_not_pull_database_drivers_or_migrations() -> None:
-    for forbidden in ("psycopg", "psycopg2", "sqlalchemy", "alembic", "asyncpg"):
-        assert forbidden not in sys.modules
+def test_persistence_imports_do_not_pull_database_drivers_or_migrations() -> None:
+    # Deterministic regardless of test order: a fresh interpreter state.
+    code = (
+        "import sys; "
+        "import mtmf_core.persistence; "
+        "import mtmf_core.persistence.testing; "
+        "offenders = [m for m in sys.modules "
+        "if m.startswith(('psycopg', 'alembic', 'sqlalchemy'))]; "
+        "sys.exit(bool(offenders))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_importing_spi_does_not_pull_the_postgres_package() -> None:
+    code = (
+        "import sys, importlib; "
+        "importlib.import_module('mtmf_core.persistence'); "
+        "sys.exit('mtmf_core.persistence.postgres' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "mtmf_core.persistence (the PR 5 SPI) must stay free of PostgreSQL "
+        "infrastructure imports; " + result.stderr
+    )
 
 
 def test_core_persistence_is_importable_without_mtmf_api() -> None:

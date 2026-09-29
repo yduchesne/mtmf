@@ -24,6 +24,29 @@ unit tests with a hard **>= 85%** coverage threshold):
 ./build.sh --qa
 ```
 
+Run the security scans (Bandit + Semgrep):
+
+```bash
+./build.sh --sec
+```
+
+### PostgreSQL integration (PR 6+)
+
+The MTMF-owned physical schema, migrations, and stored-function
+infrastructure live under `mtmf_core/persistence/postgres`. Real-PostgreSQL
+integration tests run against the explicitly configured MTMF database:
+
+```bash
+cp .env.example .env        # MTMF_* development placeholders
+uv run python scripts/mtmf-postgres.py up      # starts the MTMF `mtmf` Compose project (Podman, port 55432)
+./build.sh --integration    # real-PostgreSQL migration/schema/constraint tests
+uv run python scripts/mtmf-postgres.py down    # stops only MTMF resources
+```
+
+All MTMF Podman/Compose operations are scoped to the canonical `mtmf`
+project and never touch ATI or any other PostgreSQL running on the same
+host; missing or ambiguous `MTMF_*` configuration fails closed.
+
 The workspace contains four independently installable distributions
 under `packages/`: `mtmf-api`, `mtmf-core`, `mtmf-client`, and
 `mtmf-service`.
