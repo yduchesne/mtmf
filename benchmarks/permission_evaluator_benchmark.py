@@ -1,47 +1,68 @@
 #!/usr/bin/env python3
-"""Reproducible Python-vs-Rust permission-evaluator benchmark.
+"""Reproducible P/R/M1/M2 permission-evaluator benchmark (PR 8F).
 
-The primary comparison is the domain-facing evaluator seam that the
-:class:`~mtmf_core.authorization.authorizer.Authorizer` uses today:
+The benchmark compares four independent evaluator paths over identical
+pre-built domain inputs:
 
-    PermissionEvaluator.evaluate(action, roles)          # Python semantic reference
-    RustPermissionEvaluator.evaluate(action, roles)      # active/default
+    P   PermissionEvaluator                (Python semantic reference)
+    R   RustPermissionEvaluator            (production/default; URN-text boundary)
+    M1  MsgspecEvaluator("encode")         (experimental msgspec semantic buffer)
+    M2  MsgspecEvaluator("encode_into")    (experimental msgspec reusable buffer)
 
-with identical pre-built domain inputs. That intentionally measures the
-whole meaningful path: Role/PermissionSet traversal, domain-to-primitive
-conversion, PyO3 overhead, Rust parse/match/evaluation, and mapping back
-to :class:`AuthorizationDecision`.
+Correctness is checked before timing: for EVERY scenario all four
+implementation decisions must be fully equal (effect, ``allowed``,
+deny reason, matched specificity, ``matched allow/deny``) and the
+benchmark aborts on any parity failure or missing native/msgspec
+capability. Timing is informational only: no speed threshold exists,
+and a scenario where a candidate is slower is a valid result.
 
-Correctness is checked before timing: for EVERY scenario the Python and
-Rust decisions must be fully equal (effect, allowed, reason, matched
-specificity, matched allow/deny) and the benchmark aborts on any parity
-failure or unavailable native module. Timing is informational only: no
-speed threshold exists, a scenario where Rust is slower is a valid
-result (PyO3/conversion overhead can dominate tiny policy), and no
-generalization beyond this machine is claimed.
+Measurements, per scenario:
+
+- end-to-end medians for P, R, M1, M2 (all per-call work is inside the
+  timed loop; the msgspec paths build the wire DTOs and encode **inside**
+  the loop, never from a pre-encoded payload);
+- component medians (separately labeled, never presented as
+  production-comparable):
+    C1 domain -> semantic wire DTO conversion;
+    C2 msgspec ordinary ``encode``;
+    C3 msgspec ``encode_into`` into a reusable buffer;
+    C4 pre-encoded payload -> native decode/evaluate/result conversion.
+
+Ratios are defined as ``baseline_median / candidate_median``: a value
+> 1.0 means the candidate implementation was faster **in this
+environment and scenario**. Any result is characterizable; nothing is a
+gate.
 
 CLI:
 
     uv run --no-sync python benchmarks/permission_evaluator_benchmark.py
     uv run --no-sync python benchmarks/permission_evaluator_benchmark.py \\
         --warmup 100 --samples 20 --iterations 1000
+    uv run --no-sync python benchmarks/permission_evaluator_benchmark.py --extended
     uv run --no-sync python benchmarks/permission_evaluator_benchmark.py --json /tmp/bench.json
     uv run --no-sync python benchmarks/permission_evaluator_benchmark.py --smoke
 
-``--smoke`` verifies native availability, fixture construction,
-parity-before-timing, timing-loop execution, and human/JSON output
-serialization with tiny counts. It asserts no timing threshold.
+``--extended`` adds the 5000-Permission scaling scenarios (they are
+excluded from routine runs). ``--smoke`` verifies native/msgspec
+availability, fixture construction, four-way parity, timing-loop
+execution, and human/JSON output serialization with tiny counts. It
+asserts no timing threshold.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import platform
 import statistics
 import sys
 import time
 from dataclasses import dataclass, field
+from functools import partial
+
+from msgspec_evaluator import MsgspecEvaluator, native_build_profile
+from msgspec_wire import build_payload
 
 from mtmf_core import (
     Action,
@@ -56,13 +77,11 @@ from mtmf_core import (
     RoleUrn,
 )
 from mtmf_core.authorization.permission_evaluator import PermissionEvaluator
-from mtmf_core.authorization.rust_engine import (
-    RustEngineUnavailableError,
-)
-from mtmf_core.authorization.rust_engine import (
-    engine_version as native_engine_version,
-)
+from mtmf_core.authorization.rust_engine import RustEngineUnavailableError
+from mtmf_core.authorization.rust_engine import engine_version as native_engine_version
 from mtmf_core.authorization.rust_permission_evaluator import RustPermissionEvaluator
+
+_NATIVE_MODULE_NAME = "_mtmf_permission_engine"
 
 
 @dataclass(frozen=True)
@@ -144,7 +163,36 @@ def _role_with_sets(
     return Role(role_urn, f"bench-r{role_index}", "", None, tuple(sets))
 
 
-def _build_scenarios() -> list[Scenario]:
+def _scale_role(permissions_total: int, *, matching: bool) -> Role:
+    """One deterministic Role totaling exactly ``permissions_total`` Permissions.
+
+    Permissions are spread over sets of 10 (the last set absorbs the
+    remainder, so tiny totals still form valid non-empty sets). The
+    pattern cycles exact/wildcard/non-match deterministically.
+    """
+    role_urn = RoleUrn("urn:mtmf:iam:roles:system:bench-scale")
+    per_set = 10
+    sets = []
+    remaining = permissions_total
+    set_index = 0
+    while remaining > 0:
+        count = min(per_set, remaining)
+        rules: list[tuple[str, str]] = []
+        for perm_index in range(count):
+            choice = (set_index * 7 + perm_index) % 3
+            if choice == 0:
+                rules.append(("set", "active") if matching else ("get", "object"))
+            elif choice == 1:
+                rules.append(("set", "*") if matching else ("set", "alias"))
+            else:
+                rules.append(("get", "object") if matching else ("delete", "object"))
+        sets.append(_permission_set(role_urn, PermissionEffect.ALLOW, tuple(rules)))
+        remaining -= count
+        set_index += 1
+    return Role(role_urn, "bench-scale", "", None, tuple(sets))
+
+
+def _build_scenarios(*, extended: bool) -> list[Scenario]:
     """Build every deterministic scenario once (never inside timed regions)."""
     action = Action(ActionUrn("urn:mtmf:iam:actions:system:principal:set-active"))
     scenarios: list[Scenario] = []
@@ -276,54 +324,123 @@ def _build_scenarios() -> list[Scenario]:
             permissions_count=1000,
         )
     )
+    # Deterministic Permission-count scaling coverage (PR 8F section 18).
+    for count in (1, 25, 200, 1000):
+        scenarios.append(
+            Scenario(
+                name=f"scale_{count}",
+                description=f"single role with exactly {count} Permissions",
+                action=action,
+                roles=(_scale_role(count, matching=True),),
+                sets_count=(count + 9) // 10,
+                permissions_count=count,
+            )
+        )
+    scenarios.append(
+        Scenario(
+            name="scale_1000_full_scan",
+            description="1000-Permission full scan ending in NO_MATCH",
+            action=action,
+            roles=(_scale_role(1000, matching=False),),
+            sets_count=100,
+            permissions_count=1000,
+        )
+    )
+    if extended:
+        scenarios.append(
+            Scenario(
+                name="scale_5000",
+                description="single role with exactly 5000 Permissions (extended)",
+                action=action,
+                roles=(_scale_role(5000, matching=True),),
+                sets_count=500,
+                permissions_count=5000,
+            )
+        )
+        scenarios.append(
+            Scenario(
+                name="scale_5000_full_scan",
+                description="5000-Permission full scan ending in NO_MATCH (extended)",
+                action=action,
+                roles=(_scale_role(5000, matching=False),),
+                sets_count=500,
+                permissions_count=5000,
+            )
+        )
     return scenarios
 
 
-def _full_decision_equality(
-    python_decision: AuthorizationDecision, rust_decision: AuthorizationDecision
-) -> bool:
+def _full_decision_equality(left: AuthorizationDecision, right: AuthorizationDecision) -> bool:
     """Complete policy-evidence equality (never only ``allowed``)."""
     return (
-        python_decision == rust_decision
-        and python_decision.allowed == rust_decision.allowed
-        and python_decision.effect == rust_decision.effect
-        and python_decision.reason == rust_decision.reason
-        and python_decision.matched_specificity == rust_decision.matched_specificity
-        and python_decision.matched_allow == rust_decision.matched_allow
-        and python_decision.matched_deny == rust_decision.matched_deny
+        left == right
+        and left.allowed == right.allowed
+        and left.effect == right.effect
+        and left.reason == right.reason
+        and left.matched_specificity == right.matched_specificity
+        and left.matched_allow == right.matched_allow
+        and left.matched_deny == right.matched_deny
     )
 
 
-def _check_parity(
-    evaluator_python: PermissionEvaluator,
-    evaluator_rust: RustPermissionEvaluator,
-    scenario: Scenario,
-) -> None:
+class _Evaluators:
+    """The four independent evaluator implementations measured by PR 8F."""
+
+    def __init__(self) -> None:
+        self.python = PermissionEvaluator()
+        self.rust = RustPermissionEvaluator()
+        self.m1 = MsgspecEvaluator("encode")
+        self.m2 = MsgspecEvaluator("encode_into")
+
+
+def _load_semantic_native() -> object:
+    """Import the private native module (semantic entry point must exist)."""
+    try:
+        module = importlib.import_module(_NATIVE_MODULE_NAME)
+    except ImportError as exc:
+        raise SystemExit(
+            f"private native module {_NATIVE_MODULE_NAME!r} is unavailable; "
+            "run `./build.sh --rust` first"
+        ) from exc
+    if not callable(getattr(module, "evaluate_semantic_msgpack", None)):
+        raise SystemExit(
+            f"native module {_NATIVE_MODULE_NAME!r} does not expose "
+            "'evaluate_semantic_msgpack'; run `./build.sh --rust` to rebuild"
+        )
+    return module
+
+
+def _check_parity(evaluators: _Evaluators, scenario: Scenario) -> None:
     """Evaluate once per implementation and require exact decision equality."""
     try:
-        python_decision = evaluator_python.evaluate(scenario.action, scenario.roles)
-        rust_decision = evaluator_rust.evaluate(scenario.action, scenario.roles)
+        python_decision = evaluators.python.evaluate(scenario.action, scenario.roles)
+        rust_decision = evaluators.rust.evaluate(scenario.action, scenario.roles)
+        m1_decision = evaluators.m1.evaluate(scenario.action, scenario.roles)
+        m2_decision = evaluators.m2.evaluate(scenario.action, scenario.roles)
     except RustEngineUnavailableError as exc:
         raise SystemExit(
             f"private native module is unavailable for scenario {scenario.name!r}; "
             "run `./build.sh --rust` first"
         ) from exc
-    if not _full_decision_equality(python_decision, rust_decision):
-        raise SystemExit(
-            f"Python/Rust parity failure in scenario {scenario.name!r}: "
-            f"python={python_decision!r} rust={rust_decision!r}; timing is aborted"
-        )
+    implementations = {
+        "python": python_decision,
+        "rust": rust_decision,
+        "m1": m1_decision,
+        "m2": m2_decision,
+    }
+    for name, decision in implementations.items():
+        if not _full_decision_equality(python_decision, decision):
+            raise SystemExit(
+                f"P/R/M1/M2 parity failure in scenario {scenario.name!r}: "
+                f"python={python_decision!r} {name}={decision!r}; timing is aborted"
+            )
 
 
-def _measure(
-    evaluator: PermissionEvaluator | RustPermissionEvaluator,
-    scenario: Scenario,
-    iterations: int,
-) -> float:
-    """One timed sample: mean nanoseconds per evaluation call."""
+def _measure_call(call: object, iterations: int) -> float:
+    """One timed sample: mean nanoseconds per call."""
     start = time.perf_counter_ns()
     for _ in range(iterations):
-        evaluator.evaluate(scenario.action, scenario.roles)
+        call()  # type: ignore[operator]
     elapsed = time.perf_counter_ns() - start
     return elapsed / iterations
 
@@ -340,67 +457,191 @@ def _dispersion(samples: list[float]) -> dict[str, float]:
 
 
 @dataclass
+class ComponentResult:
+    """Per-scenario component (non end-to-end) timing outcome."""
+
+    domain_to_wire_samples: list[float] = field(default_factory=list)
+    encode_samples: list[float] = field(default_factory=list)
+    encode_into_samples: list[float] = field(default_factory=list)
+    pre_encoded_native_samples: list[float] = field(default_factory=list)
+
+    @property
+    def domain_to_wire_ns(self) -> float:
+        return statistics.median(self.domain_to_wire_samples)
+
+    @property
+    def encode_ns(self) -> float:
+        return statistics.median(self.encode_samples)
+
+    @property
+    def encode_into_ns(self) -> float:
+        return statistics.median(self.encode_into_samples)
+
+    @property
+    def pre_encoded_native_ns(self) -> float:
+        return statistics.median(self.pre_encoded_native_samples)
+
+
+@dataclass
 class ScenarioResult:
     """Per-scenario timing outcome (informational; never a correctness gate)."""
 
     scenario: Scenario
     python_samples: list[float] = field(default_factory=list)
     rust_samples: list[float] = field(default_factory=list)
+    m1_samples: list[float] = field(default_factory=list)
+    m2_samples: list[float] = field(default_factory=list)
+    components: ComponentResult = field(default_factory=ComponentResult)
+    python_median_ns: float = 0.0
+    rust_median_ns: float = 0.0
+    m1_median_ns: float = 0.0
+    m2_median_ns: float = 0.0
 
-    @property
-    def python_median_ns(self) -> float:
-        return statistics.median(self.python_samples)
-
-    @property
-    def rust_median_ns(self) -> float:
-        return statistics.median(self.rust_samples)
-
-    @property
-    def ratio_python_over_rust(self) -> float:
-        """>1.0 means Rust is faster in this environment for this scenario."""
-        if self.rust_median_ns == 0:
+    @staticmethod
+    def _ratio(baseline_ns: float, candidate_ns: float) -> float:
+        """>1.0 means the candidate is faster than the baseline in this environment."""
+        if candidate_ns == 0:
             return float("inf")
-        return self.python_median_ns / self.rust_median_ns
+        return baseline_ns / candidate_ns
+
+    @property
+    def ratio_rust_over_python(self) -> float:
+        return self._ratio(self.python_median_ns, self.rust_median_ns)
+
+    @property
+    def ratio_m1_over_python(self) -> float:
+        return self._ratio(self.python_median_ns, self.m1_median_ns)
+
+    @property
+    def ratio_m2_over_python(self) -> float:
+        return self._ratio(self.python_median_ns, self.m2_median_ns)
+
+    @property
+    def ratio_m1_over_rust(self) -> float:
+        return self._ratio(self.rust_median_ns, self.m1_median_ns)
+
+    @property
+    def ratio_m2_over_rust(self) -> float:
+        return self._ratio(self.rust_median_ns, self.m2_median_ns)
 
 
 def _run_scenario(
-    evaluator_python: PermissionEvaluator,
-    evaluator_rust: RustPermissionEvaluator,
+    evaluators: _Evaluators,
     scenario: Scenario,
     *,
     warmup: int,
     samples: int,
     iterations: int,
 ) -> ScenarioResult:
-    _check_parity(evaluator_python, evaluator_rust, scenario)
-    _measure(evaluator_python, scenario, warmup)
-    _measure(evaluator_rust, scenario, warmup)
+    _check_parity(evaluators, scenario)
+
+    # Pre-build the prior-stage component fixtures OUTSIDE all timed
+    # regions (PR 8F section 22): wire DTO for encode timing, encoded
+    # payload for native decode/evaluate timing. The end-to-end msgspec
+    # paths still rebuild the payload + encode inside each timed call.
+    m1 = evaluators.m1
+    m2 = evaluators.m2
+    wire = build_payload(scenario.action, scenario.roles)
+    pre_encoded = m1.encoder.encode(wire)
+    native = _load_semantic_native()
+
+    # Warmup every implementation path before any sampling.
+    for _ in range(warmup):
+        evaluators.python.evaluate(scenario.action, scenario.roles)
+        evaluators.rust.evaluate(scenario.action, scenario.roles)
+        m1.evaluate(scenario.action, scenario.roles)
+        m2.evaluate(scenario.action, scenario.roles)
+        build_payload(scenario.action, scenario.roles)
+        m1.encoder.encode(wire)
+        m2.encoder.encode_into(wire, m2.buffer)
+        native.evaluate_semantic_msgpack(pre_encoded)
+
     result = ScenarioResult(scenario)
+    implementations = [evaluators.python, evaluators.rust, m1, m2]
     for sample_index in range(samples):
-        # Alternate the measured implementation first so one side is not
+        # Alternate which implementation is measured first so no side is
         # systematically favored by order effects.
-        if sample_index % 2 == 0:
-            result.python_samples.append(_measure(evaluator_python, scenario, iterations))
-            result.rust_samples.append(_measure(evaluator_rust, scenario, iterations))
-        else:
-            result.rust_samples.append(_measure(evaluator_rust, scenario, iterations))
-            result.python_samples.append(_measure(evaluator_python, scenario, iterations))
+        order = [(sample_index + offset) % 4 for offset in range(4)]
+        for position in order:
+            implementation = implementations[position]
+            call = partial(implementation.evaluate, scenario.action, scenario.roles)
+            elapsed = _measure_call(call, iterations)
+            if position == 0:
+                result.python_samples.append(elapsed)
+            elif position == 1:
+                result.rust_samples.append(elapsed)
+            elif position == 2:
+                result.m1_samples.append(elapsed)
+            else:
+                result.m2_samples.append(elapsed)
+    # Component samples (alternate C2/C3/C4 so the encode variants do
+    # not systematically run first).
+    for sample_index in range(samples):
+        for position in [(sample_index + offset) % 3 for offset in range(3)]:
+            if position == 0:
+                elapsed = _measure_call(
+                    lambda: build_payload(scenario.action, scenario.roles), iterations
+                )
+                result.components.domain_to_wire_samples.append(elapsed)
+            elif position == 1:
+                elapsed = _measure_call(lambda: m1.encoder.encode(wire), iterations)
+                result.components.encode_samples.append(elapsed)
+            else:
+                elapsed = _measure_call(lambda: m2.encoder.encode_into(wire, m2.buffer), iterations)
+                result.components.encode_into_samples.append(elapsed)
+    # C4: pre-encoded payload -> native decode/evaluate (labeled as
+    # component-only; never a production-comparable end-to-end number).
+    for _ in range(warmup):
+        native.evaluate_semantic_msgpack(pre_encoded)
+    for _ in range(samples):
+        result.components.pre_encoded_native_samples.append(
+            _measure_call(lambda: native.evaluate_semantic_msgpack(pre_encoded), iterations)
+        )
+
+    result.python_median_ns = statistics.median(result.python_samples)
+    result.rust_median_ns = statistics.median(result.rust_samples)
+    result.m1_median_ns = statistics.median(result.m1_samples)
+    result.m2_median_ns = statistics.median(result.m2_samples)
     return result
 
 
 def _environment() -> dict[str, str]:
     try:
         engine_version = native_engine_version()
+        build_profile = native_build_profile()
     except RustEngineUnavailableError:
         engine_version = "<unavailable>"
+        build_profile = "<unavailable>"
+    try:
+        import msgspec
+
+        msgspec_version = msgspec.__version__
+    except ImportError:
+        msgspec_version = "<unavailable>"
     return {
         "python": sys.version.replace("\n", " "),
         "platform": platform.platform(),
         "machine": platform.machine(),
         "rust_engine_version": engine_version,
+        "native_build_profile": build_profile,
+        "msgspec_version": msgspec_version,
         "python_evaluator": PermissionEvaluator.__module__,
         "rust_evaluator": RustPermissionEvaluator.__module__,
+        "ratio_direction": "baseline_median / candidate_median: > 1.0 means the "
+        "candidate (denominator) was faster in this environment",
     }
+
+
+def _format_ns(value: float) -> str:
+    if value == float("inf"):
+        return "inf"
+    return f"{value:.0f}"
+
+
+def _format_ratio(value: float) -> str:
+    if value == float("inf"):
+        return "inf"
+    return f"{value:.2f}x"
 
 
 def _render_human(
@@ -410,37 +651,56 @@ def _render_human(
     warmup: int,
     samples: int,
     iterations: int,
+    extended: bool,
 ) -> None:
-    print("MTMF permission-evaluator benchmark (Python vs Rust)")
+    print("MTMF permission-evaluator benchmark (Python vs current Rust vs msgspec M1/M2)")
     print("Environment:")
     for key, value in environment.items():
         print(f"  {key}: {value}")
     print(
         f"  config: warmup={warmup} samples={samples} iterations={iterations} "
-        "(median primary; characterization only)"
+        f"extended={extended} (median primary; characterization only)"
     )
-    header = (
-        "scenario | policy size | python median | rust median | "
-        "ratio (py/rust) | dispersion (py stdev/max, rust stdev/max)"
-    )
+    header = "scenario | sets/perms | P | R | M1 | M2 | R/P | M1/P | M2/P | M1/R | M2/R"
     print(header)
     print("-" * len(header))
     for result in results:
         scenario = result.scenario
-        py_disp = _dispersion(result.python_samples)
-        rust_disp = _dispersion(result.rust_samples)
-        ratio = result.ratio_python_over_rust
-        ratio_text = f"{ratio:.2f}x" if result.rust_median_ns > 0 else "inf"
         print(
-            f"{scenario.name:<16} "
-            f"{scenario.sets_count:>4} sets/{scenario.permissions_count:>5} perms "
-            f"{result.python_median_ns:>12.0f} ns "
-            f"{result.rust_median_ns:>12.0f} ns "
-            f"{ratio_text:>13} "
-            f"{py_disp['stdev_ns']:>10.0f}/{py_disp['max_ns']:>10.0f} "
-            f"{rust_disp['stdev_ns']:>10.0f}/{rust_disp['max_ns']:>10.0f}"
+            f"{scenario.name:<20} "
+            f"{scenario.sets_count:>4}/{scenario.permissions_count:>5} "
+            f"{_format_ns(result.python_median_ns):>10} "
+            f"{_format_ns(result.rust_median_ns):>10} "
+            f"{_format_ns(result.m1_median_ns):>10} "
+            f"{_format_ns(result.m2_median_ns):>10} "
+            f"{_format_ratio(result.ratio_rust_over_python):>6} "
+            f"{_format_ratio(result.ratio_m1_over_python):>6} "
+            f"{_format_ratio(result.ratio_m2_over_python):>6} "
+            f"{_format_ratio(result.ratio_m1_over_rust):>6} "
+            f"{_format_ratio(result.ratio_m2_over_rust):>6}"
         )
-    print("Timing is characterization only; no speed gate exists. Results are machine-specific.")
+    print()
+    component_header = (
+        "scenario | C1 domain->wire | C2 encode | C3 encode_into | C4 pre-encoded native"
+    )
+    print(component_header)
+    print("-" * len(component_header))
+    for result in results:
+        components = result.components
+        print(
+            f"{result.scenario.name:<20} "
+            f"{_format_ns(components.domain_to_wire_ns):>14} "
+            f"{_format_ns(components.encode_ns):>10} "
+            f"{_format_ns(components.encode_into_ns):>14} "
+            f"{_format_ns(components.pre_encoded_native_ns):>20}"
+        )
+    print()
+    print(
+        "Ratios are baseline_median / candidate_median; > 1.0 means the candidate "
+        "(denominator) was faster. Components are labeled separately and are never "
+        "production-comparable. Timing is characterization only; no speed gate "
+        "exists. Results are machine-specific."
+    )
 
 
 def _write_json(results: list[ScenarioResult], environment: dict[str, str], path: str) -> None:
@@ -454,11 +714,35 @@ def _write_json(results: list[ScenarioResult], environment: dict[str, str], path
                 "permissions_count": result.scenario.permissions_count,
                 "python_median_ns": result.python_median_ns,
                 "rust_median_ns": result.rust_median_ns,
-                "ratio_python_over_rust": result.ratio_python_over_rust,
+                "m1_median_ns": result.m1_median_ns,
+                "m2_median_ns": result.m2_median_ns,
+                "ratio_python_over_rust": result.ratio_rust_over_python,
+                "ratio_m1_over_python": result.ratio_m1_over_python,
+                "ratio_m2_over_python": result.ratio_m2_over_python,
+                "ratio_m1_over_rust": result.ratio_m1_over_rust,
+                "ratio_m2_over_rust": result.ratio_m2_over_rust,
                 "python_samples": result.python_samples,
                 "rust_samples": result.rust_samples,
+                "m1_samples": result.m1_samples,
+                "m2_samples": result.m2_samples,
                 "python_dispersion": _dispersion(result.python_samples),
                 "rust_dispersion": _dispersion(result.rust_samples),
+                "m1_dispersion": _dispersion(result.m1_samples),
+                "m2_dispersion": _dispersion(result.m2_samples),
+                "components": {
+                    "domain_to_wire_ns": result.components.domain_to_wire_ns,
+                    "encode_ns": result.components.encode_ns,
+                    "encode_into_ns": result.components.encode_into_ns,
+                    "pre_encoded_native_ns": result.components.pre_encoded_native_ns,
+                    "domain_to_wire_dispersion": _dispersion(
+                        result.components.domain_to_wire_samples
+                    ),
+                    "encode_dispersion": _dispersion(result.components.encode_samples),
+                    "encode_into_dispersion": _dispersion(result.components.encode_into_samples),
+                    "pre_encoded_native_dispersion": _dispersion(
+                        result.components.pre_encoded_native_samples
+                    ),
+                },
             }
             for result in results
         ],
@@ -478,13 +762,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--iterations", type=int, default=200, help="evaluations per timed sample")
     parser.add_argument(
+        "--extended",
+        action="store_true",
+        help="include the 5000-Permission scaling scenarios (excluded from routine runs)",
+    )
+    parser.add_argument(
         "--json", metavar="PATH", help="also write machine-readable results to PATH"
     )
     parser.add_argument(
         "--smoke",
         action="store_true",
-        help="tiny-count verification: native availability, construction, parity, "
-        "timing loop, and human/JSON output; no timing assertion",
+        help="tiny-count verification: native/msgspec availability, construction, four-way "
+        "parity, timing loops, and human/JSON output; no timing assertion",
     )
     args = parser.parse_args(argv)
 
@@ -507,17 +796,15 @@ def main(argv: list[str] | None = None) -> int:
         ) as handle:
             json_path = handle.name
 
-    evaluator_python = PermissionEvaluator()
-    evaluator_rust = RustPermissionEvaluator()
+    evaluators = _Evaluators()
     environment = _environment()
-    scenarios = _build_scenarios()
+    scenarios = _build_scenarios(extended=args.extended)
     if not scenarios:
         raise SystemExit("no benchmark scenarios were constructed")
 
     results = [
         _run_scenario(
-            evaluator_python,
-            evaluator_rust,
+            evaluators,
             scenario,
             warmup=args.warmup,
             samples=args.samples,
@@ -531,6 +818,7 @@ def main(argv: list[str] | None = None) -> int:
         warmup=args.warmup,
         samples=args.samples,
         iterations=args.iterations,
+        extended=args.extended,
     )
     if json_path:
         _write_json(results, environment, json_path)
@@ -545,13 +833,28 @@ def main(argv: list[str] | None = None) -> int:
                 "permissions_count",
                 "python_median_ns",
                 "rust_median_ns",
+                "m1_median_ns",
+                "m2_median_ns",
                 "ratio_python_over_rust",
+                "ratio_m1_over_python",
+                "ratio_m2_over_python",
+                "ratio_m1_over_rust",
+                "ratio_m2_over_rust",
+                "components",
             }
             for scenario in payload["scenarios"]:
                 assert required <= set(scenario), sorted(required - set(scenario))
+                assert set(scenario["components"]) >= {
+                    "domain_to_wire_ns",
+                    "encode_ns",
+                    "encode_into_ns",
+                    "pre_encoded_native_ns",
+                }
+            assert "msgspec_version" in payload["environment"]
+            assert "native_build_profile" in payload["environment"]
             print("smoke mode: JSON output validated")
     # A benchmark result is not an authorization correctness result: the
-    # only failure modes are parity/native/config/format failures.
+    # only failure modes are parity/native/msgspec/config/format failures.
     return 0
 
 

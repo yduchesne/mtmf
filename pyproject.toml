@@ -32,6 +32,7 @@ dev = [
     "bandit>=1.9.4",
     "hypothesis>=6.115.4",
     "maturin>=1.15,<1.16",
+    "msgspec>=0.22.0",
     "mypy>=2.3.1",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
