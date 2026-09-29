@@ -17,11 +17,11 @@ context ever crosses the FFI boundary.
 
 Failure semantics are fail-closed: a native module that is unavailable,
 a missing/incapable native evaluator, malformed or incoherent native
-output, or an unexpectedly malformed primitive reaching the native
-parser is an evaluation/infrastructure failure that propagates as
-:class:`PermissionEvaluationInfrastructureError`. It is never converted
-into a semantic DENY, never becomes an ALLOW, and never silently falls
-back to the Python reference implementation.
+output, or an unexpectedly malformed or wrong-typed primitive reaching
+the native boundary is an evaluation/infrastructure failure that
+propagates as :class:`PermissionEvaluationInfrastructureError`. It is
+never converted into a semantic DENY, never becomes an ALLOW, and never
+silently falls back to the Python reference implementation.
 """
 
 from __future__ import annotations
@@ -107,7 +107,12 @@ class RustPermissionEvaluator(PermissionEvaluatorProtocol):
                 )
         try:
             evaluation = native_evaluate(action.urn.value, primitive_sets)
-        except (RustEngineUnavailableError, RustEngineCapabilityError, ValueError) as exc:
+        except (
+            RustEngineUnavailableError,
+            RustEngineCapabilityError,
+            ValueError,
+            TypeError,
+        ) as exc:
             raise PermissionEvaluationInfrastructureError(
                 "Rust permission evaluation failed; the protected operation must fail "
                 "closed because no ALLOW decision can be produced"

@@ -103,12 +103,14 @@ Generated Python bytecode and local development artifacts must not be committed.
 
 ## Rust permission engine
 
-- The Rust permission engine is pure, deterministic, in-memory computation with no I/O: no PostgreSQL, `MtmfSpi`, UnitOfWork, repositories, network, or filesystem policy discovery.
-- Python supplies all required policy input: an exact Action plus already-applicable PermissionSets, flattened to detached primitive values. No live Python domain objects (`Action`, `Role`, `PermissionSet`, `Permission`) cross the FFI boundary.
+- The Rust permission kernel is pure, deterministic, in-memory computation with no I/O: no PostgreSQL, `MtmfSpi`, UnitOfWork, repositories, network, or filesystem policy discovery.
+- Python supplies all required policy input: an exact Action plus already-applicable PermissionSets, flattened to detached primitive values. No live Python domain objects (`Action`, `Role`, `PermissionSet`, `Permission`) cross the FFI boundary, and no JSON serialization carries policy.
 - Rust never retrieves session, Tenant, membership, assignment, stewardship, or delegation context.
 - The Python `Authorizer` remains authoritative for context, applicability, and fail-closed orchestration.
-- The Python `PermissionEvaluator` remains the semantic reference implementation until differential testing and a documented cutover replace it.
-- Rust work introduces no PostgreSQL/Podman dependency; the `./build.sh --rust` gate never requires `MTMF_*` configuration, Podman, or external services.
+- The Python `PermissionEvaluator` remains the semantic reference implementation absent a later explicit architecture change; any authorization-semantic change must keep the documented Python/Rust parity tests updated in the same PR.
+- Malformed/incoherent native input or output is an infrastructure/evaluation failure that fails closed; it is never a policy DECISION (`ALLOW`/`NO_MATCH`/`MATCHED_DENY`) and there is no automatic Python fallback.
+- Native failures must not be compensated by documentation or benchmark claims, and benchmarks never justify weakened semantics; performance findings are recorded, not silent semantic shortcuts.
+- The Rust series introduces no PostgreSQL/Podman dependency; the `./build.sh --rust` gate is the canonical native conformance gate (cargo fmt/clippy/test, `maturin develop`, installed-native probe, focused boundary/differential/Authorizer tests, clean wheel build/install/use verification, and benchmark smoke) and never requires `MTMF_*` configuration, Podman, or external services.
 
 ## Tests
 

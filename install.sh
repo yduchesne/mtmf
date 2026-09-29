@@ -7,7 +7,7 @@
 #   2. Python >= 3.14  (project baseline)
 #   3. Rust toolchain  (rustup: stable >= crate MSRV, with clippy + rustfmt)
 #   4. project environment (`uv sync --locked`)
-#   5. private native module (`uv run maturin develop`, PR 8A)
+#   5. private native module (`uv run maturin develop`)
 #   6. pre-commit hooks (Gitleaks, quality gate, security scan)
 #
 # Installation strategy:

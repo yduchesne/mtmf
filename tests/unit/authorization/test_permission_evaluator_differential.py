@@ -644,3 +644,184 @@ def test_full_decision_equality_covers_all_policy_evidence_fields() -> None:
     # DENY survives, so matched_deny is true and matched_allow is false.
     assert not decision_probe.matched_allow
     assert decision_probe.matched_deny
+
+
+# --- Bounded stress conformance (PR 8E) --------------------------------------
+#
+# Deterministic large valid policies prove no crash, full-decision parity
+# with the Python reference, order independence, and no duplicate-voting
+# semantics at scale. These tests contain NO timing assertions and do not
+# establish any policy-size limit.
+
+# (sets per Role, permissions per set); 100x20 = 2000 Permissions.
+_STRESS_SCALES = [
+    (10, 10),
+    (50, 20),
+    (100, 20),
+]
+
+_STRESS_SEEDS = (0, 1, 5)
+
+
+def _stress_role(*, sets_count: int, perms_per_set: int, seed: int) -> Role:
+    """Build one deterministic large Role of valid SYSTEM policy.
+
+    The matcher-choice cycle alternates exact matches to the stress
+    Action (``set-active``), qualifier-wildcard matches, non-matches,
+    and a second exact family (``set-alias``) so the aggregation logic
+    runs its full path. Every seventh set (offset by ``seed``) is a
+    DENY, giving equal-specificity ALLOW/DENY conflicts.
+    """
+    role_urn = make_role_urn(role_name=f"stress-{seed}")
+    role_sets: list[PermissionSet] = []
+    for set_index in range(sets_count):
+        set_id = DomainId.generate()
+        effect = PermissionEffect.DENY if (set_index + seed) % 7 == 0 else PermissionEffect.ALLOW
+        permissions = []
+        for perm_index in range(perms_per_set):
+            choice = (set_index * 31 + perm_index * 17 + seed * 7) % 4
+            if choice == 0:
+                verb, qualifier = "set", "active"  # exact match
+            elif choice == 1:
+                verb, qualifier = "set", "*"  # qualifier-wildcard match
+            elif choice == 2:
+                verb, qualifier = "get", "object"  # non-match
+            else:
+                verb, qualifier = "set", "alias"  # exact non-match family
+            permissions.append(
+                Permission(
+                    DomainId.generate(),
+                    set_id,
+                    PermissionUrn(f"urn:mtmf:iam:permissions:system:principal:{verb}-{qualifier}"),
+                )
+            )
+        role_sets.append(PermissionSet(set_id, role_urn, effect, tuple(permissions)))
+    return Role(role_urn, f"stress-{seed}", "", None, tuple(role_sets))
+
+
+def _stress_action() -> Action:
+    return make_action(verb="set", qualifier="active")
+
+
+@pytest.mark.parametrize(
+    ("sets_count", "perms_per_set"),
+    _STRESS_SCALES,
+    ids=[f"{sets}x{perms}" for sets, perms in _STRESS_SCALES],
+)
+@pytest.mark.parametrize("seed", _STRESS_SEEDS, ids=[f"seed{seed}" for seed in _STRESS_SEEDS])
+def test_large_valid_policy_full_decision_parity(
+    sets_count: int,
+    perms_per_set: int,
+    seed: int,
+) -> None:
+    role = _stress_role(sets_count=sets_count, perms_per_set=perms_per_set, seed=seed)
+    _assert_full_parity(
+        _stress_action(),
+        (role,),
+        label=f"stress {sets_count}x{perms_per_set} seed {seed}",
+    )
+
+
+@pytest.mark.parametrize(
+    ("sets_count", "perms_per_set"),
+    _STRESS_SCALES,
+    ids=[f"{sets}x{perms}" for sets, perms in _STRESS_SCALES],
+)
+def test_large_policy_set_order_invariance_is_parity_and_deterministic(
+    sets_count: int,
+    perms_per_set: int,
+) -> None:
+    role = _stress_role(sets_count=sets_count, perms_per_set=perms_per_set, seed=2)
+    reversed_role = Role(
+        role.urn,
+        role.name,
+        role.description,
+        role.defining_tenant_id,
+        tuple(reversed(role.permission_sets)),
+    )
+    action = _stress_action()
+    _assert_full_parity(action, (role,), label="stress sets forward")
+    _assert_full_parity(action, (reversed_role,), label="stress sets reversed")
+    assert _PYTHON.evaluate(action, (role,)) == _PYTHON.evaluate(action, (reversed_role,))
+    assert _RUST.evaluate(action, (role,)) == _RUST.evaluate(action, (reversed_role,))
+
+
+@pytest.mark.parametrize(
+    ("sets_count", "perms_per_set"),
+    _STRESS_SCALES,
+    ids=[f"{sets}x{perms}" for sets, perms in _STRESS_SCALES],
+)
+def test_large_policy_permission_order_invariance_is_parity_and_deterministic(
+    sets_count: int,
+    perms_per_set: int,
+) -> None:
+    role = _stress_role(sets_count=sets_count, perms_per_set=perms_per_set, seed=3)
+    shuffled_sets: list[PermissionSet] = []
+    for permission_set in role.permission_sets:
+        shuffled_sets.append(
+            PermissionSet(
+                permission_set.id,
+                permission_set.role_urn,
+                permission_set.effect,
+                tuple(reversed(permission_set.permissions)),
+            )
+        )
+    shuffled_role = Role(
+        role.urn,
+        role.name,
+        role.description,
+        role.defining_tenant_id,
+        tuple(shuffled_sets),
+    )
+    action = _stress_action()
+    _assert_full_parity(action, (role,), label="stress perms forward")
+    _assert_full_parity(action, (shuffled_role,), label="stress perms reversed")
+    assert _PYTHON.evaluate(action, (role,)) == _PYTHON.evaluate(action, (shuffled_role,))
+    assert _RUST.evaluate(action, (role,)) == _RUST.evaluate(action, (shuffled_role,))
+
+
+@pytest.mark.parametrize(
+    ("sets_count", "perms_per_set"),
+    [(100, 20)],
+    ids=["100x20"],
+)
+def test_large_policy_duplicates_never_create_authority(
+    sets_count: int,
+    perms_per_set: int,
+) -> None:
+    role = _stress_role(sets_count=sets_count, perms_per_set=perms_per_set, seed=4)
+    duplicated_sets: list[PermissionSet] = []
+    for permission_set in role.permission_sets:
+        duplicated_sets.append(permission_set)
+        duplicated_sets.append(_duplicated_set(permission_set))
+    duplicated_role = Role(
+        role.urn,
+        role.name,
+        role.description,
+        role.defining_tenant_id,
+        tuple(duplicated_sets),
+    )
+    action = _stress_action()
+    _assert_full_parity(action, (role,), label="stress sets")
+    _assert_full_parity(action, (duplicated_role,), label="stress duplicated sets")
+    assert _PYTHON.evaluate(action, (role,)) == _PYTHON.evaluate(action, (duplicated_role,))
+    assert _RUST.evaluate(action, (role,)) == _RUST.evaluate(action, (duplicated_role,))
+
+
+@pytest.mark.parametrize(
+    ("sets_count", "perms_per_set"),
+    [(50, 20)],
+    ids=["50x20"],
+)
+def test_large_policy_repeated_evaluation_is_deterministic_across_implementations(
+    sets_count: int,
+    perms_per_set: int,
+) -> None:
+    role = _stress_role(sets_count=sets_count, perms_per_set=perms_per_set, seed=6)
+    action = _stress_action()
+    python_first = _PYTHON.evaluate(action, (role,))
+    rust_first = _RUST.evaluate(action, (role,))
+    for _ in range(3):
+        assert _PYTHON.evaluate(action, (role,)) == python_first
+        assert _RUST.evaluate(action, (role,)) == rust_first
+    _assert_full_parity(action, (role,), label="stress determinism")

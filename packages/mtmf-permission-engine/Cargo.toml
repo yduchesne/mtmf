@@ -1,18 +1,10 @@
-# Private MTMF permission-engine crate (PR 8A foundation + PR 8B
-# model/matcher + PR 8C evaluator + PR 8D integration).
+# Private MTMF permission-engine crate.
 #
-# PR 8A delivered the crate foundation and a deterministic smoke/capability
-# surface. PR 8B adds the detached native policy model (model.rs), the SYSTEM
-# Action/Permission URN parsers (urn.rs), and the single-Permission matcher
-# with match specificity (matcher.rs). PR 8C adds the complete policy-decision
-# algorithm (evaluator.rs): maximum specificity selection, lower-specificity
-# elimination, equal-specificity DENY precedence, and default DENY. PR 8D
-# integrates the kernel behind the internal evaluator seam and makes it the
-# active/default Authorizer policy engine; the Python evaluator
-# (`mtmf_core.authorization.permission_evaluator`) remains the semantic
-# reference, and systematic generated differential tests prove equivalence.
+# Private deterministic Rust permission-policy kernel for MTMF: the pure,
+# I/O-free decision engine behind the internal RustPermissionEvaluator
+# seam. This is package metadata, not a PR history log.
 #
-# Invariants for the Rust series:
+# Invariants for the Rust kernel:
 # - pure, deterministic, side-effect-free computation only;
 # - no I/O, no database, no network, no async runtime, no background
 #   threads;
@@ -22,7 +14,7 @@
 [package]
 name = "mtmf-permission-engine"
 version = "0.1.0"
-description = "Private, deterministic MTMF permission-policy kernel (PR 8A foundation; PR 8B model and matcher; PR 8C evaluator; PR 8D integration)."
+description = "Private deterministic Rust permission-policy kernel for MTMF."
 license = "AGPL-3.0"
 edition = "2024"
 rust-version = "1.98"

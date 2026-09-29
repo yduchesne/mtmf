@@ -9,7 +9,7 @@ Current status: WIP.
 
 - Python **3.14** (managed by `uv`)
 - `uv` is the package/workspace/dependency tool
-- Rust toolchain for the native permission engine (PR 8A; installed by
+- Rust toolchain for the native permission engine (installed by
   `./install.sh` via rustup, with the `clippy` and `rustfmt` components)
 
 Bootstrap a clean checkout:
@@ -33,12 +33,18 @@ Run the security scans (Bandit + Semgrep):
 ```
 
 Run the deterministic Rust/native gate for the private permission-engine
-crate (PR 8A; requires the Rust toolchain on `PATH`, installed by
+crate (requires the Rust toolchain on `PATH`, installed by
 `./install.sh`):
 
 ```bash
 ./build.sh --rust
 ```
+
+The gate covers cargo fmt/clippy/test, `maturin develop`, the installed
+native capability probe, focused FFI-boundary/differential/Authorizer
+tests, a clean wheel build/install/use verification in an isolated
+temporary environment, and a benchmark smoke check, with no
+PostgreSQL/Podman/network dependency.
 
 ### PostgreSQL integration (PR 6+)
 

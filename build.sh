@@ -27,7 +27,7 @@
 #   2. Semgrep (static analysis) over packages/ and tests/
 #
 # --rust runs the deterministic Rust/native gate for the private
-#   mtmf-permission-engine crate (PR 8A/8B/8C/8D), in order and failing fast:
+#   mtmf-permission-engine crate, in order and failing fast:
 #   1. cargo fmt --check
 #   2. cargo clippy --all-targets --all-features -- -D warnings
 #   3. cargo test
@@ -35,7 +35,12 @@
 #   5. installed-native capability probe (fails fast on a stale/clobbered
 #      install, e.g. one silently swapped by a uv environment sync)
 #   6. focused Python native-boundary, domain-conversion, differential,
-#      and Authorizer-cutover tests
+#      boundary-hardening, stress, and Authorizer-cutover tests
+#   7. clean wheel build/install/import/use verification in an isolated
+#      temporary environment
+#   8. benchmark smoke verification (native availability, fixture
+#      construction, Python/Rust parity, timing-loop and output-
+#      formatting checks with tiny counts; no timing threshold)
 #   The Rust gate never uses Podman, PostgreSQL, MTMF_POSTGRES_*,
 #   --integration resources, network services, or external credentials.
 #
@@ -103,7 +108,7 @@ case "${MODE}" in
         echo "==> Building and installing the private native module (maturin develop)"
         uv run --no-sync maturin develop --manifest-path "${RUST_CRATE_DIR}/Cargo.toml"
 
-        echo "==> Verifying the installed native module exposes the 8A/8B/8C capability surface"
+        echo "==> Verifying the installed native module exposes the primitive capability surface"
         "${PYO3_PYTHON}" - <<'PY'
 import _mtmf_permission_engine as native
 
@@ -123,20 +128,28 @@ print(f"native module OK (engine_version={version!r})")
 PY
 
         echo "==> Running focused Python native-boundary tests"
-        # Focused on the 8A boundary, the 8B matcher parity matrix, the
-        # 8C evaluator contract, the 8D RustPermissionEvaluator
-        # domain-conversion/mapping tests, the 8D hand-authored and
-        # generated Python/Rust differential suite, and the 8D Authorizer
-        # cutover/fail-closed tests; the full coverage gate stays with
-        # --qa.
+        # Focused on the primitive boundary, the matcher parity matrix, the
+        # evaluator contract, the RustPermissionEvaluator
+        # domain-conversion/mapping tests, the hand-authored and generated
+        # Python/Rust differential suite (including bounded stress
+        # conformance), the boundary-hardening suite (malformed/incoherent
+        # FFI states), and the Authorizer cutover/fail-closed tests; the
+        # full coverage gate stays with --qa.
         uv run --no-sync pytest \
             tests/unit/authorization/test_rust_engine.py \
             tests/unit/authorization/test_rust_matcher.py \
             tests/unit/authorization/test_rust_evaluator.py \
             tests/unit/authorization/test_rust_permission_evaluator.py \
             tests/unit/authorization/test_permission_evaluator_differential.py \
+            tests/unit/authorization/test_rust_boundary_hardening.py \
             tests/unit/authorization/test_authorizer_rust.py \
             --no-cov
+
+        echo "==> Verifying a clean wheel build/install/import/use (isolated environment)"
+        uv run --no-sync python scripts/verify-rust-wheel.py --interpreter "${PYO3_PYTHON}"
+
+        echo "==> Running benchmark smoke verification (no timing threshold)"
+        uv run --no-sync python benchmarks/permission_evaluator_benchmark.py --smoke
         ;;
     --integration)
         echo "==> Running PostgreSQL integration tests (MTMF-owned database only)"
