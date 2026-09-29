@@ -6,12 +6,20 @@
 # Every commit runs, in order (failing fast):
 #   1. Gitleaks   secret scanning over the staged diff
 #                 (official hook; pre-commit builds the Go binary)
-#   2. --qa       canonical quality gate: Ruff format, Ruff lint,
+#   2. --rust     deterministic Rust/native gate: cargo fmt --check,
+#                 Clippy with warnings denied, cargo test, maturin
+#                 develop, focused Python native-boundary tests
+#                 (via scripts/mtmf-rust-gate.sh, which resolves cargo
+#                 from the rustup default location when the commit
+#                 environment has it off PATH);
+#   3. --qa       canonical quality gate: Ruff format, Ruff lint,
 #                 strict Mypy, unit tests with >= 85% coverage
-#   3. --sec      security scan: Bandit + Semgrep over packages/ and tests/
+#   4. --sec      security scan: Bandit + Semgrep over packages/ and tests/
 #
 # The workspace-level gates run with pass_filenames: false so a full
 # tree is scanned on every commit rather than only the staged files.
+# The Rust gate runs before --qa so the unit suite exercises the freshly
+# built native module instead of skipping the native-boundary tests.
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
@@ -21,6 +29,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: mtmf-rust
+        name: MTMF Rust/native gate (./build.sh --rust)
+        entry: ./scripts/mtmf-rust-gate.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
       - id: mtmf-qa
         name: MTMF quality gate (./build.sh --qa)
         entry: ./build.sh --qa
