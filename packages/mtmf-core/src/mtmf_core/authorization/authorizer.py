@@ -3,11 +3,17 @@
 The :class:`Authorizer` is the authoritative decision layer of
 ``mtmf-core``. It validates the supplied structural session/Tenant
 context, enforces same-Tenant isolation, delegates policy resolution to
-the pure :class:`PermissionEvaluator`, and applies explicitly requested
-settled additional constraints. A policy DENY is final and can never be
+an evaluator behind the narrow
+:class:`~mtmf_core.authorization.evaluator.PermissionEvaluatorProtocol`
+seam (by default the Rust-backed
+:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`,
+with the Python reference
+:class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
+explicitly injectable), and applies explicitly requested settled
+additional constraints. A policy DENY is final and can never be
 converted to ALLOW by another constraint; missing, unsupported, or
-unresolved required context fails closed; an unexpected internal failure
-propagates as an error and can never become ALLOW.
+unresolved required context fails closed; an unexpected internal
+failure propagates as an error and can never become ALLOW.
 
 Context retrieval is deliberately outside the Authorizer: this
 foundation consumes caller-supplied, pre-filtered facts and never
@@ -19,7 +25,8 @@ from __future__ import annotations
 from mtmf_core.authorization.context import AuthorizationRequest, DominanceRequirement
 from mtmf_core.authorization.decision import AuthorizationDecision, DenyReason
 from mtmf_core.authorization.dominance import strictly_dominates
-from mtmf_core.authorization.permission_evaluator import PermissionEvaluator
+from mtmf_core.authorization.evaluator import PermissionEvaluatorProtocol
+from mtmf_core.authorization.rust_permission_evaluator import RustPermissionEvaluator
 from mtmf_core.domain.errors import SessionContextError
 from mtmf_core.domain.session import validate_session_context
 
@@ -28,12 +35,19 @@ class Authorizer:
     """The authoritative internal authorization decision component.
 
     This is an internal foundation, not a public API/DTO contract. It
-    performs no persistence and no authorization-context retrieval.
+    performs no persistence and no authorization-context retrieval. It
+    depends only on the narrow :class:`PermissionEvaluatorProtocol`
+    policy-evaluation seam; by default it uses the Rust-backed
+    :class:`RustPermissionEvaluator`, and the Python reference
+    :class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
+    remains injectable for tests and reference/comparison work. A native
+    evaluation/infrastructure failure propagates fail-closed from the
+    evaluator and can never become a semantic DENY or an ALLOW.
     """
 
-    def __init__(self, evaluator: PermissionEvaluator | None = None) -> None:
-        """Create an Authorizer using ``evaluator`` (default: a fresh pure evaluator)."""
-        self._evaluator = evaluator if evaluator is not None else PermissionEvaluator()
+    def __init__(self, evaluator: PermissionEvaluatorProtocol | None = None) -> None:
+        """Create an Authorizer using ``evaluator`` (default: RustPermissionEvaluator)."""
+        self._evaluator = evaluator if evaluator is not None else RustPermissionEvaluator()
 
     def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision:
         """Produce an explicit ALLOW or DENY for one internal request.

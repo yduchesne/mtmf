@@ -165,7 +165,17 @@ The integration mechanism is PyO3/maturin. The native module is the private `_mt
 Boundary rules:
 
 - Rust evaluates policy only; Python determines policy applicability and authorization context.
-- Rust's future input is an exact Action plus the already-applicable PermissionSets (no Role is required by the native engine). Python flattens domain state to detached primitive values:
+- The `Authorizer` depends on a narrow internal evaluator protocol (`PermissionEvaluatorProtocol`) with exactly one capability: decide one exact Action against already-applicable Role objects.
+- Two implementations satisfy that protocol: the Python `PermissionEvaluator`, which remains the semantic reference/oracle, and the `RustPermissionEvaluator`, which is the active/default evaluator used by a normally constructed `Authorizer()`.
+- Since PR 8D, the Rust-backed evaluator is the active/default policy engine behind the `Authorizer`, and the Python reference implementation remains explicitly injectable (`Authorizer(evaluator=PermissionEvaluator())`) for tests and reference/comparison work. There is NO automatic fallback: a native failure is never silently retried on Python.
+
+Domain-to-primitive conversion (owned by the `RustPermissionEvaluator`):
+
+- Role identity is deliberately flattened away: every owned PermissionSet of every supplied Role becomes one entry in the primitive input sequence, preserving nothing about which Role owned it.
+- Role/PermissionSet ownership corruption (`permission_set.role_urn != role.urn`) fails closed with the same `PermissionEvaluationError` as the Python reference, before any native call.
+- Effect and URN values are passed canonically from the existing domain value objects; no URN is reconstructed from components.
+
+For each already-applicable Role policy, Rust receives exactly:
 
 ```text
 ActionInput
@@ -181,17 +191,23 @@ PermissionSetInput
 - No live Python domain objects (`Action`, `Role`, `PermissionSet`, `Permission`) cross the FFI boundary, and no JSON serialization is introduced to carry policy across PyO3.
 - Rust performs no retrieval and no I/O: no PostgreSQL, `MtmfSpi`, UnitOfWork, repositories, membership/session/assignment state, stewardship, delegation, IdP, network service, or filesystem-based policy discovery.
 
-The Python `PermissionEvaluator` remains the semantic reference implementation throughout the Rust migration series. Differential testing against the Python reference precedes any evaluator cutover; Python/Rust integration will sit behind an internal abstraction that fails closed on native errors.
+Failure semantics since PR 8D:
+
+- A native infrastructure failure (module unavailable, missing/incapable native evaluator, malformed/incoherent native response, or an unexpectedly malformed primitive at the native parser) is NOT a policy DENY. It propagates from the evaluator through the `Authorizer` as a narrow `PermissionEvaluationInfrastructureError` and the protected operation fails closed because no ALLOW decision is produced.
+- Native failures are never converted into `NO_MATCH`, `MATCHED_DENY`, or ALLOW, and there is no silent Python fallback: a fallback would let deployment errors silently alter the active authorization implementation and could conceal semantic divergence.
+
+The Python `PermissionEvaluator` remains the semantic reference implementation throughout the Rust migration series. Systematic differential testing (a deterministic hand-authored parity matrix plus generated/property-based tests over valid SYSTEM policy, covering Role/PermissionSet/Permission order and duplicate invariance) proves the Rust evaluator and the Python reference produce equal complete decisions (`effect`, `allowed`, deny reason, matched specificity, `matched_allow`, `matched_deny`), never only `allowed`.
 
 Implemented so far in the Rust series:
 
 - PR 8A: only a deterministic smoke/capability API (`engine_version`) exists; no permission semantics are implemented in Rust, and no active authorization path imports the native module.
 - PR 8B: a detached native policy model (`ActionInput`, `PermissionInput`, `PermissionSetInput`, `PermissionEffect` with exactly ALLOW/DENY) exists as the structural input contract for future evaluation; the SYSTEM-only Action/Permission URN parsers exist; exact and complete-qualifier wildcard (`*`) single-Permission matching exists; and match specificity exists with exactly two classes (`EXACT` is more specific than the qualifier wildcard, and nothing else is). A small private primitive matcher bridge (`_mtmf_permission_engine.match_permission`) exposes the match facts (`"exact"`, `"qualifier-wildcard"`, or `None` for a valid non-match) through the internal `rust_engine` adapter, and focused Python/Rust parity tests prove agreement with the Python matcher.
 - PR 8C: the private native kernel now contains the first complete policy-decision algorithm (`evaluator.rs`). Given an exact Action and already-applicable detached PermissionSets, Rust matches every supplied Permission, retains the maximum matching specificity, discards lower-specificity matches *before* any effect resolution (so a wildcard DENY can never defeat an exact ALLOW), inherits each surviving match's effect from its containing PermissionSet, applies equal-specificity DENY precedence, and defaults to DENY when nothing matches. The result is a deterministic aggregate: an explicit ALLOW/DENY, the highest specificity, whether an ALLOW and/or DENY existed at that specificity, and a coarse deny reason (`no-match` vs `matched-deny`). Evaluation is independent of PermissionSet order, Permission order, and duplicates (no voting semantics). Malformed Action/Permission URNs and unknown effects fail the evaluation with `ValueError` at the native boundary; they are never converted into a policy DENY or NO_MATCH. A small private primitive evaluator bridge (`_mtmf_permission_engine.evaluate`) plus a validating Python adapter (`rust_engine.native_evaluate`) expose this through the internal seam only.
+- PR 8D: the private kernel is integrated behind the internal `PermissionEvaluatorProtocol` seam and is the active/default policy engine of the `Authorizer`. `RustPermissionEvaluator` performs domain-to-primitive conversion (flattening Role-owned PermissionSets into detached primitive input with no Role identity), validates Role/PermissionSet ownership before any native call, maps validated native aggregate results onto the existing `AuthorizationDecision`/`MatchSpecificity`/`DenyReason` values, and normalizes native failures into the narrow fail-closed `PermissionEvaluationInfrastructureError` (never a semantic DENY, never ALLOW, no Python fallback). Systematic hand-authored and Hypothesis-generated differential tests, permutation/duplicate metamorphic properties, and structural-corruption parity tests prove equivalence with the Python reference.
 
-Rust still does NOT determine applicable policy, consume Roles, retrieve session/Tenant/membership/assignment context, replace the Python `PermissionEvaluator`, or participate in `Authorizer`; Python (`Authorizer` -> `PermissionEvaluator`) remains the active, authoritative implementation. PR 8D owns the domain-to-primitive conversion, systematic differential testing, and evaluator abstraction integration.
+Rust still does NOT determine applicable policy, consume Roles, retrieve session/Tenant/membership/assignment context, or perform authorization-context orchestration; Python owns applicability and context, and the `Authorizer` remains the authoritative orchestrator. The native module is never imported eagerly: importing `mtmf_core` or constructing an `Authorizer` loads `_mtmf_permission_engine` only when Rust evaluation is actually invoked, and the Python reference evaluator never imports it.
 
-Not implemented: no Role input reaches Rust, no conversion of Python domain objects to native inputs exists, and no active authorization path imports the native module. Manifestly invalid URN text raises `ValueError` at the native boundary; a valid non-match is a `None`/`NO_MATCH` fact, so malformed input can never silently become a valid non-match or any authorization decision.
+Not implemented: no Role identity, Tenant, session, assignment, stewardship, or any other authorization context reaches Rust; no persistence/I/O enters the evaluator; only detached primitive policy crosses the FFI boundary. Manifestly invalid URN text raises `ValueError` at the native boundary; a valid non-match is a `None`/`NO_MATCH` fact, so malformed input can never silently become a valid non-match or any authorization decision.
 
 Caching/indexing of effective authorization state may prove more important than the matching algorithm itself and will be designed only after realistic profiling.
 
