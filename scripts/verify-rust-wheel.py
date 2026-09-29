@@ -45,13 +45,7 @@ import sys
 
 import _mtmf_permission_engine as native
 
-required = (
-    "engine_version",
-    "build_profile",
-    "match_permission",
-    "evaluate",
-    "evaluate_semantic_msgpack",
-)
+required = ("engine_version", "match_permission", "evaluate")
 missing = [name for name in required if not callable(getattr(native, name, None))]
 if missing:
     raise SystemExit("installed module is missing required callables: %r" % (missing,))
@@ -59,10 +53,6 @@ if missing:
 version = native.engine_version()
 if not isinstance(version, str) or not version:
     raise SystemExit("invalid engine_version response: %r" % (version,))
-
-profile = native.build_profile()
-if profile not in ("debug", "release"):
-    raise SystemExit("invalid build_profile response: %r" % (profile,))
 
 action = "urn:mtmf:iam:actions:system:principal:set-active"
 wildcard = "urn:mtmf:iam:permissions:system:principal:set-*"
@@ -94,70 +84,6 @@ except ValueError:
 else:
     raise SystemExit("malformed evaluation must fail explicitly, not yield a decision")
 
-# PR 8F experimental semantic-buffer entry: a v1 positional MessagePack
-# payload carrying already-parsed semantic components (never full URN
-# texts) must evaluate through the canonical loop; unsupported versions
-# must fail explicitly.
-#
-# The payload is `[1, [ns, resource, verb, qualifier], [[effect,
-# [[ns, resource, verb, qualifier, wildcard]]]]]` encoded positionally.
-
-semantic = (
-    1,
-    ("system", "principal", "set", "active"),
-    [("allow", [("system", "principal", "set", "active", False)])],
-)
-
-# Fall back to a compact hand-built MessagePack encoding when msgspec is
-# unavailable in the clean environment (msgspec is a dev/benchmark-only
-# dependency and is not required by the wheel).
-try:
-    import msgspec.msgpack as _mp
-
-    semantic_bytes = _mp.Encoder().encode(semantic)
-except ImportError:
-    def _mpack(value, out):
-        if isinstance(value, bool):
-            out.append(0xC3 if value else 0xC2)
-        elif isinstance(value, int):
-            out.append(value)
-        elif isinstance(value, str):
-            raw = value.encode("utf-8")
-            out.append(0xA0 | len(raw))
-            out.extend(raw)
-        elif isinstance(value, (tuple, list)):
-            out.append(0x90 | len(value))
-            for item in value:
-                _mpack(item, out)
-        else:
-            raise TypeError(value)
-
-    semantic_bytes = bytearray()
-    _mpack(semantic, semantic_bytes)
-    semantic_bytes = bytes(semantic_bytes)
-
-semantic_result = native.evaluate_semantic_msgpack(semantic_bytes)
-if semantic_result != ("allow", "exact", True, False, None):
-    raise SystemExit("unexpected semantic evaluation result: %r" % (semantic_result,))
-
-try:
-    native.evaluate_semantic_msgpack(semantic_bytes[:-2])
-except ValueError:
-    pass
-else:
-    raise SystemExit("malformed semantic payload must fail explicitly")
-
-versioned = bytearray(semantic_bytes)
-# The version marker is the positive fixint right after the 3-element
-# top-level array header (0x93).
-versioned[1] = 2
-try:
-    native.evaluate_semantic_msgpack(bytes(versioned))
-except ValueError:
-    pass
-else:
-    raise SystemExit("unsupported semantic wire version must fail explicitly")
-
 # Private-module boundary: mtmf-api must never import the native module.
 try:
     import mtmf_api  # noqa: F401
@@ -167,7 +93,7 @@ else:
     if "_mtmf_permission_engine" in sys.modules:
         raise SystemExit("mtmf_api must not import the private native module")
 
-print("installed wheel OK (engine_version=%r, build_profile=%r)" % (version, profile))
+print("installed wheel OK (engine_version=%r)" % (version,))
 """
 
 

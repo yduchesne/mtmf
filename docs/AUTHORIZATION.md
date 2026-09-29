@@ -208,36 +208,6 @@ Implemented so far in the Rust series:
 
 On the measured system, the current Rust evaluator did not outperform the Python reference implementation. Release builds approached parity for some larger policy scenarios but remained slower, while full-scan scenarios remained substantially slower. Profiling characteristics indicate that PyO3 conversion and repeated parsing of URNs already represented as parsed Python domain value objects are significant contributors. These results characterize the current boundary design and do not justify changing authorization semantics or PR 8E scope.
 
-### 8.1.1 PR 8F experimental msgspec semantic-buffer boundary (benchmark-only)
-
-PR 8F runs a deliberately isolated performance experiment: an alternative FFI representation for the Rust path, kept entirely out of production authorization. It tests one narrow question - can a compact msgspec/MessagePack semantic buffer materially reduce the Python-to-Rust transfer and redundant URN-parsing costs identified by PR 8E? - WITHOUT changing any authorization behavior.
-
-The experimental boundary (benchmark-only, `benchmarks/`):
-
-- `benchmarks/msgspec_wire.py` defines a private, versioned (v1), positional (`array_like=True`) MessagePack schema carrying only *already-parsed semantic components* (definition namespace, resource, verb, qualifier, and an explicit complete-qualifier wildcard flag) extracted from the existing validated domain value objects. No complete MTMF Action/Permission URN text and no numeric registries cross the payload.
-- `_mtmf_permission_engine.evaluate_semantic_msgpack` is a private, clearly experimental single-buffer PyO3 entry point that MessagePack-decodes the payload with `serde`/`rmp-serde`, validates the components against exactly the states the canonical SYSTEM grammar accepts (explicit version check, supported namespace, non-empty resource/verb, exact Action, valid Permission wildcard state, exact ALLOW/DENY effect), and converges onto the SAME canonical decision loop as the production URN path (`evaluator.rs`). There is no second authorization algorithm, no fast-path semantics, and no project-authored `unsafe`.
-- `benchmarks/msgspec_evaluator.py` is the experimental adapter (M1: ordinary `encode`; M2: `encode_into` a reused buffer); it reuses the production result-validation and evidence-mapping helpers and preserves Role/PermissionSet ownership validation.
-
-Everything below is unchanged by PR 8F:
-
-- The production `Authorizer` and `RustPermissionEvaluator` are untouched; `Authorizer()` still evaluates through `RustPermissionEvaluator` and the existing primitive `native_evaluate` boundary.
-- No runtime backend selection, no fallback, no caching, and no compiled-policy handle exist. Every experimental end-to-end evaluation transfers the full policy payload; pre-encoded benchmark payloads are component fixtures, not runtime state.
-- `msgspec` is a development/experimental dependency only and is never a runtime dependency of `mtmf-core`/`mtmf-api`/`mtmf-client`/`mtmf-service`.
-- Malformed wire data (empty/truncated payloads, random bytes, wrong top-level type, missing fields, unsupported versions, unknown effects, invalid wildcard states, invalid component types, bounded excessive nesting) fails explicitly and is never ALLOW, NO_MATCH, or MATCHED_DENY.
-
-PR 8F findings (measured machine, Python 3.14.7 x86-64, msgspec 0.22.0; medians rounded; ratios are `baseline_median / candidate_median`, so `> 1.0` means the candidate was faster; full JSON in `benchmarks/results/`):
-
-- **Release native build; end-to-end msgspec did NOT improve over the current Rust boundary.** P/R/M1/M2 medians for a 1000-Permission policy: P 535 vs R 727 vs M1 995 vs M2 994 microseconds. M1 is never faster than Python (M1/P 0.15-0.54 across scenarios) and is faster than the current Rust boundary only for fixed-overhead/tiny scenarios (M1/R 1.03-1.16 for `no_roles`/`tiny_*`; 0.59-0.80 elsewhere, worsening as policy grows).
-- **No crossover as policy grows**: the M1/R and M1/P gaps widen with Permission count (M1/R 0.73 at 1000 perms, 0.63 at 5000 perms on the extended run).
-- **Component costs (release, 1000 perms):** domain-to-wire DTO construction 328 us (the single largest Python-side cost, more expensive than the current Rust evaluator's primitive conversion), ordinary encode 57 us, `encode_into` 56 us, pre-encoded native decode/evaluate 494 us. End-to-end M1 approximates C1+C2+C4 + adapter overhead, confirming per-call conversion/encoding/transfer dominates.
-- **`encode_into` (M2) does not materially help** (M2 is within ~1-3% of M1 across scenarios; at 5000 perms M2/P 0.43 vs M1/P 0.44).
-- **Full scans remain the worst relative case**: 1000-Permission no-match M1/P 0.17 and M1/R 0.72 (release), and 5000-Permission no-match M1/P 0.16 / M1/R 0.64; full policy is still transferred and scanned every call.
-- **Eliminating URN reparsing did not change scaling materially**: the pre-encoded native component alone costs 494 us (1000 perms) - on par with the whole Python reference (535 us) - so decode/validation plus evaluation, not URN parsing, absorbs most native time.
-- **Repeated policy transfer remains the dominant cost.** The evidence does not support msgspec as a material improvement; it supports retaining the current architecture. A separate CompiledPolicy experiment (compile-once, evaluate-many) is a plausible separate experiment but PR 8F does not implement or endorse it.
-- **Debug vs release**: debug-build R/M1 medians at 1000 perms were 2.59/3.25 ms vs release 0.73/0.99 ms; debug conclusions (native slower by ~-3.5x) are not the headline. Release measurements are the basis for the conclusions above, as required by the methodology.
-
-PR 8F is complete: the experiment is correct (four-way parity P == R == M1 == M2 on every scenario before timing), reproducible (`benchmarks/results/` + README procedure), fail-closed (malformed wire is never a decision), and honestly documented. A negative result (msgspec is slower) is still a valid outcome; no speed gate or adoption decision is implied.
-
 Rust still does NOT determine applicable policy, consume Roles, retrieve session/Tenant/membership/assignment context, or perform authorization-context orchestration; Python owns applicability and context, and the `Authorizer` remains the authoritative orchestrator. The native module is never imported eagerly: importing `mtmf_core` or constructing an `Authorizer` loads `_mtmf_permission_engine` only when Rust evaluation is actually invoked, and the Python reference evaluator never imports it.
 
 Not implemented: no Role identity, Tenant, session, assignment, stewardship, or any other authorization context reaches Rust; no persistence/I/O enters the evaluator; only detached primitive policy crosses the FFI boundary. Manifestly invalid URN text raises `ValueError` at the native boundary; a valid non-match is a `None`/`NO_MATCH` fact, so malformed input can never silently become a valid non-match or any authorization decision.

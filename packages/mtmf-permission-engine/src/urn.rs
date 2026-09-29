@@ -69,7 +69,7 @@ impl UrnParseError {
 const IAM_PREFIX: &str = "urn:mtmf:iam:";
 const ACTIONS_KIND: &str = "actions";
 const PERMISSIONS_KIND: &str = "permissions";
-pub(crate) const SYSTEM_NAMESPACE: &str = "system";
+const SYSTEM_NAMESPACE: &str = "system";
 pub const WILDCARD: &str = "*";
 
 /// Parsed, validated SYSTEM Action URN components.
