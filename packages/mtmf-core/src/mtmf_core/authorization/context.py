@@ -9,7 +9,7 @@ same-Tenant target.
 The Authorizer and the evaluator never retrieve their own context: the
 caller/context-retrieval layer supplies every fact this request carries.
 There are no Role-assignment objects, no persistence references, and no
-effective-Role loading here (PR 8 owns that model).
+effective-Role loading here (PR 9 owns that model).
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ class AuthorizationContext:
     The caller/context-retrieval layer supplies the session Tenant,
     acting Principal/Identity, their explicit Tenant memberships, and
     the Roles it asserts are applicable to this evaluation. Role-assignment
-    loading (PR 8) is not invented here: ``applicable_roles`` is
+    loading (PR 9) is not invented here: ``applicable_roles`` is
     trusted, pre-filtered input whose assignment/applicability the
     Authorizer cannot yet prove.
     """

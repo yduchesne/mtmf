@@ -122,7 +122,7 @@ def test_ordinary_tenant_scope_is_tenanted_only() -> None:
 
 
 def test_root_scope_is_representable_without_bootstrap_mechanics() -> None:
-    # PR 9 owns bootstrap/root uniqueness; PR 2 only permits the settled
+    # PR 10 owns bootstrap/root uniqueness; PR 2 only permits the settled
     # legal scope values on a Tenant.
     tenant = Tenant(make_id(), "Root", SecurityScope.ROOT, make_id())
     assert tenant.scope is SecurityScope.ROOT

@@ -91,7 +91,7 @@ def test_principal_kind_enum_is_absent() -> None:
 # matcher facts; PR 4 owns the Authorizer foundation and decision
 # engine, which live in mtmf_core.authorization and never leak into
 # mtmf_core.domain or Role objects. Role assignments, effective-Role
-# loading, and built-in Role policy mapping remain absent (PR 8/PR 9).
+# loading, and built-in Role policy mapping remain absent (PR 9/PR 10).
 
 
 def test_role_assignments_are_absent() -> None:
@@ -132,7 +132,7 @@ def test_default_deny_decision_engine_lives_only_in_authorization_foundation() -
 
 
 def test_authorizer_foundation_has_no_assignment_or_effective_role_model() -> None:
-    # PR 8 owns Role assignments and effective-Role loading. The
+    # PR 9 owns Role assignments and effective-Role loading. The
     # Authorizer foundation consumes caller-supplied applicable_roles and
     # carries no assignment objects.
     authorization = importlib.import_module("mtmf_core.authorization")

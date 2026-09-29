@@ -9,11 +9,13 @@ Current status: WIP.
 
 - Python **3.14** (managed by `uv`)
 - `uv` is the package/workspace/dependency tool
+- Rust toolchain for the native permission engine (PR 8A; installed by
+  `./install.sh` via rustup, with the `clippy` and `rustfmt` components)
 
 Bootstrap a clean checkout:
 
 ```bash
-./install.sh   # idempotent: installs uv + uv-managed Python 3.14 when missing
+./install.sh   # idempotent: installs uv, uv-managed Python 3.14, and the Rust toolchain when missing
 uv sync --locked
 ```
 
@@ -28,6 +30,14 @@ Run the security scans (Bandit + Semgrep):
 
 ```bash
 ./build.sh --sec
+```
+
+Run the deterministic Rust/native gate for the private permission-engine
+crate (PR 8A; requires the Rust toolchain on `PATH`, installed by
+`./install.sh`):
+
+```bash
+./build.sh --rust
 ```
 
 ### PostgreSQL integration (PR 6+)

@@ -1,0 +1,31 @@
+# Private MTMF permission-engine foundation crate (PR 8A).
+#
+# This crate is the deterministic in-memory permission-policy foundation
+# for MTMF. PR 8A deliberately exposes only a trivial smoke/capability
+# surface (see `src/lib.rs`): no Action/Permission grammar, no wildcard
+# matching, no specificity, no ALLOW/DENY evaluation, and no decision
+# type exist in Rust yet.
+#
+# Invariants for the Rust series:
+# - pure, deterministic, side-effect-free computation only;
+# - no I/O, no database, no network, no async runtime, no background
+#   threads;
+# - Python (the Authorizer) owns policy applicability and authorization
+#   context; Rust receives only detached primitive policy input;
+# - no live MTMF Python domain objects cross the FFI boundary.
+[package]
+name = "mtmf-permission-engine"
+version = "0.1.0"
+description = "Private, deterministic MTMF permission-policy kernel foundation (PR 8A)."
+license = "AGPL-3.0"
+edition = "2024"
+rust-version = "1.98"
+
+[lib]
+name = "mtmf_permission_engine"
+crate-type = ["cdylib"]
+
+[dependencies]
+# PyO3 0.29.x is the stable binding generation used by the maturin build.
+# It supports the Python 3.14 baseline required by the workspace.
+pyo3 = "0.29.2"

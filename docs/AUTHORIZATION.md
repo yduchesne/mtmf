@@ -154,9 +154,34 @@ Authorizer
   +-- produce decision
 ```
 
-The initial PermissionEvaluator should be implemented in Python.
+Python remains authoritative for authorization-context retrieval and orchestration: session validation, Tenant isolation, context validation, scope/dominance, stewardship/delegation, operation-specific constraints, and fail-closed orchestration all stay in Python, and the `Authorizer` remains the authoritative decision orchestrator.
 
-The evaluator should be deterministic and side-effect-free so that it can be optimized independently. If profiling later demonstrates that permission evaluation is CPU-bound and material to system performance, a Rust implementation may be introduced behind the same internal boundary, for example through PyO3/maturin. Rust is an optimization option, not a current requirement.
+### 8.1 Rust permission-policy kernel
+
+Since PR 8A, MTMF intentionally includes a Rust permission engine as a Rust/Python integration showcase and as a deterministic native policy kernel (see `ROADMAP_V01.md`, PR 8 series). This is an architecture decision; no profiling evidence claims a performance bottleneck, and performance characterization is useful but not the sole reason for Rust.
+
+The integration mechanism is PyO3/maturin. The native module is the private `_mtmf_permission_engine`, reached only through the internal Python adapter `mtmf_core.authorization.rust_engine`; it is never exposed through `mtmf-api`, Connectors, HTTP, or any public contract.
+
+Boundary rules:
+
+- Rust evaluates policy only; Python determines policy applicability and authorization context.
+- Rust's future input is an exact Action plus the already-applicable PermissionSets (no Role is required by the native engine). Python flattens domain state to detached primitive values:
+
+```text
+ActionInput
+    action_urn: str
+
+PermissionSetInput
+    effect: ALLOW | DENY
+    permissions:
+        PermissionInput
+            permission_urn: str
+```
+
+- No live Python domain objects (`Action`, `Role`, `PermissionSet`, `Permission`) cross the FFI boundary, and no JSON serialization is introduced to carry policy across PyO3.
+- Rust performs no retrieval and no I/O: no PostgreSQL, `MtmfSpi`, UnitOfWork, repositories, membership/session/assignment state, stewardship, delegation, IdP, network service, or filesystem-based policy discovery.
+
+The Python `PermissionEvaluator` remains the semantic reference implementation throughout the Rust migration series. Differential testing against the Python reference precedes any evaluator cutover; Python/Rust integration will sit behind an internal abstraction that fails closed on native errors. PR 8A itself implements no permission semantics in Rust: only a deterministic smoke/capability API exists, and no active authorization path imports the native module.
 
 Caching/indexing of effective authorization state may prove more important than the matching algorithm itself and will be designed only after realistic profiling.
 
@@ -175,6 +200,5 @@ The following remain intentionally unresolved:
 - manager-side actor eligibility for TenantManagementGroups;
 - complete Action catalog and built-in Role policy compositions;
 - built-in Role-to-PermissionSet/Permission mappings;
-- caching, invalidation, and compiled permission-index design;
 - exact audit decision record;
-- Rust implementation threshold and benchmarking criteria.
+- caching, invalidation, and compiled permission-index design.

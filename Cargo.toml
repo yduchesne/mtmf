@@ -1,0 +1,14 @@
+# Root Cargo workspace for MTMF's private Rust components (PR 8A).
+#
+# PR 8A introduces the first workspace member: the private
+# `mtmf-permission-engine` PyO3 native crate. The virtual workspace pins
+# all transitive crate versions in the committed `Cargo.lock` (resolver
+# 2) so `cargo fmt`, `cargo clippy`, `cargo test`, and maturin builds are
+# deterministic.
+#
+# This workspace is intentionally a bridge for the future Rust
+# permission kernel (PR 8B/8C): it owns no persistence, network, or
+# runtime-framework dependencies and performs no I/O.
+[workspace]
+resolver = "2"
+members = ["packages/mtmf-permission-engine"]

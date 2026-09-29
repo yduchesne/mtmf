@@ -101,6 +101,15 @@ Generated Python bytecode and local development artifacts must not be committed.
 - Missing, inconsistent, unknown, or unevaluable authorization context must fail closed.
 - Do not infer behavior for security-sensitive unresolved design items. Follow the more restrictive behavior until the design is explicitly settled.
 
+## Rust permission engine
+
+- The Rust permission engine is pure, deterministic, in-memory computation with no I/O: no PostgreSQL, `MtmfSpi`, UnitOfWork, repositories, network, or filesystem policy discovery.
+- Python supplies all required policy input: an exact Action plus already-applicable PermissionSets, flattened to detached primitive values. No live Python domain objects (`Action`, `Role`, `PermissionSet`, `Permission`) cross the FFI boundary.
+- Rust never retrieves session, Tenant, membership, assignment, stewardship, or delegation context.
+- The Python `Authorizer` remains authoritative for context, applicability, and fail-closed orchestration.
+- The Python `PermissionEvaluator` remains the semantic reference implementation until differential testing and a documented cutover replace it.
+- Rust work introduces no PostgreSQL/Podman dependency; the `./build.sh --rust` gate never requires `MTMF_*` configuration, Podman, or external services.
+
 ## Tests
 
 Tests should directly exercise documented invariants, not only happy-path API behavior.
