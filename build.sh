@@ -36,7 +36,8 @@
 #      install, e.g. one silently swapped by a uv environment sync)
 #   6. focused Python native-boundary, domain-conversion, differential,
 #      boundary-hardening, stress, Authorizer-cutover, and PR 8G
-#      compiled-policy evaluator/differential tests
+#      compiled-policy evaluator/differential tests (including the pure-
+#      Python compiled-policy control)
 #   7. clean wheel build/install/import/use verification in an isolated
 #      temporary environment (including the PR 8G compiled-policy
 #      capability)
@@ -154,6 +155,7 @@ PY
             tests/unit/authorization/test_authorizer_rust.py \
             tests/unit/authorization/test_compiled_policy_evaluator.py \
             tests/unit/authorization/test_compiled_policy_differential.py \
+            tests/unit/authorization/test_python_compiled_policy.py \
             --no-cov
 
         echo "==> Verifying a clean wheel build/install/import/use (isolated environment)"

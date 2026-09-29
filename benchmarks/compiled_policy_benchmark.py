@@ -2,22 +2,28 @@
 """Compiled-policy benchmark: compile-once vs repeated evaluation (PR 8G).
 
 PR 8G tests an architectural hypothesis: compile already-applicable
-Role policy once into an opaque immutable native indexed representation
-(the private ``_mtmf_permission_engine.compile_policy`` object), then
-evaluate many Actions without repeatedly traversing Roles/PermissionSets,
-transferring policy, parsing Permission URNs, or scanning all
-Permissions.
+Role policy once into an indexed representation, then evaluate many
+Actions without repeatedly traversing Roles/PermissionSets, transferring
+policy, parsing Permission URNs, or scanning all Permissions.
 
-This harness measures, for the SAME deterministic scenarios:
+The PR 8G amendment adds the missing experimental control and measures
+FOUR paths for the SAME deterministic scenarios:
 
-- the production Python reference evaluator (``PermissionEvaluator``);
-- the current Rust evaluator (``RustPermissionEvaluator``, the
-  production default);
-- the experimental compiled-policy evaluator
-  (``CompiledPolicyEvaluator.compile`` once, then repeated
-  ``evaluate``);
-- the one-time native compile cost;
-- the lifecycle cost: compile + 1/10/100/1000 evaluations;
+    P   Python linear evaluator (``PermissionEvaluator``)
+    R   Rust linear evaluator (``RustPermissionEvaluator``, production default)
+    PC  Python CompiledPolicy (``PythonCompiledPolicy.compile`` once,
+        pure-Python indexed evaluation; no FFI)
+    RC  Rust CompiledPolicy (``CompiledPolicyEvaluator.compile`` once,
+        native indexed evaluation)
+
+PC is the control that separates the algorithm/data-structure benefit
+(compiling/indexing) from the language/native-execution benefit (Rust).
+The most important comparison is PC vs RC.
+
+Also measured:
+
+- the one-time compile cost of both PC and RC;
+- the lifecycle cost (compile + 1/10/100/1000 evaluations) of both;
 - the unrelated-policy scaling diagnostic (25/200/1000/5000 unrelated
   Permissions characterized separately for exact hit, wildcard-only hit,
   and no-match - compiled evaluation is expected to be approximately
@@ -86,6 +92,7 @@ from mtmf_core.authorization.rust_permission_evaluator import RustPermissionEval
 # Reuse the PR 8E scenario fixtures unchanged so the 8G benchmark runs
 # against exactly the same policy as the 8E characterization.
 from permission_evaluator_benchmark import _build_scenarios as _build_8e_scenarios
+from python_compiled_policy import PythonCompiledPolicy
 
 # Deterministic multi-Action workload reused by the scale scenarios: one
 # exact hit, one wildcard-only hit, one wildcard DENY, and two
@@ -315,15 +322,17 @@ def _full_decision_equality(left: AuthorizationDecision, right: AuthorizationDec
 
 
 def _check_parity(scenario: Scenario) -> None:
-    """Require P == R == C complete-decision equality before timing."""
+    """Require P == R == PC == RC complete-decision equality before timing."""
     python_evaluator = PermissionEvaluator()
     rust_evaluator = RustPermissionEvaluator()
-    compiled = CompiledPolicyEvaluator.compile(scenario.roles)
+    rust_compiled = CompiledPolicyEvaluator.compile(scenario.roles)
+    python_compiled = PythonCompiledPolicy.compile(scenario.roles)
     try:
         for action in scenario.actions:
             python_decision = python_evaluator.evaluate(action, scenario.roles)
             rust_decision = rust_evaluator.evaluate(action, scenario.roles)
-            compiled_decision = compiled.evaluate(action)
+            rust_compiled_decision = rust_compiled.evaluate(action)
+            python_compiled_decision = python_compiled.evaluate(action)
     except RustEngineUnavailableError as exc:
         raise SystemExit(
             f"private native module is unavailable for scenario {scenario.name!r}; "
@@ -331,12 +340,14 @@ def _check_parity(scenario: Scenario) -> None:
         ) from exc
     if not (
         _full_decision_equality(python_decision, rust_decision)
-        and _full_decision_equality(python_decision, compiled_decision)
+        and _full_decision_equality(python_decision, rust_compiled_decision)
+        and _full_decision_equality(python_decision, python_compiled_decision)
     ):
         raise SystemExit(
-            f"P/R/C parity failure in scenario {scenario.name!r} for {action.urn.value!r}: "
+            f"P/R/PC/RC parity failure in scenario {scenario.name!r} for {action.urn.value!r}: "
             f"python={python_decision!r} rust={rust_decision!r} "
-            f"compiled={compiled_decision!r}; timing is aborted"
+            f"rust_compiled={rust_compiled_decision!r} "
+            f"python_compiled={python_compiled_decision!r}; timing is aborted"
         )
 
 
@@ -379,9 +390,34 @@ def _measure_compile_ns(scenario: Scenario) -> float:
 
 
 def _measure_compile_plus_n(scenario: Scenario, evaluations: int) -> float:
-    """One compile plus ``evaluations`` full workload passes."""
+    """One RC compile plus ``evaluations`` full workload passes."""
     start = time.perf_counter_ns()
     compiled = CompiledPolicyEvaluator.compile(scenario.roles)
+    for _ in range(evaluations):
+        for action in scenario.actions:
+            compiled.evaluate(action)
+    return time.perf_counter_ns() - start
+
+
+def _measure_python_compiled(compiled: PythonCompiledPolicy, scenario: Scenario) -> float:
+    """One full workload pass in nanoseconds (Python compiled control)."""
+    start = time.perf_counter_ns()
+    for action in scenario.actions:
+        compiled.evaluate(action)
+    return time.perf_counter_ns() - start
+
+
+def _measure_python_compiled_compile_ns(scenario: Scenario) -> float:
+    """One PC compile in nanoseconds (fresh compile per call)."""
+    start = time.perf_counter_ns()
+    PythonCompiledPolicy.compile(scenario.roles)
+    return time.perf_counter_ns() - start
+
+
+def _measure_python_compiled_compile_plus_n(scenario: Scenario, evaluations: int) -> float:
+    """One PC compile plus ``evaluations`` full workload passes."""
+    start = time.perf_counter_ns()
+    compiled = PythonCompiledPolicy.compile(scenario.roles)
     for _ in range(evaluations):
         for action in scenario.actions:
             compiled.evaluate(action)
@@ -413,6 +449,12 @@ class ScenarioResult:
     compile_plus_10_samples: list[float] = field(default_factory=list)
     compile_plus_100_samples: list[float] = field(default_factory=list)
     compile_plus_1000_samples: list[float] = field(default_factory=list)
+    python_compiled_samples: list[float] = field(default_factory=list)
+    python_compiled_compile_samples: list[float] = field(default_factory=list)
+    python_compiled_compile_plus_1_samples: list[float] = field(default_factory=list)
+    python_compiled_compile_plus_10_samples: list[float] = field(default_factory=list)
+    python_compiled_compile_plus_100_samples: list[float] = field(default_factory=list)
+    python_compiled_compile_plus_1000_samples: list[float] = field(default_factory=list)
 
     def median(self, name: str) -> float:
         return statistics.median(getattr(self, name))
@@ -429,65 +471,105 @@ class ScenarioResult:
     def compiled_median_ns(self) -> float:
         return self.median("compiled_samples")
 
+    @property
+    def python_compiled_median_ns(self) -> float:
+        return self.median("python_compiled_samples")
+
     def ratio(self, baseline_samples: str) -> float:
-        """``baseline / compiled``; ``>1.0`` means compiled is faster."""
-        if self.compiled_median_ns == 0:
+        """``baseline / RC``; ``>1.0`` means RC is faster."""
+        return self.ratio_for("compiled_samples", baseline_samples)
+
+    def ratio_for(self, candidate_samples: str, baseline_samples: str) -> float:
+        """``baseline / candidate``; ``>1.0`` means the candidate is faster."""
+        candidate = self.median(candidate_samples)
+        if candidate == 0:
             return float("inf")
-        return self.median(baseline_samples) / self.compiled_median_ns
+        return self.median(baseline_samples) / candidate
 
     def break_even(self, baseline_samples: str) -> float | None:
-        """``N* = compile_cost / (baseline_cost - compiled_cost)``.
+        """RC vs a linear baseline (see :meth:`break_even_for`)."""
+        return self.break_even_for("compile_samples", "compiled_samples", baseline_samples)
 
-        Reports the number of evaluations at which ``compile + N*eval``
-        equals ``N*eval`` on the baseline. Returns ``None`` when the
-        math is not meaningful (compiled evaluation is not faster than
-        the baseline).
+    def break_even_for(
+        self, compile_samples: str, eval_samples: str, baseline_samples: str
+    ) -> float | None:
+        """``N* = compile_cost / (baseline_cost - candidate_cost)``.
+
+        Reports the number of evaluations at which
+        ``compile + N*eval`` equals ``N*eval`` on the baseline. Returns
+        ``None`` when the math is not meaningful (candidate evaluation
+        is not faster than the baseline).
         """
-        compile_cost = self.median("compile_samples")
+        compile_cost = self.median(compile_samples)
         baseline = self.median(baseline_samples)
-        delta = baseline - self.compiled_median_ns
+        delta = baseline - self.median(eval_samples)
         if delta <= 0:
             return None
         return compile_cost / delta
+
+
+_MEASUREMENT_ORDERS: tuple[tuple[str, ...], ...] = (
+    ("python", "rust", "python_compiled", "rust_compiled"),
+    ("rust", "python_compiled", "rust_compiled", "python"),
+    ("python_compiled", "rust_compiled", "python", "rust"),
+    ("rust_compiled", "python", "rust", "python_compiled"),
+)
 
 
 def _run_scenario(scenario: Scenario, *, warmup: int, samples: int) -> ScenarioResult:
     _check_parity(scenario)
     python_evaluator = PermissionEvaluator()
     rust_evaluator = RustPermissionEvaluator()
-    compiled = CompiledPolicyEvaluator.compile(scenario.roles)
+    rust_compiled = CompiledPolicyEvaluator.compile(scenario.roles)
+    python_compiled = PythonCompiledPolicy.compile(scenario.roles)
+
+    def timed(path: str) -> float:
+        """Measure one full workload pass for the named path."""
+        if path == "python":
+            return _measure_python(python_evaluator, scenario)
+        if path == "rust":
+            return _measure_rust(rust_evaluator, scenario)
+        if path == "python_compiled":
+            return _measure_python_compiled(python_compiled, scenario)
+        return _measure_compiled(rust_compiled, scenario)
 
     for _ in range(warmup):
-        _measure_python(python_evaluator, scenario)
-        _measure_rust(rust_evaluator, scenario)
-        _measure_compiled(compiled, scenario)
+        for path in _MEASUREMENT_ORDERS[0]:
+            timed(path)
         _measure_compile_ns(scenario)
+        _measure_python_compiled_compile_ns(scenario)
 
     result = ScenarioResult(scenario)
     for sample_index in range(samples):
-        # Rotate the measured implementation order across samples so one
-        # side is never systematically favored by order effects.
-        if sample_index % 3 == 0:
-            py_ns = _measure_python(python_evaluator, scenario)
-            rust_ns = _measure_rust(rust_evaluator, scenario)
-            compiled_ns = _measure_compiled(compiled, scenario)
-        elif sample_index % 3 == 1:
-            rust_ns = _measure_rust(rust_evaluator, scenario)
-            compiled_ns = _measure_compiled(compiled, scenario)
-            py_ns = _measure_python(python_evaluator, scenario)
-        else:
-            compiled_ns = _measure_compiled(compiled, scenario)
-            py_ns = _measure_python(python_evaluator, scenario)
-            rust_ns = _measure_rust(rust_evaluator, scenario)
-        result.python_samples.append(py_ns)
-        result.rust_samples.append(rust_ns)
-        result.compiled_samples.append(compiled_ns)
-        result.compiled_native_samples.append(_measure_compiled_native(compiled.compiled, scenario))
+        # Rotate the measured implementation order across samples so no
+        # path (in particular neither PC nor RC) is systematically
+        # measured first and favored by order effects.
+        elapsed = {name: timed(name) for name in _MEASUREMENT_ORDERS[sample_index % 4]}
+        result.python_samples.append(elapsed["python"])
+        result.rust_samples.append(elapsed["rust"])
+        result.compiled_samples.append(elapsed["rust_compiled"])
+        result.python_compiled_samples.append(elapsed["python_compiled"])
+        result.compiled_native_samples.append(
+            _measure_compiled_native(rust_compiled.compiled, scenario)
+        )
         result.compile_samples.append(_measure_compile_ns(scenario))
+        result.python_compiled_compile_samples.append(_measure_python_compiled_compile_ns(scenario))
         result.compile_plus_1_samples.append(_measure_compile_plus_n(scenario, 1))
         result.compile_plus_10_samples.append(_measure_compile_plus_n(scenario, 10))
         result.compile_plus_100_samples.append(_measure_compile_plus_n(scenario, 100))
         result.compile_plus_1000_samples.append(_measure_compile_plus_n(scenario, 1000))
+        result.python_compiled_compile_plus_1_samples.append(
+            _measure_python_compiled_compile_plus_n(scenario, 1)
+        )
+        result.python_compiled_compile_plus_10_samples.append(
+            _measure_python_compiled_compile_plus_n(scenario, 10)
+        )
+        result.python_compiled_compile_plus_100_samples.append(
+            _measure_python_compiled_compile_plus_n(scenario, 100)
+        )
+        result.python_compiled_compile_plus_1000_samples.append(
+            _measure_python_compiled_compile_plus_n(scenario, 1000)
+        )
     return result
 
 
@@ -511,7 +593,7 @@ def _render_human(
     warmup: int,
     samples: int,
 ) -> None:
-    print("MTMF compiled-policy benchmark (Python vs current Rust vs compiled; PR 8G)")
+    print("MTMF compiled-policy benchmark (P / R / PC / RC; PR 8G amendment)")
     print("Environment:")
     for key, value in environment.items():
         print(f"  {key}: {value}")
@@ -520,34 +602,56 @@ def _render_human(
         "median primary over deterministic workload passes; characterization only"
     )
     print(
-        "  ratio direction: compiled_vs_python = python/compiled; "
-        "compiled_vs_current_rust = current_rust/compiled; >1.0 means compiled is faster"
+        "  paths: P = python linear; R = current rust linear; "
+        "PC = python compiled; RC = rust compiled"
+    )
+    print(
+        "  ratio direction (baseline/candidate): p/pc = P/PC, r/rc = R/RC, "
+        "pc/rc = PC/RC; >1.0 means the candidate on the right is faster"
     )
     header = (
-        "scenario | perms/sets | python median | current rust median | compiled median | "
-        "compile median | c/py | c/rust | break-even(py) | break-even(rust)"
+        "scenario | perms/sets | P linear | R linear | RC eval | PC eval | "
+        "RC comp | PC comp | p/pc | r/rc | pc/rc | be(PC|P) | be(PC|R) | be(RC|P) | be(RC|R)"
     )
     print(header)
     print("-" * len(header))
     for result in results:
         scenario = result.scenario
-        ratio_py = result.ratio("python_samples")
-        ratio_rust = result.ratio("rust_samples")
-        be_py = result.break_even("python_samples")
-        be_rust = result.break_even("rust_samples")
-        be_py_text = f"{be_py:.0f}" if be_py is not None else "none"
-        be_rust_text = f"{be_rust:.0f}" if be_rust is not None else "none"
+
+        def fmt_be(value: float | None) -> str:
+            return f"{value:.0f}" if value is not None else "none"
+
+        p_over_pc = result.ratio_for("python_compiled_samples", "python_samples")
+        r_over_rc = result.ratio_for("compiled_samples", "rust_samples")
+        pc_over_rc = result.ratio_for("compiled_samples", "python_compiled_samples")
+        be_pc_p = fmt_be(
+            result.break_even_for(
+                "python_compiled_compile_samples", "python_compiled_samples", "python_samples"
+            )
+        )
+        be_pc_r = fmt_be(
+            result.break_even_for(
+                "python_compiled_compile_samples", "python_compiled_samples", "rust_samples"
+            )
+        )
+        be_rc_p = fmt_be(result.break_even("python_samples"))
+        be_rc_r = fmt_be(result.break_even("rust_samples"))
         print(
             f"{scenario.name:<18} "
             f"{scenario.permissions_count:>5}/{scenario.sets_count:>3} "
-            f"{result.python_median_ns:>13.0f} "
-            f"{result.rust_median_ns:>13.0f} "
-            f"{result.compiled_median_ns:>13.0f} "
-            f"{result.median('compile_samples'):>11.0f} "
-            f"{ratio_py:>6.2f}x "
-            f"{ratio_rust:>6.2f}x "
-            f"{be_py_text:>15} "
-            f"{be_rust_text:>18}"
+            f"{result.python_median_ns:>9.0f} "
+            f"{result.rust_median_ns:>9.0f} "
+            f"{result.compiled_median_ns:>9.0f} "
+            f"{result.python_compiled_median_ns:>9.0f} "
+            f"{result.median('compile_samples'):>8.0f} "
+            f"{result.median('python_compiled_compile_samples'):>8.0f} "
+            f"{p_over_pc:>6.2f}x "
+            f"{r_over_rc:>6.2f}x "
+            f"{pc_over_rc:>6.2f}x "
+            f"{be_pc_p:>10} "
+            f"{be_pc_r:>10} "
+            f"{be_rc_p:>11} "
+            f"{be_rc_r:>11}"
         )
     print("Timing is characterization only; no speed gate exists. Results are machine-specific.")
 
@@ -563,6 +667,7 @@ def _write_json(results: list[ScenarioResult], environment: dict[str, str], path
                 "permission_count": result.scenario.permissions_count,
                 "permission_set_count": result.scenario.sets_count,
                 "action_count": len(result.scenario.actions),
+                # PR 8G original fields (meanings unchanged):
                 "python_eval_median_ns": result.python_median_ns,
                 "current_rust_eval_median_ns": result.rust_median_ns,
                 "compiled_eval_median_ns": result.compiled_median_ns,
@@ -580,6 +685,60 @@ def _write_json(results: list[ScenarioResult], environment: dict[str, str], path
                 "current_rust_eval_dispersion": _dispersion(result.rust_samples),
                 "compiled_eval_dispersion": _dispersion(result.compiled_samples),
                 "compile_dispersion": _dispersion(result.compile_samples),
+                # PR 8G amendment fields (P/R/PC/RC four-way):
+                "python_linear_eval_median_ns": result.python_median_ns,
+                "rust_linear_eval_median_ns": result.rust_median_ns,
+                "python_compiled_compile_median_ns": result.median(
+                    "python_compiled_compile_samples"
+                ),
+                "rust_compiled_compile_median_ns": result.median("compile_samples"),
+                "python_compiled_eval_median_ns": result.median("python_compiled_samples"),
+                "rust_compiled_eval_median_ns": result.compiled_median_ns,
+                "python_compiled_compile_plus_1_median_ns": result.median(
+                    "python_compiled_compile_plus_1_samples"
+                ),
+                "python_compiled_compile_plus_10_median_ns": result.median(
+                    "python_compiled_compile_plus_10_samples"
+                ),
+                "python_compiled_compile_plus_100_median_ns": result.median(
+                    "python_compiled_compile_plus_100_samples"
+                ),
+                "python_compiled_compile_plus_1000_median_ns": result.median(
+                    "python_compiled_compile_plus_1000_samples"
+                ),
+                "rust_compiled_compile_plus_1_median_ns": result.median("compile_plus_1_samples"),
+                "rust_compiled_compile_plus_10_median_ns": result.median("compile_plus_10_samples"),
+                "rust_compiled_compile_plus_100_median_ns": result.median(
+                    "compile_plus_100_samples"
+                ),
+                "rust_compiled_compile_plus_1000_median_ns": result.median(
+                    "compile_plus_1000_samples"
+                ),
+                # Ratios: baseline_time / candidate_time; >1.0 = candidate faster.
+                "python_linear_over_python_compiled_ratio": result.ratio_for(
+                    "python_compiled_samples", "python_samples"
+                ),
+                "rust_linear_over_rust_compiled_ratio": result.ratio_for(
+                    "compiled_samples", "rust_samples"
+                ),
+                "python_compiled_over_rust_compiled_ratio": result.ratio_for(
+                    "compiled_samples", "python_compiled_samples"
+                ),
+                # Break-even: N* = compile / (baseline_eval - candidate_eval).
+                "python_compiled_break_even_vs_python_linear": result.break_even_for(
+                    "python_compiled_compile_samples",
+                    "python_compiled_samples",
+                    "python_samples",
+                ),
+                "python_compiled_break_even_vs_rust_linear": result.break_even_for(
+                    "python_compiled_compile_samples",
+                    "python_compiled_samples",
+                    "rust_samples",
+                ),
+                "python_compiled_eval_dispersion": _dispersion(result.python_compiled_samples),
+                "python_compiled_compile_dispersion": _dispersion(
+                    result.python_compiled_compile_samples
+                ),
             }
             for result in results
         ],
@@ -660,6 +819,25 @@ def main(argv: list[str] | None = None) -> int:
                 "compiled_vs_current_rust_ratio",
                 "break_even_vs_python",
                 "break_even_vs_current_rust",
+                "python_linear_eval_median_ns",
+                "rust_linear_eval_median_ns",
+                "python_compiled_compile_median_ns",
+                "rust_compiled_compile_median_ns",
+                "python_compiled_eval_median_ns",
+                "rust_compiled_eval_median_ns",
+                "python_compiled_compile_plus_1_median_ns",
+                "python_compiled_compile_plus_10_median_ns",
+                "python_compiled_compile_plus_100_median_ns",
+                "python_compiled_compile_plus_1000_median_ns",
+                "rust_compiled_compile_plus_1_median_ns",
+                "rust_compiled_compile_plus_10_median_ns",
+                "rust_compiled_compile_plus_100_median_ns",
+                "rust_compiled_compile_plus_1000_median_ns",
+                "python_linear_over_python_compiled_ratio",
+                "rust_linear_over_rust_compiled_ratio",
+                "python_compiled_over_rust_compiled_ratio",
+                "python_compiled_break_even_vs_python_linear",
+                "python_compiled_break_even_vs_rust_linear",
             }
             for scenario in payload["scenarios"]:
                 assert required <= set(scenario), sorted(required - set(scenario))

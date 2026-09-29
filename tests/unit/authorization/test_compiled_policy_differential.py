@@ -61,6 +61,7 @@ from mtmf_core import (
 )
 from mtmf_core.authorization.permission_evaluator import PermissionEvaluator
 from mtmf_core.authorization.rust_permission_evaluator import RustPermissionEvaluator
+from python_compiled_policy import PythonCompiledPolicy
 
 NATIVE_MODULE = "_mtmf_permission_engine"
 
@@ -76,8 +77,13 @@ GET_OBJECT = "urn:mtmf:iam:permissions:system:principal:get-object"
 
 
 def _compiled_decision(action: Action, roles: object) -> AuthorizationDecision:
-    """Compile the Roles once and evaluate the Action against the result."""
+    """Compile the Roles once (Rust) and evaluate the Action against it."""
     return CompiledPolicyEvaluator.compile(roles).evaluate(action)
+
+
+def _python_compiled_decision(action: Action, roles: object) -> AuthorizationDecision:
+    """Compile the Roles once (pure Python) and evaluate the Action against it."""
+    return PythonCompiledPolicy.compile(roles).evaluate(action)
 
 
 def _assert_pairs_equal(
@@ -94,12 +100,18 @@ def _assert_pairs_equal(
 
 
 def _assert_full_parity(action: Action, roles: object, *, label: str = "") -> None:
-    """Assert Python == Rust == Compiled over the complete decision."""
+    """Assert P == R == RC == PC over the complete decision."""
     python_decision = _PYTHON.evaluate(action, roles)
     rust_decision = _RUST.evaluate(action, roles)
     compiled_decision = _compiled_decision(action, roles)
+    python_compiled_decision = _python_compiled_decision(action, roles)
     _assert_pairs_equal(rust_decision, python_decision, label=f"{label} (rust vs python)")
-    _assert_pairs_equal(compiled_decision, python_decision, label=f"{label} (compiled vs python)")
+    _assert_pairs_equal(
+        compiled_decision, python_decision, label=f"{label} (rust-compiled vs python)"
+    )
+    _assert_pairs_equal(
+        python_compiled_decision, python_decision, label=f"{label} (python-compiled vs python)"
+    )
 
 
 def _single_set_role(
@@ -380,6 +392,9 @@ def test_permission_set_order_permutation_is_parity_and_invariant() -> None:
     assert _PYTHON.evaluate(action, (original,)) == _PYTHON.evaluate(action, (swapped,))
     assert _RUST.evaluate(action, (original,)) == _RUST.evaluate(action, (swapped,))
     assert _compiled_decision(action, (original,)) == _compiled_decision(action, (swapped,))
+    assert _python_compiled_decision(action, (original,)) == _python_compiled_decision(
+        action, (swapped,)
+    )
 
 
 def test_role_order_permutation_is_parity_and_invariant() -> None:
@@ -399,6 +414,9 @@ def test_role_order_permutation_is_parity_and_invariant() -> None:
         action, (deny_role, allow_role)
     )
     assert _compiled_decision(action, (allow_role, deny_role)) == _compiled_decision(
+        action, (deny_role, allow_role)
+    )
+    assert _python_compiled_decision(action, (allow_role, deny_role)) == _python_compiled_decision(
         action, (deny_role, allow_role)
     )
 
@@ -424,6 +442,9 @@ def test_permission_order_permutation_is_parity_and_invariant() -> None:
     assert _PYTHON.evaluate(action, (original,)) == _PYTHON.evaluate(action, (reversed_,))
     assert _RUST.evaluate(action, (original,)) == _RUST.evaluate(action, (reversed_,))
     assert _compiled_decision(action, (original,)) == _compiled_decision(action, (reversed_,))
+    assert _python_compiled_decision(action, (original,)) == _python_compiled_decision(
+        action, (reversed_,)
+    )
 
 
 def test_repeated_evaluation_is_deterministic_and_parity() -> None:
@@ -436,10 +457,13 @@ def test_repeated_evaluation_is_deterministic_and_parity() -> None:
     first_rust = _RUST.evaluate(action, (role,))
     compiled = CompiledPolicyEvaluator.compile((role,))
     first_compiled = compiled.evaluate(action)
+    python_compiled = PythonCompiledPolicy.compile((role,))
+    first_python_compiled = python_compiled.evaluate(action)
     for _ in range(5):
         assert _PYTHON.evaluate(action, (role,)) == first_python
         assert _RUST.evaluate(action, (role,)) == first_rust
         assert compiled.evaluate(action) == first_compiled
+        assert python_compiled.evaluate(action) == first_python_compiled
     _assert_full_parity(action, (role,), label="determinism")
 
 
@@ -522,6 +546,9 @@ def test_role_order_permutation_is_invariant_across_all_three(
     _assert_full_parity(action, roles, label="roles")
     _assert_full_parity(action, reversed_roles, label="reversed roles")
     assert _compiled_decision(action, roles) == _compiled_decision(action, reversed_roles)
+    assert _python_compiled_decision(action, roles) == _python_compiled_decision(
+        action, reversed_roles
+    )
 
 
 @settings(max_examples=40, deadline=1000)
@@ -543,6 +570,9 @@ def test_permission_set_order_permutation_is_invariant_across_all_three(
         _assert_full_parity(action, (role,), label="sets")
         _assert_full_parity(action, (shuffled,), label="shuffled sets")
         assert _compiled_decision(action, (role,)) == _compiled_decision(action, (shuffled,))
+        assert _python_compiled_decision(action, (role,)) == _python_compiled_decision(
+            action, (shuffled,)
+        )
 
 
 @settings(max_examples=40, deadline=1000)
@@ -567,3 +597,6 @@ def test_permission_order_permutation_is_invariant_across_all_three(
         _assert_full_parity(action, (role,), label="permissions")
         _assert_full_parity(action, (rebuilt,), label="reversed permissions")
         assert _compiled_decision(action, (role,)) == _compiled_decision(action, (rebuilt,))
+        assert _python_compiled_decision(action, (role,)) == _python_compiled_decision(
+            action, (rebuilt,)
+        )
