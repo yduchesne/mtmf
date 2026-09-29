@@ -181,7 +181,14 @@ PermissionSetInput
 - No live Python domain objects (`Action`, `Role`, `PermissionSet`, `Permission`) cross the FFI boundary, and no JSON serialization is introduced to carry policy across PyO3.
 - Rust performs no retrieval and no I/O: no PostgreSQL, `MtmfSpi`, UnitOfWork, repositories, membership/session/assignment state, stewardship, delegation, IdP, network service, or filesystem-based policy discovery.
 
-The Python `PermissionEvaluator` remains the semantic reference implementation throughout the Rust migration series. Differential testing against the Python reference precedes any evaluator cutover; Python/Rust integration will sit behind an internal abstraction that fails closed on native errors. PR 8A itself implements no permission semantics in Rust: only a deterministic smoke/capability API exists, and no active authorization path imports the native module.
+The Python `PermissionEvaluator` remains the semantic reference implementation throughout the Rust migration series. Differential testing against the Python reference precedes any evaluator cutover; Python/Rust integration will sit behind an internal abstraction that fails closed on native errors.
+
+Implemented so far in the Rust series:
+
+- PR 8A: only a deterministic smoke/capability API (`engine_version`) exists; no permission semantics are implemented in Rust, and no active authorization path imports the native module.
+- PR 8B: a detached native policy model (`ActionInput`, `PermissionInput`, `PermissionSetInput`, `PermissionEffect` with exactly ALLOW/DENY) exists as the structural input contract for future evaluation; the SYSTEM-only Action/Permission URN parsers exist; exact and complete-qualifier wildcard (`*`) single-Permission matching exists; and match specificity exists with exactly two classes (`EXACT` is more specific than the qualifier wildcard, and nothing else is). A small private primitive matcher bridge (`_mtmf_permission_engine.match_permission`) exposes the match facts (`"exact"`, `"qualifier-wildcard"`, or `None` for a valid non-match) through the internal `rust_engine` adapter, and focused Python/Rust parity tests prove agreement with the Python matcher.
+
+Not implemented: there is still no Rust evaluator, no ALLOW/DENY resolution, no default DENY, no cross-Permission specificity selection, no Role input to Rust, and no conversion of Python domain objects to native inputs. Manifestly invalid URN text raises `ValueError` at the native boundary; a valid non-match is a `None`/`NO_MATCH` fact, so malformed input can never silently become a valid non-match or any authorization decision. PR 8B makes no authorization decision of any kind, and no active authorization path imports the native module.
 
 Caching/indexing of effective authorization state may prove more important than the matching algorithm itself and will be designed only after realistic profiling.
 
