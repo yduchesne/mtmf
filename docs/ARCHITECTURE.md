@@ -232,15 +232,33 @@ The first persistence provider is PostgreSQL-backed, tentatively `PostgresMtmfSp
 
 Application-level database operations and logic go through PostgreSQL stored functions.
 
-Tables, indexes, constraints, and other physical schema details are implementation details of the PostgreSQL provider.
+### 10.1 Physical schema
 
-Security-critical invariants should be enforced at trusted persistence/write boundaries in addition to higher layers where appropriate.
+All MTMF physical state lives in a single MTMF-owned schema, `mtmf` (never `public`, never one schema per Tenant). The initial schema persists the PR 5 aggregates — Tenant, Organization, Principal, Identity, Group, Role -> PermissionSet -> Permission, and Action — plus the six typed memberships, using PostgreSQL `uuid` for `DomainId` values, `text` for names/descriptions/URNs, and object-constrained `jsonb` for application `extension` data.
+
+Settled structural invariants are enforced at the database trusted boundary:
+
+- `Role` definition ownership: SYSTEM vs TENANT Role URN namespace agrees with the structural `defining_tenant_id`;
+- PermissionSet effects are constrained to the domain ALLOW/DENY string values; Permission URNs are matcher semantics and intentionally not globally unique;
+- Action URNs are exact primary keys; no wildcard Action representation exists;
+- soft deletion is a `smallint` lifecycle value (DELETED=1 / NOT_DELETED=2), never a Boolean; hard-DELETE cascades do not exist (restrictive NO ACTION foreign keys);
+- membership preconditions and structural immutability are enforced by schema-qualified trigger functions: a dependent membership requires its prerequisite facts, cross-Tenant membership is rejected, and identity/structural columns (and membership rows themselves) are immutable. These are write-time checks: MTMF write paths insert prerequisite rows before dependent rows within one transaction. They enforce structure only and never authorization.
+
+A deliberate PR 6 decision: PostgreSQL does not ship the deferred-constraint mechanism (`CREATE CONSTRAINT` is not in core), so cross-table invariants use deterministic immediate trigger functions with the documented prerequisite-ordering contract. Full Role/Action URN grammar parity stays at the domain boundary; the database constrains the canonical forms and definition-ownership agreement.
+
+### 10.2 Stored-function convention
+
+Substantial SQL functions ship as immutable, versioned, packaged resources under `mtmf_core/persistence/postgres/sql/vNNN/<function>.sql` and are installed by Alembic revisions in sorted filename order. Functions are schema-qualified, do not rely on caller `search_path` (`SET search_path = ''`), avoid dynamic SQL, and do not use `SECURITY DEFINER` without explicit review. PR 6 installs a single infrastructure proof function (`mtmf.mtf_schema_version()`); repository CRUD functions are owned by PR 7.
+
+Security-critical invariants are enforced at trusted persistence/write boundaries in addition to higher layers where appropriate.
 
 ## 11. Schema Migration
 
 MTMF uses Alembic internally for PostgreSQL schema migration.
 
-Consumers interact with an MTMF-owned migration/database-management interface rather than Alembic directly. They should not need to know MTMF Alembic script locations, revision IDs, configuration objects, or migration graph internals.
+Consumers interact with the MTMF-owned migration boundary: `PostgresMigrationManager` (upgrade-to-head + current revision) in `mtmf_core/persistence/postgres`, which hides Alembic `Config` objects, script locations, revision IDs, and migration-graph internals. Migrations and SQL resources are packaged with `mtmf-core` and resolved through `importlib.resources`, so migration tooling never depends on the repository working directory.
+
+MTMF migration state (including the Alembic version table) lives inside the `mtmf` schema so the MTMF migration graph is isolated from application migrations.
 
 An application may independently use Alembic for its own schema. MTMF owns its own migration graph.
 
@@ -306,6 +324,14 @@ The same behavioral expectations should be exercised against:
 A semantic difference between connectors should be treated as a defect unless explicitly documented by the public contract.
 
 Authorization should have independent conformance tests covering the security constitution, Tenant-scoped session isolation, and PermissionSet/Permission resolution.
+
+### 15.1 Unit versus real-PostgreSQL integration testing
+
+Ordinary unit testing (`tests/unit`, driven by `./build.sh --qa`) stays service-independent and runs the >=85% coverage gate without needing PostgreSQL. Real-PostgreSQL migration/schema/constraint testing lives under `tests/integration/postgres` and is driven by `./build.sh --integration`. Integration fixtures connect only to the explicitly configured MTMF database (`MTMF_*` environment variables) and fail closed when that configuration is missing or ambiguous: they never probe for, discover, or fall back to another PostgreSQL instance, including any ATI-owned database.
+
+### 15.2 Local PostgreSQL and ATI coexistence (WSL/Podman)
+
+The canonical local MTMF PostgreSQL service is defined by the repository `compose.yaml` under the Compose project `mtmf`, with a `postgres` service, a project-scoped volume, and a configurable host-published port (`MTMF_POSTGRES_PORT`, default 55432). `scripts/mtmf-postgres.py up|stop|down|reset|status` scopes every Podman/Compose operation to the MTMF project (project name is always passed explicitly; an ambient `COMPOSE_PROJECT_NAME` that differs from `mtmf` causes a refusal). MTMF tooling never discovers PostgreSQL by image name, generic container name, first match, or port, never runs global Podman prunes, and never touches ATI resources. `reset` re-creates only the MTMF project's containers and volumes. Development credentials are placeholders in `.env.example`; no real secret is committed.
 
 ## 16. Deferred Architecture Decisions
 

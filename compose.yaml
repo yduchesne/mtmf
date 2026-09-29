@@ -1,0 +1,45 @@
+# MTMF-owned local PostgreSQL service (development and integration testing).
+#
+# Resource ownership
+# ------------------
+# Every resource created from this file belongs to the canonical "mtmf"
+# Compose project and the "postgres" service. MTMF scripts always pass
+# `--project-name mtmf` (never an ambient or inferred project name), so
+# containers, pods, networks, and volumes are deterministic MTMF-owned
+# resources named `mtmf_*`.
+#
+# ATI runs on the same host under its own Compose project. MTMF tooling
+# never discovers PostgreSQL by image, generic container name, or port;
+# it addresses only the MTMF project + service identity below. Image
+# names and published ports are never proof of ownership.
+#
+# There must be no fixed `container_name`: Compose generates
+# project-scoped names, preserving ownership semantics.
+#
+# Secrets
+# -------
+# The values below are development placeholders from `.env.example`.
+# Never commit real credentials.
+services:
+  postgres:
+    image: docker.io/library/postgres:18
+    environment:
+      POSTGRES_DB: ${MTMF_POSTGRES_DB:-mtmf}
+      POSTGRES_USER: ${MTMF_POSTGRES_USER:-mtmf}
+      POSTGRES_PASSWORD: ${MTMF_POSTGRES_PASSWORD:-mtmf-dev-password}
+    ports:
+      - "${MTMF_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - mtmf-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  # Project-scoped MTMF volume; never a fixed global name.
+  mtmf-postgres-data:

@@ -5,6 +5,7 @@
 # Usage:
 #   ./build.sh --qa
 #   ./build.sh --sec
+#   ./build.sh --integration
 #
 # --qa runs the default quality gate, in order and failing fast:
 #   1. Ruff formatting check
@@ -15,6 +16,13 @@
 # --sec runs the security scan, in order and failing fast:
 #   1. Bandit (Python security linter) over packages/ and tests/
 #   2. Semgrep (static analysis) over packages/ and tests/
+#
+# --integration runs the real-PostgreSQL migration/schema/constraint
+#   integration suite against the explicitly configured MTMF database
+#   (MTMF_* variables). Start it first with:
+#       uv run python scripts/mtmf-postgres.py up
+#   The integration suite never runs as part of --qa; it fails closed
+#   when MTMF database configuration is missing or ambiguous.
 #
 set -euo pipefail
 
@@ -46,8 +54,15 @@ case "${MODE}" in
         echo "==> Running static analysis with semgrep (registry rules)"
         uv run semgrep scan --config=auto packages tests
         ;;
+    --integration)
+        echo "==> Running PostgreSQL integration tests (MTMF-owned database only)"
+        echo "    Requires the MTMF PostgreSQL service; start it with:"
+        echo "        uv run python scripts/mtmf-postgres.py up"
+        echo "    Tests FAIL CLOSED when MTMF_* database configuration is missing."
+        uv run pytest tests/integration/postgres --no-cov
+        ;;
     *)
-        echo "usage: $0 --qa | --sec" >&2
+        echo "usage: $0 --qa | --sec | --integration" >&2
         exit 2
         ;;
 esac

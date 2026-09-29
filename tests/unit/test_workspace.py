@@ -58,8 +58,18 @@ def test_core_metadata_has_no_dependency_on_api() -> None:
     assert "mtmf-api" not in _dependencies("mtmf-core")
 
 
-def test_core_metadata_has_no_runtime_dependencies() -> None:
-    assert _dependencies("mtmf-core") == []
+def test_core_metadata_has_exactly_the_postgres_infrastructure_dependencies() -> None:
+    # PR 6 adds the PostgreSQL infrastructure dependencies (Psycopg for
+    # drivers and Alembic for MTMF-owned migrations) and nothing else.
+    # Alembic depends on SQLAlchemy internally; no SQLAlchemy ORM/session
+    # concepts may leak into the persistence SPI/UnitOfWork/repositories.
+    dependencies = _dependencies("mtmf-core")
+    assert len(dependencies) == 2
+    assert any("alembic" in dependency for dependency in dependencies)
+    assert any(dependency.startswith("psycopg") for dependency in dependencies)
+    assert not any(
+        name in dependency for dependency in dependencies for name in ("mtmf-api", "sqlalchemy")
+    )
 
 
 def test_api_metadata_has_no_dependency_on_core() -> None:
