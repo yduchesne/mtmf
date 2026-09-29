@@ -112,7 +112,13 @@ case "${MODE}" in
         "${PYO3_PYTHON}" - <<'PY'
 import _mtmf_permission_engine as native
 
-required = ("engine_version", "match_permission", "evaluate")
+required = (
+    "engine_version",
+    "build_profile",
+    "match_permission",
+    "evaluate",
+    "evaluate_semantic_msgpack",
+)
 missing = [name for name in required if not callable(getattr(native, name, None))]
 if missing:
     raise SystemExit(
@@ -124,7 +130,10 @@ if missing:
 version = native.engine_version()
 if not isinstance(version, str) or not version:
     raise SystemExit(f"invalid engine_version response: {version!r}")
-print(f"native module OK (engine_version={version!r})")
+profile = native.build_profile()
+if profile not in ("debug", "release"):
+    raise SystemExit(f"invalid build_profile response: {profile!r}")
+print(f"native module OK (engine_version={version!r}, build_profile={profile!r})")
 PY
 
         echo "==> Running focused Python native-boundary tests"
@@ -133,8 +142,10 @@ PY
         # domain-conversion/mapping tests, the hand-authored and generated
         # Python/Rust differential suite (including bounded stress
         # conformance), the boundary-hardening suite (malformed/incoherent
-        # FFI states), and the Authorizer cutover/fail-closed tests; the
-        # full coverage gate stays with --qa.
+        # FFI states), the PR 8F msgspec semantic-buffer wire/adapter and
+        # malformed-wire fail-closed suites, and the Authorizer
+        # cutover/fail-closed tests; the full coverage gate stays with
+        # --qa.
         uv run --no-sync pytest \
             tests/unit/authorization/test_rust_engine.py \
             tests/unit/authorization/test_rust_matcher.py \
@@ -142,6 +153,8 @@ PY
             tests/unit/authorization/test_rust_permission_evaluator.py \
             tests/unit/authorization/test_permission_evaluator_differential.py \
             tests/unit/authorization/test_rust_boundary_hardening.py \
+            tests/unit/authorization/test_msgspec_wire.py \
+            tests/unit/authorization/test_msgspec_rust_evaluator.py \
             tests/unit/authorization/test_authorizer_rust.py \
             --no-cov
 
@@ -149,6 +162,11 @@ PY
         uv run --no-sync python scripts/verify-rust-wheel.py --interpreter "${PYO3_PYTHON}"
 
         echo "==> Running benchmark smoke verification (no timing threshold)"
+        # The PR 8F benchmark smoke now also exercises the experimental
+        # msgspec semantic-buffer paths (M1/M2), four-way parity, the
+        # component measurements, and the extended JSON output with tiny
+        # counts; it still asserts no timing threshold. The 5000-Permission
+        # scenarios stay behind --extended and are never part of the gate.
         uv run --no-sync python benchmarks/permission_evaluator_benchmark.py --smoke
         ;;
     --integration)

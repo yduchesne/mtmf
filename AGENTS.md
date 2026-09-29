@@ -112,6 +112,12 @@ Generated Python bytecode and local development artifacts must not be committed.
 - Native failures must not be compensated by documentation or benchmark claims, and benchmarks never justify weakened semantics; performance findings are recorded, not silent semantic shortcuts.
 - The Rust series introduces no PostgreSQL/Podman dependency; the `./build.sh --rust` gate is the canonical native conformance gate (cargo fmt/clippy/test, `maturin develop`, installed-native probe, focused boundary/differential/Authorizer tests, clean wheel build/install/use verification, and benchmark smoke) and never requires `MTMF_*` configuration, Podman, or external services.
 
+### msgspec semantic boundary is experimental (PR 8F)
+
+- The msgspec/MessagePack semantic-buffer boundary (`_mtmf_permission_engine.evaluate_semantic_msgpack`, `benchmarks/msgspec_wire.py`, `benchmarks/msgspec_evaluator.py`) is a benchmark-only performance experiment. It stays experimental unless explicitly adopted in a later approved architecture change: do not wire it into `Authorizer`, `RustPermissionEvaluator`, `mtmf-api`, or any active authorization path, and do not let it become a runtime dependency of `mtmf-core`/`mtmf-api`/`mtmf-client`/`mtmf-service`.
+- The semantic payload carries only already-parsed semantic components (never complete Action/Permission URN texts, no numeric registries) and must converge on the same canonical decision loop as the production URN path; no independent authorization algorithm, fast-path semantics, compiled-policy handle, caching, or runtime backend selection is allowed.
+- Malformed semantic wire data must fail explicitly (never ALLOW/NO_MATCH/MATCHED_DENY), and the experimental path may represent only states valid MTMF domain objects can represent.
+
 ## Tests
 
 Tests should directly exercise documented invariants, not only happy-path API behavior.

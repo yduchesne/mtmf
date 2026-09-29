@@ -40,7 +40,9 @@
 
 use crate::matcher::{MatchResult, MatchSpecificity, match_permission};
 use crate::model::{ActionInput, PermissionEffect, PermissionSetInput};
-use crate::urn::{UrnParseError, parse_action_urn, parse_permission_urn};
+use crate::urn::{
+    ParsedActionUrn, ParsedPermissionUrn, UrnParseError, parse_action_urn, parse_permission_urn,
+};
 
 /// The explicit evaluation outcome for one Action.
 ///
@@ -133,6 +135,20 @@ impl EvaluationResult {
     }
 }
 
+/// Already-parsed detached policy set consumed by the canonical core.
+///
+/// This is the single shared representation between the production URN
+/// input path (which parses once and then evaluates) and the
+/// experimental semantic-buffer path (which validates wire components
+/// and constructs these shapes directly, without ever parsing a
+/// complete URN). Both paths converge on [`evaluate_parsed`]: there is
+/// exactly one canonical decision loop in the crate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParsedPolicySet {
+    pub effect: PermissionEffect,
+    pub permissions: Vec<ParsedPermissionUrn>,
+}
+
 /// Evaluate one exact Action against zero or more already-applicable
 /// PermissionSets.
 ///
@@ -150,34 +166,65 @@ pub fn evaluate(
     permission_sets: &[PermissionSetInput],
 ) -> Result<EvaluationResult, UrnParseError> {
     let parsed_action = parse_action_urn(&action.action_urn)?;
+    let mut parsed_sets = Vec::with_capacity(permission_sets.len());
+    for permission_set in permission_sets {
+        let mut parsed_permissions = Vec::with_capacity(permission_set.permissions.len());
+        for permission in &permission_set.permissions {
+            parsed_permissions.push(parse_permission_urn(&permission.permission_urn)?);
+        }
+        parsed_sets.push(ParsedPolicySet {
+            effect: permission_set.effect,
+            permissions: parsed_permissions,
+        });
+    }
+    Ok(evaluate_parsed(&parsed_action, &parsed_sets))
+}
+
+/// The canonical decision loop over an already-parsed Action and
+/// already-parsed detached PermissionSets.
+///
+/// This is the single semantic decision implementation in the crate.
+/// The production URN path and the experimental semantic-buffer path
+/// both converge here, so no path can implement an independent
+/// authorization algorithm: exact matching, complete-qualifier wildcard
+/// matching, specificity ordering, maximum-specificity selection,
+/// lower-specificity discard, equal-specificity DENY precedence,
+/// default DENY, and result evidence are defined exactly once.
+///
+/// Evaluation remains synchronous, deterministic, side-effect-free,
+/// I/O-free, cache-free, and free of global mutable policy state, and
+/// independent of PermissionSet order, Permission order, and duplicate
+/// positions.
+pub(crate) fn evaluate_parsed(
+    parsed_action: &ParsedActionUrn,
+    parsed_sets: &[ParsedPolicySet],
+) -> EvaluationResult {
     let mut highest: Option<MatchSpecificity> = None;
     let mut matched_allow = false;
     let mut matched_deny = false;
-    for permission_set in permission_sets {
-        for permission in &permission_set.permissions {
-            let parsed_permission = parse_permission_urn(&permission.permission_urn)?;
-            match match_permission(&parsed_permission, &parsed_action) {
+    for parsed_set in parsed_sets {
+        for parsed_permission in &parsed_set.permissions {
+            match match_permission(parsed_permission, parsed_action) {
                 MatchResult::NoMatch => {}
                 MatchResult::Match(specificity) => match highest {
                     None => {
                         highest = Some(specificity);
-                        matched_allow = permission_set.effect == PermissionEffect::Allow;
-                        matched_deny = permission_set.effect == PermissionEffect::Deny;
+                        matched_allow = parsed_set.effect == PermissionEffect::Allow;
+                        matched_deny = parsed_set.effect == PermissionEffect::Deny;
                     }
                     // A strictly higher specificity resets the
                     // accumulated effect evidence: lower-specificity
                     // matches must not remain in the final result.
                     Some(current) if specificity.is_more_specific_than(current) => {
                         highest = Some(specificity);
-                        matched_allow = permission_set.effect == PermissionEffect::Allow;
-                        matched_deny = permission_set.effect == PermissionEffect::Deny;
+                        matched_allow = parsed_set.effect == PermissionEffect::Allow;
+                        matched_deny = parsed_set.effect == PermissionEffect::Deny;
                     }
                     // Equal specificity accumulates effect evidence.
                     Some(current) if specificity == current => {
                         matched_allow =
-                            matched_allow || permission_set.effect == PermissionEffect::Allow;
-                        matched_deny =
-                            matched_deny || permission_set.effect == PermissionEffect::Deny;
+                            matched_allow || parsed_set.effect == PermissionEffect::Allow;
+                        matched_deny = matched_deny || parsed_set.effect == PermissionEffect::Deny;
                     }
                     // Lower specificity: ignored.
                     Some(_) => {}
@@ -186,16 +233,16 @@ pub fn evaluate(
         }
     }
     match highest {
-        None => Ok(EvaluationResult::no_match()),
+        None => EvaluationResult::no_match(),
         // At maximum specificity a DENY wins over any equal ALLOW.
         Some(specificity) if matched_deny => {
-            Ok(EvaluationResult::matched_deny(specificity, matched_allow))
+            EvaluationResult::matched_deny(specificity, matched_allow)
         }
         // No DENY at maximum specificity: an ALLOW matched there, since
         // every match carries exactly one of the two effects. The
         // two-variant effect enum makes the `matched_allow` flag true by
         // construction whenever this arm is reached.
-        Some(specificity) => Ok(EvaluationResult::allow(specificity)),
+        Some(specificity) => EvaluationResult::allow(specificity),
     }
 }
 
