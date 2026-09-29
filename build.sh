@@ -8,6 +8,14 @@
 #   ./build.sh --rust
 #   ./build.sh --integration
 #
+# Every gate runs project tools through `uv run --no-sync`: the gates execute
+# against the already-bootstrapped uv environment (`uv sync --locked`) and
+# must never let uv mutate that environment mid-gate. In particular the
+# private native module (`mtmf-permission-engine`) and the workspace
+# distributions are not part of the uv dependency graph, so an implicit
+# `uv run` auto-sync can silently uninstall them or swap in a stale
+# version-keyed cache wheel; `--no-sync` keeps gate execution deterministic.
+#
 # --qa runs the default quality gate, in order and failing fast:
 #   1. Ruff formatting check
 #   2. Ruff lint
@@ -19,12 +27,14 @@
 #   2. Semgrep (static analysis) over packages/ and tests/
 #
 # --rust runs the deterministic Rust/native gate for the private
-#   mtmf-permission-engine crate (PR 8A), in order and failing fast:
+#   mtmf-permission-engine crate (PR 8A/8B/8C), in order and failing fast:
 #   1. cargo fmt --check
 #   2. cargo clippy --all-targets --all-features -- -D warnings
 #   3. cargo test
 #   4. maturin develop (native build + development install)
-#   5. focused Python native-boundary tests
+#   5. installed-native capability probe (fails fast on a stale/clobbered
+#      install, e.g. one silently swapped by a uv environment sync)
+#   6. focused Python native-boundary tests
 #   The Rust gate never uses Podman, PostgreSQL, MTMF_POSTGRES_*,
 #   --integration resources, network services, or external credentials.
 #
@@ -45,25 +55,25 @@ MODE="${1:-}"
 case "${MODE}" in
     --qa)
         echo "==> Running formatting check with ruff (format --check)"
-        uv run ruff format --check .
+        uv run --no-sync ruff format --check .
 
         echo "==> Running lint with ruff (ruff check)"
-        uv run ruff check .
+        uv run --no-sync ruff check .
 
         echo "==> Running static analysis with mypy (strict mode)"
-        uv run mypy packages
+        uv run --no-sync mypy packages
 
         echo "==> Running unit tests with pytest (coverage gate >= 85%)"
-        uv run pytest tests/unit
+        uv run --no-sync pytest tests/unit
         ;;
     --sec)
         echo "==> Running security lint with bandit (Medium/High severity gate)"
         # The default Low threshold reports test-only noise (e.g. B101
         # asserts in tests); fail on Medium/High findings instead.
-        uv run bandit -r packages tests -ll
+        uv run --no-sync bandit -r packages tests -ll
 
         echo "==> Running static analysis with semgrep (registry rules)"
-        uv run semgrep scan --config=auto packages tests
+        uv run --no-sync semgrep scan --config=auto packages tests
         ;;
     --rust)
         RUST_CRATE_DIR="${SCRIPT_DIR}/packages/mtmf-permission-engine"
@@ -77,7 +87,7 @@ case "${MODE}" in
         # Pin the interpreter used by PyO3/maturin to the canonical
         # uv-managed venv so builds are deterministic regardless of the
         # ambient PATH.
-        PYO3_PYTHON="$(uv run python -c 'import sys; print(sys.executable)')"
+        PYO3_PYTHON="$(uv run --no-sync python -c 'import sys; print(sys.executable)')"
         export PYO3_PYTHON
 
         echo "==> Running Rust formatting check (cargo fmt --check)"
@@ -90,14 +100,35 @@ case "${MODE}" in
         (cd "${RUST_CRATE_DIR}" && cargo test)
 
         echo "==> Building and installing the private native module (maturin develop)"
-        uv run maturin develop --manifest-path "${RUST_CRATE_DIR}/Cargo.toml"
+        uv run --no-sync maturin develop --manifest-path "${RUST_CRATE_DIR}/Cargo.toml"
+
+        echo "==> Verifying the installed native module exposes the 8A/8B/8C capability surface"
+        "${PYO3_PYTHON}" - <<'PY'
+import _mtmf_permission_engine as native
+
+required = ("engine_version", "match_permission", "evaluate")
+missing = [name for name in required if not callable(getattr(native, name, None))]
+if missing:
+    raise SystemExit(
+        f"installed native module {native.__file__} is stale or clobbered: "
+        f"missing {missing}; re-run the canonical --rust gate so maturin develop "
+        "reinstalls the freshly built module"
+    )
+
+version = native.engine_version()
+if not isinstance(version, str) or not version:
+    raise SystemExit(f"invalid engine_version response: {version!r}")
+print(f"native module OK (engine_version={version!r})")
+PY
 
         echo "==> Running focused Python native-boundary tests"
-        # Focused on the 8A boundary and the 8B matcher parity matrix; the
-        # full coverage gate stays with --qa.
-        uv run pytest \
+        # Focused on the 8A boundary, the 8B matcher parity matrix, and
+        # the 8C evaluator contract; the full coverage gate stays with
+        # --qa.
+        uv run --no-sync pytest \
             tests/unit/authorization/test_rust_engine.py \
             tests/unit/authorization/test_rust_matcher.py \
+            tests/unit/authorization/test_rust_evaluator.py \
             --no-cov
         ;;
     --integration)
@@ -105,7 +136,7 @@ case "${MODE}" in
         echo "    Requires the MTMF PostgreSQL service; start it with:"
         echo "        uv run python scripts/mtmf-postgres.py up"
         echo "    Tests FAIL CLOSED when MTMF_* database configuration is missing."
-        uv run pytest tests/integration/postgres --no-cov
+        uv run --no-sync pytest tests/integration/postgres --no-cov
         ;;
     *)
         echo "usage: $0 --qa | --sec | --rust | --integration" >&2

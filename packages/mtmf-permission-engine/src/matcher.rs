@@ -25,11 +25,9 @@ impl MatchSpecificity {
     ///
     /// The model defines exactly one documented ordering: EXACT is more
     /// specific than QUALIFIER_WILDCARD. No value is more specific than
-    /// itself. PR 8B does not select among specificities (that is PR 8C
-    /// evaluation work), so this contract method is exercised by the
-    /// native specificity tests only; it is declared explicitly rather
-    /// than relying on enum declaration order.
-    #[allow(dead_code)]
+    /// itself. The ordering is declared explicitly rather than relying
+    /// on enum declaration order. The PR 8C evaluator uses this to
+    /// select the maximum specificity across PermissionSets.
     pub fn is_more_specific_than(self, other: Self) -> bool {
         matches!((self, other), (Self::Exact, Self::QualifierWildcard))
     }
