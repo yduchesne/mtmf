@@ -12,8 +12,14 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+
       - name: Synchronize locked dependencies
         run: uv sync --locked
+
+      - name: Run canonical Rust/native gate
+        run: ./build.sh --rust
 
       - name: Run canonical quality gate
         run: ./build.sh --qa
