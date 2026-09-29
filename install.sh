@@ -5,8 +5,10 @@
 # Ensures the tools needed to develop/build the MTMF workspace:
 #   1. `uv`            (package/workspace/dependency manager)
 #   2. Python >= 3.14  (project baseline)
-#   3. project environment (`uv sync --locked`)
-#   4. pre-commit hooks (Gitleaks, quality gate, security scan)
+#   3. Rust toolchain  (rustup: stable >= crate MSRV, with clippy + rustfmt)
+#   4. project environment (`uv sync --locked`)
+#   5. private native module (`uv run maturin develop`, PR 8A)
+#   6. pre-commit hooks (Gitleaks, quality gate, security scan)
 #
 # Installation strategy:
 #   - `uv` is installed via the official astral installer when curl or
@@ -14,6 +16,10 @@
 #   - Python 3.14 is always installed as a uv-managed interpreter from
 #     the same download source CI uses; the OS package manager is never
 #     used to install Python.
+#   - Rust is installed via the official rustup installer (stable
+#     toolchain at or above the MSRV declared by the
+#     `mtmf-permission-engine` crate, plus the `clippy` and `rustfmt`
+#     components that `./build.sh --rust` requires).
 #
 # The script is idempotent: a dependency that is already satisfied is
 # skipped, and `uv sync --locked` converges a synchronized workspace
@@ -24,12 +30,16 @@
 #   UV_INSTALL_DIR          directory for the uv binary (default ~/.local/bin)
 #   UV_PYTHON_INSTALL_DIR   directory for uv-managed Pythons
 #   MTMF_NO_SYNC=1          skip the `uv sync --locked` step
+#   MTMF_NO_RUST=1          skip Rust toolchain setup and the native
+#                           module build (the Python --qa/--sec gates do
+#                           not require Rust)
 
 set -euo pipefail
 
 info() { printf '\033[1;34m[install]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m[ok]\033[0m %s\n' "$*"; }
 skip() { printf '\033[1;33m[skip]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
@@ -250,6 +260,127 @@ ensure_python() {
     ok "Python >= 3.14 available: $(python_display)"
 }
 
+# ---------------------------------------------------------------------------
+# Rust toolchain helpers
+# ---------------------------------------------------------------------------
+
+# Default floor when the crate manifest cannot be read (kept in sync with
+# packages/mtmf-permission-engine/Cargo.toml rust-version).
+RUST_MIN_VERSION_DEFAULT="1.98"
+
+# The crate manifest is the single source of truth for the MSRV that
+# ./build.sh --rust requires.
+rust_min_version() {
+    local version=""
+    if [[ -r "packages/mtmf-permission-engine/Cargo.toml" ]]; then
+        version="$(sed -n 's/^rust-version = "\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' packages/mtmf-permission-engine/Cargo.toml | head -1)"
+    fi
+    printf '%s' "${version:-${RUST_MIN_VERSION_DEFAULT}}"
+}
+
+rust_has_components() {
+    command -v cargo-clippy >/dev/null 2>&1 && command -v cargo-fmt >/dev/null 2>&1
+}
+
+rust_at_least() {
+    # rust_at_least <version> <min-major> <min-minor>
+    version_ge "$1" "$2" "$3"
+}
+
+rust_ready() {
+    command -v rustc >/dev/null 2>&1 || return 1
+    command -v cargo >/dev/null 2>&1 || return 1
+    local version
+    version="$(rustc --version 2>/dev/null | awk '{print $2}')"
+    [[ -n "$version" ]] || return 1
+    local min major minor
+    min="$(rust_min_version)"
+    major="${min%%.*}"
+    minor="${min#*.}"
+    minor="${minor%%.*}"
+    rust_at_least "$version" "$major" "$minor"
+}
+
+rust_display() {
+    if command -v rustc >/dev/null 2>&1; then
+        local components
+        if rust_has_components; then
+            components="clippy+rustfmt ready"
+        else
+            components="missing clippy/rustfmt"
+        fi
+        printf 'rustc %s (%s)' "$(rustc --version | awk '{print $2}')" "$components"
+    else
+        printf 'unknown'
+    fi
+}
+
+install_rust_script() {
+    if command -v curl >/dev/null 2>&1; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+    else
+        wget -qO- https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+    fi
+    local bin_dir="${CARGO_HOME:-$HOME/.cargo}/bin"
+    if [[ -x "$bin_dir/cargo" ]] && [[ ":$PATH:" != *":$bin_dir:"* ]]; then
+        PATH="$bin_dir:$PATH"
+        export PATH
+    fi
+}
+
+ensure_rust() {
+    if [[ "${MTMF_NO_RUST:-0}" == "1" ]]; then
+        skip "Rust toolchain setup skipped (MTMF_NO_RUST=1)"
+        return 0
+    fi
+    local min
+    min="$(rust_min_version)"
+    info "Checking Rust toolchain (>= $min, with clippy and rustfmt components) ..."
+    if rust_ready && rust_has_components; then
+        skip "Rust toolchain already available: $(rust_display)"
+        return 0
+    fi
+    if rust_ready; then
+        ok "Rust >= $min found; adding missing clippy/rustfmt components"
+        if command -v rustup >/dev/null 2>&1; then
+            rustup component add clippy rustfmt || true
+        elif [[ -n "${PKG_MGR:-}" ]]; then
+            os_has_pkg clippy && os_install_pkg clippy || true
+            os_has_pkg rustfmt && os_install_pkg rustfmt || true
+        fi
+    else
+        if command -v rustup >/dev/null 2>&1; then
+            ok "Rust toolchain found; refreshing stable toolchain and clippy/rustfmt components"
+            rustup update stable || true
+            rustup component add clippy rustfmt || true
+        else
+            ok "Rust not found (or below $min); installing via rustup"
+            install_rust_script \
+                || fail "Could not install Rust via rustup; install it manually (https://rustup.rs) or set MTMF_NO_RUST=1"
+            rustup component add clippy rustfmt || true
+        fi
+    fi
+    if rust_ready && rust_has_components; then
+        ok "Rust toolchain ready: $(rust_display)"
+    else
+        fail "Rust toolchain is not fully ready (need rustc >= $min plus clippy and rustfmt); fix it, re-run with MTMF_NO_RUST=1 to skip, or install rustup (https://rustup.rs)"
+    fi
+}
+
+ensure_native_module() {
+    if [[ "${MTMF_NO_RUST:-0}" == "1" ]] || ! command -v cargo >/dev/null 2>&1; then
+        skip "private native module build (_mtmf_permission_engine)"
+        return 0
+    fi
+    info "Building and installing the private native module (maturin develop) ..."
+    if uv run maturin develop --manifest-path packages/mtmf-permission-engine/Cargo.toml; then
+        ok "private native module installed (_mtmf_permission_engine)"
+    else
+        warn "Native module build failed; the Python workspace (--qa/--sec) is unaffected."
+        warn "Run ./build.sh --rust later to rebuild it (canonical native gate)."
+    fi
+}
+
 ensure_project_env() {
     if [[ "${MTMF_NO_SYNC:-0}" == "1" ]]; then
         skip "workspace sync skipped (MTMF_NO_SYNC=1)"
@@ -284,7 +415,9 @@ main() {
     info "Platform: $DISTRO (package manager: ${PKG_MGR:-none})"
     ensure_uv
     ensure_python
+    ensure_rust
     ensure_project_env
+    ensure_native_module
     ensure_pre_commit_hooks
     ok "All MTMF development dependencies are installed."
 }
