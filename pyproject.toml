@@ -53,6 +53,7 @@ src = [
     "packages/mtmf-client/src",
     "packages/mtmf-service/src",
     "tests",
+    "benchmarks",
 ]
 
 [tool.ruff.lint]

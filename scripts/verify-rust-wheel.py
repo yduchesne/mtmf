@@ -13,6 +13,11 @@ interpreter, and proves the installed module:
 - evaluates at least one valid policy correctly;
 - fails explicitly on malformed input (never a policy decision).
 
+PR 8G additionally proves the experimental compiled-policy capability
+(``compile_policy``) in that same isolated wheel: compile a small
+policy, evaluate an exact Action, evaluate a wildcard Action, and
+reject malformed compile input explicitly.
+
 The temporary environment and wheel artifacts are removed when the
 script exits (``--keep`` retains them for debugging). Global Python is
 never mutated, no PostgreSQL/Podman/network service or credential is
@@ -45,7 +50,7 @@ import sys
 
 import _mtmf_permission_engine as native
 
-required = ("engine_version", "match_permission", "evaluate")
+required = ("engine_version", "match_permission", "evaluate", "compile_policy")
 missing = [name for name in required if not callable(getattr(native, name, None))]
 if missing:
     raise SystemExit("installed module is missing required callables: %r" % (missing,))
@@ -56,6 +61,7 @@ if not isinstance(version, str) or not version:
 
 action = "urn:mtmf:iam:actions:system:principal:set-active"
 wildcard = "urn:mtmf:iam:permissions:system:principal:set-*"
+exact = "urn:mtmf:iam:permissions:system:principal:set-active"
 
 # Capability smoke (deterministic).
 assert native.engine_version() == version
@@ -83,6 +89,74 @@ except ValueError:
     pass
 else:
     raise SystemExit("malformed evaluation must fail explicitly, not yield a decision")
+
+# PR 8G: the experimental compiled-policy capability is present and
+# works in the isolated wheel. Compile a small policy.
+compiled = native.compile_policy(
+    [
+        ("allow", [exact, wildcard]),
+        ("deny", ["urn:mtmf:iam:permissions:system:principal:set-alias"]),
+    ]
+)
+
+# Evaluate an exact Action: exact ALLOW beats the wildcard ALLOW (both
+# ALLOW) and the unrelated exact DENY must not leak in.
+if compiled.evaluate(action) != ("allow", "exact", True, False, None):
+    raise SystemExit(
+        "unexpected compiled exact result: %r" % (compiled.evaluate(action),)
+    )
+
+# Evaluate a different exact Action: the wildcard ALLOW applies, the
+# unrelated DENY does not.
+if compiled.evaluate("urn:mtmf:iam:actions:system:principal:set-other") != (
+    "allow",
+    "qualifier-wildcard",
+    True,
+    False,
+    None,
+):
+    raise SystemExit(
+        "unexpected compiled wildcard result: %r"
+        % (compiled.evaluate("urn:mtmf:iam:actions:system:principal:set-other"),)
+    )
+
+# Evaluate the DENY-matched Action: matched DENY at exact specificity.
+if compiled.evaluate("urn:mtmf:iam:actions:system:principal:set-alias") != (
+    "deny",
+    "exact",
+    False,
+    True,
+    "matched-deny",
+):
+    raise SystemExit(
+        "unexpected compiled deny result: %r"
+        % (compiled.evaluate("urn:mtmf:iam:actions:system:principal:set-alias"),)
+    )
+
+# Malformed compile input fails explicitly and never produces a policy.
+try:
+    native.compile_policy([("allow", ["not-a-urn"])])
+except ValueError:
+    pass
+else:
+    raise SystemExit("malformed compile input must fail explicitly, not yield a policy")
+
+try:
+    native.compile_policy([("sometimes", [])])
+except ValueError:
+    pass
+else:
+    raise SystemExit("unknown compile effect must fail explicitly")
+
+# The compiled object is opaque/read-only and deterministic.
+try:
+    compiled.some_field = 1
+except (AttributeError, TypeError):
+    pass
+else:
+    raise SystemExit("compiled policy object must be opaque/read-only")
+if compiled.evaluate(action) != ("allow", "exact", True, False, None):
+    raise SystemExit("compiled evaluation must be deterministic")
 
 # Private-module boundary: mtmf-api must never import the native module.
 try:

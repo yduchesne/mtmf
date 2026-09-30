@@ -105,3 +105,107 @@ artifact. Characterizing the optimized `--release` wheel instead is an
 explicit optional step (build with `maturin build --release`, install
 into a scratch environment, run, then restore the canonical build); both
 are characterization only and neither is part of CI.
+
+## PR 8G experiment: compiled-policy benchmark
+
+PR 8G (`dev/compiled-policy-perf`, branching directly from the PR 8E
+baseline `af9daec`) is an independent, **experimental sibling** of PR 8F
+and intentionally does not depend on PR 8F or msgspec. It tests a
+different hypothesis: compile already-applicable policy **once** into an
+indexed representation, then evaluate many Actions without repeatedly
+traversing Roles/PermissionSets, transferring policy, parsing Permission
+URNs, or scanning all Permissions.
+
+The PR 8G amendment adds a pure-Python compiled-policy control so the
+experiment separates the **algorithm/data-structure benefit** (compiling
+and indexing the policy) from the **language/native-execution benefit**
+(implementing the compiled evaluator in Rust).
+
+Four paths are measured for the same deterministic scenarios:
+
+```text
+P   Python linear evaluator (PermissionEvaluator)
+R   Rust linear evaluator (RustPermissionEvaluator, production default)
+PC  Python CompiledPolicy (PythonCompiledPolicy: compile once, pure-Python
+    exact/wildcard index lookups; no FFI)
+RC  Rust CompiledPolicy (CompiledPolicyEvaluator: compile once, native
+    exact/wildcard index lookups; per-Action PyO3 call)
+```
+
+Experimental code and harness:
+
+```text
+benchmarks/python_compiled_policy.py          # PC control (pure Python)
+benchmarks/compiled_policy_evaluator.py       # RC experimental adapter
+benchmarks/compiled_policy_benchmark.py       # P/R/PC/RC harness
+packages/mtmf-permission-engine/src/compiled_policy.rs  # native kernel
+```
+
+The PC control mirrors the Rust `CompiledPolicy` semantics: exact keys
+`(namespace, resource, verb, qualifier)`, wildcard keys
+`(namespace, resource, verb)`, pre-aggregated frozen
+`EffectAggregate(matched_allow, matched_deny)`, duplicate collapse,
+EXACT-beats-WILDCARD, equal-specificity DENY, default DENY, structural
+ownership validation, and an immutable compiled representation (frozen
+dataclass over `MappingProxyType` mappings). PC consumes the
+already-parsed domain `PermissionUrn`/`ActionUrn` semantic components
+directly (never stringify/reparse), so the PC/RC difference includes the
+RC per-Action Action-URN transfer/parse and PyO3 crossing as real
+architectural costs.
+
+Usage:
+
+```bash
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py --extended \
+  --warmup 100 --samples 20
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py \
+  --json /tmp/mtmf-compiled-policy-bench.json --extended
+uv run --no-sync python benchmarks/compiled_policy_benchmark.py --smoke
+```
+
+- preserves the PR 8E scenarios unchanged (no_roles, tiny_exact,
+  tiny_wildcard, tiny_equal_conflict, small, medium, large,
+  large_no_match, late_match);
+- adds deterministic policy scales 1/25/200/1000/5000 Permissions in
+  mixed multi-Action workloads (exact hit, wildcard-only hit, wildcard
+  DENY, no-match);
+- measures the one-time compile cost and the compile + 1/10/100/1000
+  lifecycle cost for **both** PC and RC, and the repeated
+  compiled-evaluation cost for both;
+- characterizes unrelated-policy scaling (25/200/1000/5000, exact
+  hit/wildcard-only hit/no-match) for PC and RC to detect any hidden
+  full-policy scan;
+- requires P == R == PC == RC complete-decision parity before every
+  timing run, rotates the four-path measurement order across samples,
+  reports median primary with dispersion, and records the environment;
+  no timing correctness gate exists;
+- ratios are defined as `baseline_time / candidate_time` (`>1.0` =
+  candidate faster); for PC/RC the field is
+  `python_compiled_time / rust_compiled_time` (`>1.0` = Rust compiled
+  faster);
+- `--extended` enables the 5000-Permission scenarios; `--smoke` verifies
+  native availability, construction, four-way parity, timing-loop
+  execution, and human/JSON output with tiny counts.
+
+**Measured outcome (release build, WSL2 x86_64, Python 3.14.7):** both
+compiled implementations beat their linear counterparts by large
+factors (e.g. P/PC up to ~169x at 5000 Permissions; R/RC up to ~318x),
+so compiling/indexing policy is the principal optimization,
+independent of implementation language. In the same campaign, PC
+evaluation beat RC evaluation in every scenario (PC/RC median ratio
+~0.18-0.50x, meaning PC was ~2-5.5x faster per single-Action call),
+and PC compiled faster than RC at every scale. RC's raw native lookup
+cost is small; the per-Action PyO3 crossing, Action-URN
+transfer/parse, and the Python-side native-result validation/mapping
+overhead dominate. These results characterize this machine and this
+architecture only; no production direction is selected.
+
+**Experimental status:** PR 8G is not a production cutover. After 8G the
+production authorization path remains
+`Authorizer() -> RustPermissionEvaluator -> native_evaluate(action, policy)`;
+no Authorizer/RustPermissionEvaluator change, backend selection,
+environment-var selection, fallback, or production cache exists, and
+results characterize an architectural hypothesis, not adoption. The PR
+is expected to remain unmerged until experimental review compares 8G
+with PR 8F evidence.
