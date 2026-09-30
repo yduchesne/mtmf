@@ -7,18 +7,21 @@ traversing Roles/PermissionSets, transferring policy, parsing
 Permission URNs, or scanning all Permissions.
 
 This module is **experimental benchmark code only**. It is NOT the
-production protocol or default: after 8G the production path remains
+production protocol or default: after PR 8H the production path is
 ::
 
     Authorizer()
-      -> RustPermissionEvaluator
-      -> native_evaluate(action, policy)
+      -> DefaultAuthorizationPolicyResolver
+      -> EffectivePolicy(CompiledPolicy, context)
+      -> CompiledPolicy.evaluate(action)
 
-The :class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`
-and the :class:`~mtmf_core.authorization.authorizer.Authorizer` are
-unchanged by this adapter, no backend selection, environment-var
-selection, fallback, or production cache exists, and the native
-compiled-policy object is reached only through here.
+with the production pure-Python indexed
+:class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy` as the
+default policy implementation. This experimental Rust adapter and its
+opaque native compiled policy keep the compiled-policy differential
+and benchmark evidence runnable; no backend selection,
+environment-var selection, fallback, or production cache exists, and
+the native compiled-policy object is reached only through here.
 
 Conceptual API (per the detailed plan):
 

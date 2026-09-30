@@ -1,4 +1,4 @@
-"""Deterministic, side-effect-free Permission evaluation.
+"""Deterministic, side-effect-free Permission evaluation (linear Python oracle).
 
 The :class:`PermissionEvaluator` consumes an exact
 :class:`~mtmf_core.domain.action.Action` and an iterable of
@@ -7,6 +7,17 @@ by the caller. It reuses PR 3 matching (never reimplements wildcard
 grammar or specificity), selects the most-specific matching rules across
 all supplied Roles, applies equal-specificity DENY precedence, and
 defaults to DENY when nothing matches.
+
+This implementation is the semantic reference/oracle for the whole
+policy-evaluation surface: the production pure-Python indexed
+:class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy`, the
+Rust-backed
+:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`,
+and the Rust-compiled adapter are all differentially tested against it.
+It is **not** the default production evaluator: after PR 8H the default
+Authorizer path is ``AuthorizationPolicyResolver -> EffectivePolicy ->
+CompiledPolicy``. The linear evaluator remains available for tests,
+reference/comparison work, and as a deterministic oracle.
 
 The evaluator performs no context retrieval of any kind: no repository,
 membership, assignment, session, scope/dominance, stewardship,

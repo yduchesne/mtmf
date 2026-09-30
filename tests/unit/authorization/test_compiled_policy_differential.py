@@ -1,11 +1,15 @@
-"""Systematic P == R == C compiled-policy differential tests (PR 8G).
+"""Systematic P == R == C differential tests for the compiled semantics (PR 8G/8H).
 
 Complete-decision semantic equivalence is a first-class invariant for
-the compiled-policy experiment:
+the compiled-policy architecture:
 
 ```text
 Python reference evaluator(input) == Rust evaluator(input) == Compiled(input)
 ```
+
+where ``Compiled`` is both the experimental Rust compiled adapter and
+(PR 8H) the production pure-Python
+:class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy`.
 
 The comparison covers the complete :class:`AuthorizationDecision`
 policy evidence (effect, ``allowed``, deny reason, matched specificity,
@@ -59,9 +63,9 @@ from mtmf_core import (
     Role,
     RoleUrn,
 )
+from mtmf_core.authorization.compiled_policy import CompiledPolicy
 from mtmf_core.authorization.permission_evaluator import PermissionEvaluator
 from mtmf_core.authorization.rust_permission_evaluator import RustPermissionEvaluator
-from python_compiled_policy import PythonCompiledPolicy
 
 NATIVE_MODULE = "_mtmf_permission_engine"
 
@@ -82,8 +86,8 @@ def _compiled_decision(action: Action, roles: object) -> AuthorizationDecision:
 
 
 def _python_compiled_decision(action: Action, roles: object) -> AuthorizationDecision:
-    """Compile the Roles once (pure Python) and evaluate the Action against it."""
-    return PythonCompiledPolicy.compile(roles).evaluate(action)
+    """Compile the Roles once (production pure-Python) and evaluate the Action."""
+    return CompiledPolicy.compile(roles).evaluate(action)
 
 
 def _assert_pairs_equal(
@@ -457,7 +461,7 @@ def test_repeated_evaluation_is_deterministic_and_parity() -> None:
     first_rust = _RUST.evaluate(action, (role,))
     compiled = CompiledPolicyEvaluator.compile((role,))
     first_compiled = compiled.evaluate(action)
-    python_compiled = PythonCompiledPolicy.compile((role,))
+    python_compiled = CompiledPolicy.compile((role,))
     first_python_compiled = python_compiled.evaluate(action)
     for _ in range(5):
         assert _PYTHON.evaluate(action, (role,)) == first_python

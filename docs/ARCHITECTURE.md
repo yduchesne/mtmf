@@ -201,6 +201,41 @@ result
 
 Authorization MUST be enforced at trusted boundaries, never only by a client or UI.
 
+### 8.1 Authorization policy resolution
+
+Inside the Authorizer, the PR 8H architecture separates *policy
+resolution* from *policy evaluation*:
+
+```text
+Authorizer
+  +-- validate SessionContext / enforce target Tenant boundary
+  +-- AuthorizationPolicyResolver.resolve(context) -> AuthorizationPolicy
+  +-- policy.evaluate(action) -> AuthorizationDecision
+  +-- apply later Authorizer constraints
+```
+
+- :class:`AuthorizationPolicyResolver` resolves an already-applicable
+  policy for a supplied :class:`AuthorizationContext` without
+  authorizing an Action. The default implementation
+  (:class:`DefaultAuthorizationPolicyResolver`) compiles
+  ``context.applicable_roles`` into the production pure-Python
+  :class:`CompiledPolicy` wrapped in an :class:`EffectivePolicy` for
+  context-aware diagnostics.
+- :class:`AuthorizationPolicy` is the static policy surface:
+  ``evaluate(action)`` plus ``get_diagnostics()``, no Roles at
+  evaluation time, no persistence, no retrieval.
+- **Future caching and invalidation belong behind resolver
+  implementations**, never inside the Authorizer or the policy
+  implementations. The resolver contract intentionally permits later
+  decorator composition, for example
+  ``InMemoryCachingAuthorizationPolicyResolver(RedisCachingAuthorizationPolicyResolver(DefaultAuthorizationPolicyResolver()))``
+  — **no such caching resolver, cache identity, version, fingerprint,
+  invalidation, TTL, or cache configuration is implemented** (PR 8H), and
+  none exists yet.
+- The default path never selects Rust: the pure-Python indexed
+  ``CompiledPolicy`` is the production default; the Rust evaluators
+  remain experimental infrastructure behind their own explicit seams.
+
 ## 9. Persistence SPI
 
 MTMF has one internal persistence Service Provider Interface: `MtmfSpi`.
@@ -344,6 +379,6 @@ The following are intentionally not settled here:
 - exact DTO-to-core mapping implementation;
 - complete repository interfaces;
 - exact IdP SPI;
-- caching and authorization-state invalidation;
-- Rust optimization details;
+- caching and authorization-state invalidation (deferred; when designed, caching belongs behind `AuthorizationPolicyResolver` decorator implementations, never inside the Authorizer or the policy implementations);
+- Rust optimization details (the Rust evaluators are experimental and non-default since PR 8H; the production default is the pure-Python indexed `CompiledPolicy`).
 - HTTP API shape and versioning strategy.

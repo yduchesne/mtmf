@@ -36,18 +36,25 @@ Boundary invariants:
 - this adapter is deliberately not exported by
   :mod:`mtmf_core.authorization` and is never imported by the
   :class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
-  or the :class:`~mtmf_core.authorization.authorizer.Authorizer`: no
-  active authorization path depends on Rust, and Rust never determines
-  which policy is applicable.
+  or by the production policy path: after PR 8H the normally
+  constructed
+  :class:`~mtmf_core.authorization.authorizer.Authorizer` uses the
+  pure-Python indexed
+  :class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy`
+  through
+  :class:`~mtmf_core.authorization.policy_resolver.DefaultAuthorizationPolicyResolver`,
+  so no active default authorization path depends on Rust, and Rust
+  never determines which policy is applicable.
 
-``native_evaluate`` and ``native_match_permission_urn`` are the only
-bridges on the active authorization path (through
-:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`).
-``native_compile_policy`` is experimental (PR 8G) and is reached only by
-benchmark/experimental code, never by a production evaluator or the
-Authorizer. Wrong primitive types or container shapes at the native
-boundary are normalized into the malformed-input ``ValueError`` contract
-instead of leaking an unclassified ``TypeError``.
+``native_evaluate`` and ``native_match_permission_urn`` are the bridges
+used by the retained experimental
+:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`
+(linear) evaluator, and ``native_compile_policy`` (PR 8G) is reached
+only by benchmark/experimental code; none of them is on the default
+production authorization path. Wrong primitive types or container
+shapes at the native boundary are normalized into the malformed-input
+``ValueError`` contract instead of leaking an unclassified
+``TypeError``.
 """
 
 from __future__ import annotations

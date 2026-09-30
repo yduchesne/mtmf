@@ -142,17 +142,110 @@ Manager-side actor eligibility remains unresolved and MUST fail closed until spe
 
 ## 8. Implementation Boundary
 
-The permission-matching computation SHOULD remain separable from authorization-context retrieval.
+The permission-matching computation is separated from authorization-context retrieval.
 
-A likely internal shape is:
+The production (PR 8H) internal shape is:
 
 ```text
+AuthorizationRequest
+        |
+        v
 Authorizer
-  +-- load/validate authorization context
-  +-- PermissionEvaluator (PermissionSet/Permission matching)
-  +-- apply scope/delegation/stewardship/operation constraints
-  +-- produce decision
+  |-- validate SessionContext
+  |-- enforce target Tenant boundary
+  v
+AuthorizationPolicyResolver
+        |
+        v
+EffectivePolicy
+  |-- AuthorizationContext diagnostics
+  |-- delegates evaluation
+  v
+CompiledPolicy                    # PURE PYTHON, production default
+  |-- immutable exact index
+  |-- immutable wildcard index
+  v
+evaluate(Action)
+        |
+        v
+AuthorizationDecision
+        |
+        v
+Authorizer
+  |-- policy DENY remains final
+  |-- unsupported constraints
+  |-- strict dominance
+  v
+final AuthorizationDecision
 ```
+
+The default path is:
+
+```text
+Authorizer()
+ -> DefaultAuthorizationPolicyResolver
+ -> EffectivePolicy(CompiledPolicy.compile(context.applicable_roles), context)
+ -> CompiledPolicy.evaluate(action)
+```
+
+### 8.2 Production policy architecture (PR 8H)
+
+- :class:`AuthorizationPolicy` is the production policy seam: an
+already-resolved policy exposing exactly ``evaluate(action: Action) ->
+AuthorizationDecision`` and ``get_diagnostics() -> str``. ``evaluate``
+receives no Roles; the internal representation is hidden; diagnostics
+never affect authorization; no persistence or context retrieval exists
+on the policy surface.
+- :class:`AuthorizationPolicyResolver` resolves an
+:class:`AuthorizationPolicy` for a supplied :class:`AuthorizationContext`.
+It does not authorize an Action and must not require an Action. The
+initial implementation is the non-caching
+:class:`DefaultAuthorizationPolicyResolver`, which compiles
+``context.applicable_roles`` into the production pure-Python
+:class:`CompiledPolicy` and wraps it in an :class:`EffectivePolicy`.
+- :class:`CompiledPolicy` is the production pure-Python policy
+implementation: immutable precomputed EXACT
+``(namespace, resource, verb, qualifier)`` and WILDCARD
+``(namespace, resource, verb)`` indexes of OR-aggregated
+:class:`EffectAggregate` evidence. Compilation reuses the already-parsed
+domain ``PermissionUrn``/``ActionUrn`` components (no URN
+stringification/reparse), refuses ownership corruption with
+:class:`PermissionEvaluationError`, and never sorts or uses ordering as
+precedence. Evaluation is at most one EXACT lookup, then one WILDCARD
+lookup, then ``DENY / NO_MATCH``; exact beats wildcard; equal-specificity
+DENY wins; duplicates do not vote; the representation is structurally
+immutable and never mutated by evaluation.
+- :class:`EffectivePolicy(actual_policy, context)` is a diagnostics
+wrapper only: it delegates ``evaluate`` directly and unchanged, adds no
+authorization semantics, performs no retrieval, and exposes
+context-aware diagnostics that combine safe high-level identity facts
+(``(Tenant, Principal, Identity)``, applicable-Role count, nested policy
+implementation) with the nested policy's own diagnostics. Diagnostics
+are implementation-specific text: not parsed by the Authorizer, not
+decision input, not a stable machine API, not cache identity, not
+serialization, and not an audit record. PR 8H does not log diagnostics
+automatically.
+- :class:`Authorizer` remains the authoritative fail-closed orchestration
+layer: it validates the structural session, enforces the target Tenant
+boundary, then ``policy = resolver.resolve(context)`` and
+``decision = policy.evaluate(request.action)``. A policy DENY returns
+immediately; ALLOW proceeds only if unsupported constraints and strict
+dominance checks pass. The resolver/compilation/policy exceptions
+propagate and never become ALLOW. The policy is never resolved before
+session/Tenant validation succeeds.
+- The default policy implementation is the pure-Python indexed
+:class:`CompiledPolicy`. The linear Python
+:class:`PermissionEvaluator` remains the semantic reference/oracle and
+is differentially tested against it. The Rust evaluator is
+experimental and is not selected by the default :class:`Authorizer`.
+- No caching exists yet: no repository, ``MtmfSpi``, UnitOfWork,
+PostgreSQL, Redis, network, filesystem, global cache, local cache, or
+policy fingerprinting. ``AuthorizationContext.applicable_roles``
+remains trusted, pre-filtered caller input (Role-assignment/effective-
+Role loading is PR 9 work). Future caching/decoration composes behind
+the resolver contract (for example
+``InMemoryCachingAuthorizationPolicyResolver(RedisCachingAuthorizationPolicyResolver(DefaultAuthorizationPolicyResolver()))``)
+and is not implemented here.
 
 Python remains authoritative for authorization-context retrieval and orchestration: session validation, Tenant isolation, context validation, scope/dominance, stewardship/delegation, operation-specific constraints, and fail-closed orchestration all stay in Python, and the `Authorizer` remains the authoritative decision orchestrator.
 
@@ -165,9 +258,9 @@ The integration mechanism is PyO3/maturin. The native module is the private `_mt
 Boundary rules:
 
 - Rust evaluates policy only; Python determines policy applicability and authorization context.
-- The `Authorizer` depends on a narrow internal evaluator protocol (`PermissionEvaluatorProtocol`) with exactly one capability: decide one exact Action against already-applicable Role objects.
-- Two implementations satisfy that protocol: the Python `PermissionEvaluator`, which remains the semantic reference/oracle, and the `RustPermissionEvaluator`, which is the active/default evaluator used by a normally constructed `Authorizer()`.
-- Since PR 8D, the Rust-backed evaluator is the active/default policy engine behind the `Authorizer`, and the Python reference implementation remains explicitly injectable (`Authorizer(evaluator=PermissionEvaluator())`) for tests and reference/comparison work. There is NO automatic fallback: a native failure is never silently retried on Python.
+- Historically (PR 8D-8G) the `Authorizer` depended on a narrow internal evaluator protocol (`PermissionEvaluatorProtocol`) with exactly one capability: decide one exact Action against already-applicable Role objects, and `RustPermissionEvaluator` was the active/default evaluator. Since PR 8H the `Authorizer` depends on the ``AuthorizationPolicyResolver`` / ``AuthorizationPolicy`` seam described in section 8.2, and the default policy is the pure-Python indexed `CompiledPolicy`. The retained linear evaluator protocol is no longer the Authorizer's primary seam.
+- Two implementations satisfy that protocol: the Python `PermissionEvaluator`, which remains the semantic reference/oracle, and the `RustPermissionEvaluator`, which is experimental and non-default and never used by a normally constructed `Authorizer()`.
+- Since PR 8D the Rust evaluator was the active/default backend for a period; PR 8H replaces that default with `DefaultAuthorizationPolicyResolver -> EffectivePolicy -> CompiledPolicy`. The Python reference implementation remains available for tests and reference/comparison work (historically as `Authorizer(evaluator=PermissionEvaluator())`; in the resolver era behind an explicit test-only policy adapter). There is NO automatic fallback: a native failure is never silently retried on Python.
 
 Domain-to-primitive conversion (owned by the `RustPermissionEvaluator`):
 
@@ -208,13 +301,13 @@ Implemented so far in the Rust series:
 
 On the measured system, the current Rust evaluator did not outperform the Python reference implementation. Release builds approached parity for some larger policy scenarios but remained slower, while full-scan scenarios remained substantially slower. Profiling characteristics indicate that PyO3 conversion and repeated parsing of URNs already represented as parsed Python domain value objects are significant contributors. These results characterize the current boundary design and do not justify changing authorization semantics or PR 8E scope.
 
-PR 8G (experimental; not adopted): the ``dev/compiled-policy-perf`` branch tests a different hypothesis than PR 8F - compile already-applicable policy once into an immutable indexed native form, then evaluate repeated Actions without resending, reparsing, sorting, or scanning policy. It branches directly from the PR 8E baseline and has no msgspec/PR 8F dependency. ``_mtmf_permission_engine.compile_policy`` (private seam, reached only by experimental ``benchmarks/compiled_policy_evaluator.py``) parses every Permission URN once, classifies it EXACT or QUALIFIER_WILDCARD, OR-aggregates effects (`EffectAggregate` with `matched_allow`/`matched_deny`; duplicates are non-voting) into exact `(namespace, resource, verb, qualifier)` and wildcard `(namespace, resource, verb)` standard `HashMap` indexes, and returns a frozen opaque object whose ``evaluate`` parses only the single Action and performs at most two lookups. Exact beats wildcard, equal-specificity DENY wins, no match means DENY/NO_MATCH, and malformed compile input fails explicitly and never produces a usable policy. Native scan-vs-compiled parity is proven inside the crate (authored matrix plus 2000 deterministic generated policies), and the Python suite proves P == R == PC == RC complete-decision parity over the full evidence, where PC is a pure-Python CompiledPolicy control (same compiled/indexed algorithm, no FFI) added by the PR 8G amendment to separate the compilation benefit from the Rust benefit. The compile/evaluate/lifecycle benchmark preserves the PR 8E scenarios unchanged, adds 1/25/200/1000/5000-permission scales with multi-Action workloads (exact hits, wildcard-only hits, wildcard DENY, no-match), measures the one-time compile cost, repeated compiled evaluation, and compile + 1/10/100/1000 lifecycle cost separately, and characterizes unrelated-policy scaling at 25/200/1000/5000 for exact/wildcard/no-match outcomes to detect any hidden scan. Ratios and break-even are reported with explicit direction; no timing correctness gate exists. Production authorization is unchanged: `Authorizer() -> RustPermissionEvaluator -> native_evaluate(action, policy)` remains the only production path, with no backend/env-var selection, fallback, or cache/invalidation architecture; 8G results characterize an architectural hypothesis, not adoption, and the branch is expected to remain unmerged until experimental review.
+PR 8G (experimental; superseded by PR 8H): the ``dev/compiled-policy-perf`` branch tests a different hypothesis than PR 8F - compile already-applicable policy once into an immutable indexed native form, then evaluate repeated Actions without resending, reparsing, sorting, or scanning policy. It branches directly from the PR 8E baseline and has no msgspec/PR 8F dependency. ``_mtmf_permission_engine.compile_policy`` (private seam, reached only by experimental ``benchmarks/compiled_policy_evaluator.py``) parses every Permission URN once, classifies it EXACT or QUALIFIER_WILDCARD, OR-aggregates effects (`EffectAggregate` with `matched_allow`/`matched_deny`; duplicates are non-voting) into exact `(namespace, resource, verb, qualifier)` and wildcard `(namespace, resource, verb)` standard `HashMap` indexes, and returns a frozen opaque object whose ``evaluate`` parses only the single Action and performs at most two lookups. Exact beats wildcard, equal-specificity DENY wins, no match means DENY/NO_MATCH, and malformed compile input fails explicitly and never produces a usable policy. Native scan-vs-compiled parity is proven inside the crate (authored matrix plus 2000 deterministic generated policies), and the Python suite proves P == R == PC == RC complete-decision parity over the full evidence, where PC is a pure-Python CompiledPolicy control (same compiled/indexed algorithm, no FFI) added by the PR 8G amendment to separate the compilation benefit from the Rust benefit. The compile/evaluate/lifecycle benchmark preserves the PR 8E scenarios unchanged, adds 1/25/200/1000/5000-permission scales with multi-Action workloads (exact hits, wildcard-only hits, wildcard DENY, no-match), measures the one-time compile cost, repeated compiled evaluation, and compile + 1/10/100/1000 lifecycle cost separately, and characterizes unrelated-policy scaling at 25/200/1000/5000 for exact/wildcard/no-match outcomes to detect any hidden scan. Ratios and break-even are reported with explicit direction; no timing correctness gate exists. PR 8H productionizes the durable takeaway (compile/index before repeated evaluation) as the pure-Python `CompiledPolicy` default (section 8.2); the Rust compiled path remains experimental, with no backend/env-var selection, fallback, or cache/invalidation architecture.
 
-On the measured system (WSL2 x86_64, Python 3.14.7, optimized release native build, engine 0.1.0), the compiled-policy hypothesis was confirmed for repeated evaluation: compiled evaluation is sub-linear in unrelated policy size (25->5000 unrelated Permissions grew median compiled evaluation only ~4.1-4.4x while policy grew 200x; a hidden full-policy scan would have scaled linearly), and the release campaign showed compiled evaluation beating both baselines for every non-trivial policy while compile cost amortizes after roughly 1-7 evaluations in this environment. Representative release medians: ``large`` (1000 Permissions): Python 475.7us, current Rust 574.3us, compile 571.1us, then compiled evaluation 5.4us per evaluation (88x vs Python, 106x vs current Rust); ``scale_5000`` (5000 Permissions, 5-Action workload pass): compiled evaluation 33.1us vs Python 2.96ms and current Rust 12.3ms (89x/372x), with a one-time compile of 3.98ms. After compilation the remaining per-Action cost is dominated by Action-URN parsing plus the PyO3 call/wrapper overhead (native-only evaluation of an empty policy, parse + two empty-map lookups + PyO3, was ~1.0us; the Python wrapper adds ~2us per workload pass), so further native gains would require addressing Action transport/parsing rather than policy matching. These results characterize the experiment only and do not justify any production adoption: effective-policy lifecycle, cache identity, RoleAssignment/group-membership dependencies, invalidation, stale-ALLOW prevention, concurrency, and observability remain unsolved and are not addressed by 8G.
+On the measured system (WSL2 x86_64, Python 3.14.7, optimized release native build, engine 0.1.0), the compiled-policy hypothesis was confirmed for repeated evaluation: compiled evaluation is sub-linear in unrelated policy size (25->5000 unrelated Permissions grew median compiled evaluation only ~4.1-4.4x while policy grew 200x; a hidden full-policy scan would have scaled linearly), and the release campaign showed compiled evaluation beating both baselines for every non-trivial policy while compile cost amortizes after roughly 1-7 evaluations in this environment. Representative release medians: ``large`` (1000 Permissions): Python 475.7us, current Rust 574.3us, compile 571.1us, then compiled evaluation 5.4us per evaluation (88x vs Python, 106x vs current Rust); ``scale_5000`` (5000 Permissions, 5-Action workload pass): compiled evaluation 33.1us vs Python 2.96ms and current Rust 12.3ms (89x/372x), with a one-time compile of 3.98ms. After compilation the remaining per-Action cost is dominated by Action-URN parsing plus the PyO3 call/wrapper overhead (native-only evaluation of an empty policy, parse + two empty-map lookups + PyO3, was ~1.0us; the Python wrapper adds ~2us per workload pass), so further native gains would require addressing Action transport/parsing rather than policy matching. These results characterize the experiment; the durable takeaway (compiling/indexing before repeated evaluation) is what PR 8H productionizes in pure Python (section 8.2). Effective-policy lifecycle, cache identity, RoleAssignment/group-membership dependencies, invalidation, stale-ALLOW prevention, concurrency, and observability remain unsolved and are not addressed by 8G or 8H.
 
-PR 8G amendment (Python CompiledPolicy control): to answer "is the improvement compilation or Rust?", a pure-Python compiled-policy control (PC) was added mirroring the exact/wildcard indexed semantics of RC and measured together with P, R, and RC in one four-way release campaign (P == R == PC == RC complete-decision parity before every timed run; same WSL2 x86_64 / Python 3.14.7 / release native build environment). PC mirrors RC: exact `(namespace, resource, verb, qualifier)` and wildcard `(namespace, resource, verb)` keys, frozen `EffectAggregate(matched_allow, matched_deny)`, duplicate collapse, EXACT-beats-WILDCARD, equal-specificity DENY, default DENY, structural ownership validation, and an immutable representation; PC consumes the already-parsed domain `PermissionUrn`/`ActionUrn` components directly and never crosses FFI. Findings of the four-way campaign: (1) both compiled implementations dominate their linear baselines (P/PC up to ~169x and R/RC up to ~318x at 5000 Permissions), so compiling/indexing policy is the principal optimization, independent of language; (2) PC evaluation beat RC evaluation in every scenario (PC/RC median ratio ~0.18x no_roles to ~0.50x at 5000 unrelated Permissions - PC ~2-5.5x faster per single-Action call) and PC compiled faster than RC at every scale; (3) RC's raw native lookup is fast (native-only empty-policy evaluation ~1.35us), but the per-Action PyO3 crossing, Action-URN transfer/parse, and the Python-side native-result validation/mapping flip the full path, which is evidence that the Python<->Rust boundary dominates single-Action compiled evaluation on this machine; (4) PC and RC evaluation both stay approximately independent of unrelated policy size at 25/200/1000/5000 (sub-linear 1.9-4.2x growth for a 200x policy; no hidden scan). No production direction is selected by these results: PC is experimental benchmark code only and remains non-production; the Authorizer, `RustPermissionEvaluator`, and `PermissionEvaluator` are unchanged; no runtime selection, fallback, cache, or invalidation exists; and a batched-Action FFI hypothesis is identified only as a possible future experiment, not implemented.
+PR 8G amendment (Python CompiledPolicy control): to answer "is the improvement compilation or Rust?", a pure-Python compiled-policy control (PC) was added mirroring the exact/wildcard indexed semantics of RC and measured together with P, R, and RC in one four-way release campaign (P == R == PC == RC complete-decision parity before every timed run; same WSL2 x86_64 / Python 3.14.7 / release native build environment). PC mirrors RC: exact `(namespace, resource, verb, qualifier)` and wildcard `(namespace, resource, verb)` keys, frozen `EffectAggregate(matched_allow, matched_deny)`, duplicate collapse, EXACT-beats-WILDCARD, equal-specificity DENY, default DENY, structural ownership validation, and an immutable representation; PC consumes the already-parsed domain `PermissionUrn`/`ActionUrn` components directly and never crosses FFI. Findings of the four-way campaign: (1) both compiled implementations dominate their linear baselines (P/PC up to ~169x and R/RC up to ~318x at 5000 Permissions), so compiling/indexing policy is the principal optimization, independent of language; (2) PC evaluation beat RC evaluation in every scenario (PC/RC median ratio ~0.18x no_roles to ~0.50x at 5000 unrelated Permissions - PC ~2-5.5x faster per single-Action call) and PC compiled faster than RC at every scale; (3) RC's raw native lookup is fast (native-only empty-policy evaluation ~1.35us), but the per-Action PyO3 crossing, Action-URN transfer/parse, and the Python-side native-result validation/mapping flip the full path, which is evidence that the Python<->Rust boundary dominates single-Action compiled evaluation on this machine; (4) PC and RC evaluation both stay approximately independent of unrelated policy size at 25/200/1000/5000 (sub-linear 1.9-4.2x growth for a 200x policy; no hidden scan). PR 8H adopts the proven pure-Python PC semantics as the production `CompiledPolicy` (section 8.2): PC is no longer experimental benchmark-only code, the benchmark harness imports the production implementation, and no runtime selection, fallback, cache, or invalidation exists. A batched-Action FFI hypothesis remains only a possible future experiment, not implemented.
 
-Rust still does NOT determine applicable policy, consume Roles, retrieve session/Tenant/membership/assignment context, or perform authorization-context orchestration; Python owns applicability and context, and the `Authorizer` remains the authoritative orchestrator. The native module is never imported eagerly: importing `mtmf_core` or constructing an `Authorizer` loads `_mtmf_permission_engine` only when Rust evaluation is actually invoked, and the Python reference evaluator never imports it.
+Rust still does NOT determine applicable policy, consume Roles, retrieve session/Tenant/membership/assignment context, or perform authorization-context orchestration; Python owns applicability and context, and the `Authorizer` remains the authoritative orchestrator. The native module is never imported on the default path: importing `mtmf_core` or constructing an `Authorizer` never loads `_mtmf_permission_engine` (the default policy is pure-Python `CompiledPolicy`), the Python reference evaluator never imports it, and it is loaded lazily only when a Rust-backed experiment is actually invoked.
 
 Not implemented: no Role identity, Tenant, session, assignment, stewardship, or any other authorization context reaches Rust; no persistence/I/O enters the evaluator; only detached primitive policy crosses the FFI boundary. Manifestly invalid URN text raises `ValueError` at the native boundary; a valid non-match is a `None`/`NO_MATCH` fact, so malformed input can never silently become a valid non-match or any authorization decision.
 

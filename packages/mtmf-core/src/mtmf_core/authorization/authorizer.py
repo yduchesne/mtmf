@@ -2,18 +2,32 @@
 
 The :class:`Authorizer` is the authoritative decision layer of
 ``mtmf-core``. It validates the supplied structural session/Tenant
-context, enforces same-Tenant isolation, delegates policy resolution to
-an evaluator behind the narrow
-:class:`~mtmf_core.authorization.evaluator.PermissionEvaluatorProtocol`
-seam (by default the Rust-backed
-:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`,
-with the Python reference
-:class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
-explicitly injectable), and applies explicitly requested settled
-additional constraints. A policy DENY is final and can never be
-converted to ALLOW by another constraint; missing, unsupported, or
-unresolved required context fails closed; an unexpected internal
-failure propagates as an error and can never become ALLOW.
+context, enforces same-Tenant isolation, resolves the applicable policy
+through the :class:`~mtmf_core.authorization.policy_resolver.AuthorizationPolicyResolver`
+seam and evaluates the exact Action against the resolved
+:class:`~mtmf_core.authorization.policy.AuthorizationPolicy`, and
+applies explicitly requested settled additional constraints. A policy
+DENY is final and can never be converted to ALLOW by another constraint;
+missing, unsupported, or unresolved required context fails closed; an
+unexpected internal failure propagates as an error and can never become
+ALLOW.
+
+Default path:
+
+.. code-block:: text
+
+    Authorizer()
+      -> DefaultAuthorizationPolicyResolver
+      -> EffectivePolicy(CompiledPolicy.compile(context.applicable_roles), context)
+      -> CompiledPolicy.evaluate(action)
+
+The default policy implementation is the pure-Python indexed
+:class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy`. The
+Rust-backed
+:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`
+remains available for experimentation and differential testing but is
+experimental and non-default; there is no environment selector, backend
+selector, automatic fallback, or runtime feature probe.
 
 Context retrieval is deliberately outside the Authorizer: this
 foundation consumes caller-supplied, pre-filtered facts and never
@@ -25,8 +39,10 @@ from __future__ import annotations
 from mtmf_core.authorization.context import AuthorizationRequest, DominanceRequirement
 from mtmf_core.authorization.decision import AuthorizationDecision, DenyReason
 from mtmf_core.authorization.dominance import strictly_dominates
-from mtmf_core.authorization.evaluator import PermissionEvaluatorProtocol
-from mtmf_core.authorization.rust_permission_evaluator import RustPermissionEvaluator
+from mtmf_core.authorization.policy_resolver import (
+    AuthorizationPolicyResolver,
+    DefaultAuthorizationPolicyResolver,
+)
 from mtmf_core.domain.errors import SessionContextError
 from mtmf_core.domain.session import validate_session_context
 
@@ -36,18 +52,27 @@ class Authorizer:
 
     This is an internal foundation, not a public API/DTO contract. It
     performs no persistence and no authorization-context retrieval. It
-    depends only on the narrow :class:`PermissionEvaluatorProtocol`
-    policy-evaluation seam; by default it uses the Rust-backed
-    :class:`RustPermissionEvaluator`, and the Python reference
-    :class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
-    remains injectable for tests and reference/comparison work. A native
-    evaluation/infrastructure failure propagates fail-closed from the
-    evaluator and can never become a semantic DENY or an ALLOW.
+    depends only on the narrow :class:`AuthorizationPolicyResolver`
+    policy-resolution seam; by default it uses the non-caching
+    :class:`DefaultAuthorizationPolicyResolver`, which builds the
+    production pure-Python indexed
+    :class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy`
+    wrapped in an
+    :class:`~mtmf_core.authorization.policy.EffectivePolicy` for
+    context-aware diagnostics. A resolver/compilation/policy exception
+    propagates fail-closed from the Authorizer and can never become a
+    semantic DENY or an ALLOW.
     """
 
-    def __init__(self, evaluator: PermissionEvaluatorProtocol | None = None) -> None:
-        """Create an Authorizer using ``evaluator`` (default: RustPermissionEvaluator)."""
-        self._evaluator = evaluator if evaluator is not None else RustPermissionEvaluator()
+    def __init__(
+        self,
+        policy_resolver: AuthorizationPolicyResolver | None = None,
+    ) -> None:
+        """Create an Authorizer using ``policy_resolver`` (default:
+        :class:`DefaultAuthorizationPolicyResolver`)."""
+        self._policy_resolver = (
+            policy_resolver if policy_resolver is not None else DefaultAuthorizationPolicyResolver()
+        )
 
     def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision:
         """Produce an explicit ALLOW or DENY for one internal request.
@@ -58,16 +83,24 @@ class Authorizer:
         2. explicit same-Tenant target check (the validator positively
            established ``session.tenant_id == context.tenant.id``, so
            the target check also pins the session Tenant);
-        3. policy resolution through :class:`PermissionEvaluator` (any
-           policy DENY is final);
+        3. policy resolution through the configured
+           :class:`AuthorizationPolicyResolver` and evaluation against
+           the produced :class:`AuthorizationPolicy` (any policy DENY is
+           final);
         4. declared-but-unresolved required constraints (fail closed);
         5. strict scope dominance when explicitly required.
 
         Only when every required check succeeds is ALLOW returned.
 
-        :raises Exception: unexpected internal/programmer failures are
-            propagated rather than swallowed and mislabeled; callers
-            never receive ALLOW from an exception path.
+        The policy is never resolved/compiled before session and
+        target-Tenant validation: an invalid session or a cross-Tenant
+        target returns its DENY without consulting the resolver.
+
+        :raises Exception: unexpected internal/programmer failures
+            (including resolver/compilation and policy-evaluation
+            exceptions) are propagated rather than swallowed and
+            mislabeled; callers never receive ALLOW from an exception
+            path.
         """
         context = request.context
         try:
@@ -91,7 +124,8 @@ class Authorizer:
         if request.target_tenant_id != context.tenant.id:
             return AuthorizationDecision.deny(DenyReason.TENANT_MISMATCH)
 
-        decision = self._evaluator.evaluate(request.action, context.applicable_roles)
+        policy = self._policy_resolver.resolve(context)
+        decision = policy.evaluate(request.action)
         if not decision.allowed:
             # Policy DENY (no match or matching DENY) is final: no other
             # constraint may turn it into ALLOW.
