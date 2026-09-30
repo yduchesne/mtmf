@@ -21,8 +21,11 @@ from mtmf_core import (
     AuthorizationDecision,
     AuthorizationRequest,
     Authorizer,
+    CompiledPolicy,
+    DefaultAuthorizationPolicyResolver,
     DenyReason,
     DominanceRequirement,
+    EffectivePolicy,
     IdentityTenantMembership,
     MatchSpecificity,
     PermissionEffect,
@@ -35,6 +38,51 @@ from mtmf_core import (
     SessionContext,
     UnsupportedConstraint,
 )
+
+
+class _StubPolicy:
+    """A stub AuthorizationPolicy recording the Actions it evaluates."""
+
+    def __init__(
+        self,
+        decision: AuthorizationDecision | None = None,
+        *,
+        raise_exc: Exception | None = None,
+    ) -> None:
+        self._decision = decision
+        self._raise_exc = raise_exc
+        self.evaluated: list[Action] = []
+
+    def evaluate(self, action: Action) -> AuthorizationDecision:
+        self.evaluated.append(action)
+        if self._raise_exc is not None:
+            raise self._raise_exc
+        if self._decision is not None:
+            return self._decision
+        return AuthorizationDecision.deny(DenyReason.NO_MATCH)
+
+    def get_diagnostics(self) -> str:
+        return "StubPolicy()"
+
+
+class _StubResolver:
+    """A stub AuthorizationPolicyResolver recording the contexts it resolves."""
+
+    def __init__(
+        self,
+        policy: _StubPolicy | None = None,
+        *,
+        raise_exc: Exception | None = None,
+    ) -> None:
+        self._policy = policy if policy is not None else _StubPolicy()
+        self._raise_exc = raise_exc
+        self.resolved: list[AuthorizationContext] = []
+
+    def resolve(self, context: AuthorizationContext) -> _StubPolicy:
+        self.resolved.append(context)
+        if self._raise_exc is not None:
+            raise self._raise_exc
+        return self._policy
 
 
 def _system_role(
@@ -380,16 +428,111 @@ def test_a25_unexpected_evaluator_exception_propagates_never_allow() -> None:
         Authorizer().authorize(request)
 
 
-def test_authorizer_delegates_to_an_injected_evaluator() -> None:
-    class StubEvaluator:
-        def evaluate(self, action: Action, roles: object) -> AuthorizationDecision:
-            return AuthorizationDecision.allow(
-                matched_specificity=MatchSpecificity.EXACT, matched_allow=True
-            )
-
-    request = build_authorization_request(action=make_action(verb="set", qualifier="active"))
-    decision = Authorizer(StubEvaluator()).authorize(request)
+def test_authorizer_delegates_to_an_injected_resolver_and_policy() -> None:
+    allow = AuthorizationDecision.allow(
+        matched_specificity=MatchSpecificity.EXACT, matched_allow=True
+    )
+    policy = _StubPolicy(allow)
+    resolver = _StubResolver(policy)
+    authorizer = Authorizer(resolver)
+    action = make_action(verb="set", qualifier="active")
+    request = build_authorization_request(action=action)
+    decision = authorizer.authorize(request)
     assert decision.allowed
+    # Authorizer -> resolver.resolve(context) -> policy.evaluate(action).
+    assert resolver.resolved == [request.context]
+    assert policy.evaluated == [action]
+
+
+def test_authorizer_default_policy_resolver_builds_effective_python_compiled_policy() -> None:
+    assert isinstance(Authorizer()._policy_resolver, DefaultAuthorizationPolicyResolver)
+    context = build_authorization_request(
+        action=make_action(verb="set", qualifier="active")
+    ).context
+    resolved = DefaultAuthorizationPolicyResolver().resolve(context)
+    assert isinstance(resolved, EffectivePolicy)
+    assert isinstance(resolved._policy, CompiledPolicy)
+    # The default resolver is non-caching but must return protocol-classified
+    # policies; repeated resolve may return distinct objects (no caching
+    # contract), and the default path never selects Rust.
+    assert isinstance(Authorizer()._policy_resolver, DefaultAuthorizationPolicyResolver)
+
+
+def test_resolver_is_not_called_for_invalid_session() -> None:
+    policy = _StubPolicy()
+    resolver = _StubResolver(policy)
+    tenant = make_tenant("A")
+    principal = make_principal()
+    identity = make_identity(principal_id=principal.id)
+    request = build_authorization_request(
+        tenant=tenant,
+        principal=principal,
+        identity=identity,
+        session=SessionContext(make_id(), principal.id, identity.id),
+        action=make_action(verb="set", qualifier="active"),
+    )
+    decision = Authorizer(resolver).authorize(request)
+    assert not decision.allowed
+    assert decision.reason is DenyReason.INVALID_CONTEXT
+    assert resolver.resolved == []
+    assert policy.evaluated == []
+
+
+def test_resolver_is_not_called_for_target_tenant_mismatch() -> None:
+    policy = _StubPolicy()
+    resolver = _StubResolver(policy)
+    request = build_authorization_request(
+        roles=(_system_role(),),
+        action=make_action(verb="set", qualifier="active"),
+        target_tenant_id=make_id(),
+    )
+    decision = Authorizer(resolver).authorize(request)
+    assert not decision.allowed
+    assert decision.reason is DenyReason.TENANT_MISMATCH
+    assert resolver.resolved == []
+    assert policy.evaluated == []
+
+
+def test_resolver_exception_propagates_and_never_becomes_allow() -> None:
+    boom = RuntimeError("resolver exploded")
+    request = build_authorization_request(
+        roles=(_system_role(),),
+        action=make_action(verb="set", qualifier="active"),
+    )
+    with pytest.raises(RuntimeError) as raised:
+        Authorizer(_StubResolver(raise_exc=boom)).authorize(request)
+    assert raised.value is boom
+
+
+def test_policy_evaluation_exception_propagates_and_never_becomes_allow() -> None:
+    boom = RuntimeError("policy exploded")
+    request = build_authorization_request(
+        roles=(_system_role(),),
+        action=make_action(verb="set", qualifier="active"),
+    )
+    with pytest.raises(RuntimeError) as raised:
+        Authorizer(_StubResolver(_StubPolicy(raise_exc=boom))).authorize(request)
+    assert raised.value is boom
+
+
+def test_policy_deny_is_final_through_the_resolver_path() -> None:
+    deny = AuthorizationDecision.deny(
+        DenyReason.MATCHED_DENY,
+        matched_specificity=MatchSpecificity.EXACT,
+        matched_allow=False,
+        matched_deny=True,
+    )
+    request = build_authorization_request(
+        action=make_action(verb="set", qualifier="active"),
+        unsupported_constraints=(UnsupportedConstraint.ALTERNATE_DOMINANCE,),
+        dominance_requirement=DominanceRequirement.STRICT,
+        subject_scope=SecurityScope.ROOT,
+        target_scope=SecurityScope.ORGANIZATION,
+    )
+    decision = Authorizer(_StubResolver(_StubPolicy(deny))).authorize(request)
+    assert not decision.allowed
+    # The policy DENY is reported as such; no later constraint rewrites it.
+    assert decision.reason is DenyReason.MATCHED_DENY
 
 
 def test_policy_deny_is_final_even_when_other_constraints_are_required() -> None:

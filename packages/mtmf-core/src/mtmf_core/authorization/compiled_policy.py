@@ -1,39 +1,44 @@
-"""Pure-Python CompiledPolicy control (PR 8G amendment).
+"""Production pure-Python indexed :class:`CompiledPolicy` (PR 8H).
 
-The original PR 8G compared approximately:
+PR 8H productionizes the proven pure-Python compiled-policy semantics
+first measured as the PR 8G ``PC`` benchmark control
+(``benchmarks/python_compiled_policy.py``). That control demonstrated
+that compiling/indexing already-applicable policy is the principal
+per-evaluation optimization and that, for the measured single-Action
+workload, the pure-Python compiled implementation outperformed the Rust
+compiled implementation once the complete Python/Rust boundary cost was
+included.
 
-    P   current Python linear evaluator
-    R   current Rust linear evaluator
-    RC  Rust CompiledPolicy
+This module is the production form of that semantics. It is the policy
+implementation built by the
+:class:`~mtmf_core.authorization.policy_resolver.DefaultAuthorizationPolicyResolver`
+and therefore the default :class:`~mtmf_core.authorization.authorizer.Authorizer`
+evaluator. Production must not import behavior from ``benchmarks/``: the
+compilation and matching semantics live here and nowhere else.
 
-That cannot isolate whether the improvement comes from:
+Design:
 
-    A. compiling/indexing the policy, or
-    B. implementing the compiled evaluator in Rust.
+- ``compile`` consumes already-applicable :class:`~mtmf_core.domain.role.Role`
+  objects once and performs every one-time cost up front: ownership
+  validation, classification of each Permission as exact or
+  qualifier-wildcard, and OR-aggregation of effects into per-key
+  :class:`EffectAggregate` values.
+- The compiled representation is immutable: private dictionaries wrapped
+  in :class:`types.MappingProxyType` inside a frozen dataclass.
+  Evaluation never mutates it.
+- Evaluation performs direct dictionary lookups only: at most one EXACT
+  lookup and one WILDCARD lookup per Action. There is no iteration over
+  Roles, PermissionSets, Permissions, or index entries and no sorting -
+  a hidden linear scan is impossible.
+- Reuses the already-parsed domain ``ActionUrn`` / ``PermissionUrn``
+  components; URN text is never reconstructed or reparsed.
 
-This module adds the missing experimental control:
-
-    PC  Python CompiledPolicy
-
-,the same semantic compilation model and indexed lookup algorithm as the
-Rust ``CompiledPolicy`` in
-``packages/mtmf-permission-engine/src/compiled_policy.rs``, implemented
-in pure Python with no FFI:
-
-    exact:
-        ExactKey -> EffectAggregate        (namespace, resource, verb, qualifier)
-
-    wildcard:
-        WildcardKey -> EffectAggregate     (namespace, resource, verb)
-
-The amended comparison is therefore P / R / PC / RC, and the most
-important new comparison is PC vs RC.
-
-PC is **experimental benchmark/control code only** and is never
-production code: the Authorizer, the production
-``RustPermissionEvaluator``, and the Python reference
-``PermissionEvaluator`` are not modified by this module, PC is not
-selectable as a backend, and no caching/invalidation/batching exists.
+Semantics are exactly those of the linear Python oracle
+(:class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`):
+exact beats wildcard, equal-specificity DENY wins, duplicates do not
+vote, input order never matters, and no match means DENY / ``NO_MATCH``.
+The differential/conformance suite proves complete-decision equality
+between the two implementations.
 """
 
 from __future__ import annotations
@@ -51,24 +56,20 @@ from mtmf_core.domain.role import Role
 # Semantic compound keys, mirroring the Rust `ExactKey`/`WildcardKey`
 # (component text only; no Permission URN strings, no numeric IDs, no
 # registry). The definition-namespace component is the canonical
-# namespace text (e.g. "system"), which is what the Rust keys carry.
+# namespace text (e.g. "system").
 ExactKey = tuple[str, str, str, str]
 WildcardKey = tuple[str, str, str]
 
 
-# Conceptually mirrored from the Rust EffectAggregate; frozen because
-# evaluation must never mutate compiled policy.
 @dataclass(frozen=True, slots=True)
 class EffectAggregate:
     """Pre-aggregated ALLOW/DENY evidence for one semantic key.
 
-    Exactly mirrors the Rust ``EffectAggregate``: two booleans,
-    ``matched_allow`` and ``matched_deny``. Duplicates do not vote; the
-    flags are OR-accumulated during compilation. Every stored aggregate
-    has at least one flag set, because every stored key originates from
-    at least one parsed Permission.
-
-    Frozen after construction: evaluation never mutates compiled policy.
+    Two booleans, ``matched_allow`` and ``matched_deny``. Duplicates do
+    not vote: the flags are OR-accumulated during compilation. Every
+    stored aggregate has at least one flag set, because every stored key
+    originates from at least one parsed Permission. Frozen after
+    construction: evaluation never mutates compiled policy.
     """
 
     matched_allow: bool
@@ -80,10 +81,10 @@ def _resolve_aggregate(
 ) -> AuthorizationDecision:
     """Resolve one aggregated effect into the existing decision type.
 
-    Mirrors the Rust resolution: an equal-specificity DENY wins, else a
-    present ALLOW wins, with the complete evidence carried. An
-    incoherent aggregate (neither flag; impossible under the current
-    compiler) fails closed instead of guessing a decision.
+    An equal-specificity DENY wins, else a present ALLOW wins, with the
+    complete evidence carried. An incoherent aggregate (neither flag;
+    impossible under the current compiler) fails closed instead of
+    guessing a decision.
     """
     if aggregate.matched_deny:
         return AuthorizationDecision.deny(
@@ -104,7 +105,7 @@ def _resolve_aggregate(
 
 
 @dataclass(frozen=True, slots=True)
-class PythonCompiledPolicy:
+class CompiledPolicy:
     """An immutable, indexed pure-Python compiled permission policy.
 
     Construction parses no URN text (the domain ``ActionUrn`` /
@@ -128,16 +129,19 @@ class PythonCompiledPolicy:
     _wildcard: Mapping[WildcardKey, EffectAggregate]
 
     @classmethod
-    def compile(cls, roles: Iterable[Role]) -> PythonCompiledPolicy:
+    def compile(cls, roles: Iterable[Role]) -> CompiledPolicy:
         """Compile already-applicable Role policy once.
 
         Reuses the already-parsed domain ``PermissionUrn`` semantic
         components (definition namespace, resource, verb, qualifier);
-        the URN text is never reconstructed or reparsed.
+        the URN text is never reconstructed or reparsed. Effects are
+        OR-aggregated per semantic key; duplicates do not vote and input
+        order is never a precedence.
 
         :raises PermissionEvaluationError: for structurally corrupted
             domain policy (``permission_set.role_urn != role.urn``),
-            before any indexing; identical to ``PermissionEvaluator``,
+            before any indexing; identical to
+            :class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`,
             ``RustPermissionEvaluator``, and the Rust-compiled adapter.
         """
         exact_buckets: dict[ExactKey, tuple[bool, bool]] = {}
@@ -157,13 +161,13 @@ class PythonCompiledPolicy:
                     resource = urn.resource
                     verb = urn.verb
                     if urn.is_wildcard:
-                        key = (namespace, resource, verb)
-                        allow, deny = wildcard_buckets.get(key, (False, False))
-                        wildcard_buckets[key] = (allow or is_allow, deny or is_deny)
+                        wildcard_key = (namespace, resource, verb)
+                        allow, deny = wildcard_buckets.get(wildcard_key, (False, False))
+                        wildcard_buckets[wildcard_key] = (allow or is_allow, deny or is_deny)
                     else:
-                        key = (namespace, resource, verb, urn.qualifier)
-                        allow, deny = exact_buckets.get(key, (False, False))
-                        exact_buckets[key] = (allow or is_allow, deny or is_deny)
+                        exact_key = (namespace, resource, verb, urn.qualifier)
+                        allow, deny = exact_buckets.get(exact_key, (False, False))
+                        exact_buckets[exact_key] = (allow or is_allow, deny or is_deny)
         exact = MappingProxyType(
             {key: EffectAggregate(allow, deny) for key, (allow, deny) in exact_buckets.items()}
         )
@@ -178,7 +182,8 @@ class PythonCompiledPolicy:
         Derives the EXACT Action key from the already-parsed domain
         ``ActionUrn`` components and performs direct index lookups:
         EXACT first (exact beats wildcard), then WILDCARD, then
-        ``DENY / NO_MATCH``. No Policy/Permission scan and no sort.
+        ``DENY / NO_MATCH``. No Role/PermissionSet/Permission scan and
+        no sort.
 
         Deterministic, side-effect-free, and never mutates the policy.
         """
@@ -194,6 +199,16 @@ class PythonCompiledPolicy:
         if aggregate is not None:
             return _resolve_aggregate(MatchSpecificity.QUALIFIER_WILDCARD, aggregate)
         return AuthorizationDecision.deny(DenyReason.NO_MATCH)
+
+    def get_diagnostics(self) -> str:
+        """Return concise structural diagnostics without policy disclosure.
+
+        Reports only the distinct EXACT/WILDCARD key counts. It never
+        dumps full Permissions, URNs, Roles, extensions, or other
+        policy internals; the text is not parsed by the Authorizer and
+        never influences authorization.
+        """
+        return f"CompiledPolicy(exact_keys={len(self._exact)}, wildcard_keys={len(self._wildcard)})"
 
     @property
     def exact(self) -> Mapping[ExactKey, EffectAggregate]:

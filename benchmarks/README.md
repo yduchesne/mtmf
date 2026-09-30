@@ -125,9 +125,9 @@ Four paths are measured for the same deterministic scenarios:
 
 ```text
 P   Python linear evaluator (PermissionEvaluator)
-R   Rust linear evaluator (RustPermissionEvaluator, production default)
-PC  Python CompiledPolicy (PythonCompiledPolicy: compile once, pure-Python
-    exact/wildcard index lookups; no FFI)
+R   Rust linear evaluator (RustPermissionEvaluator)
+PC  production Python CompiledPolicy (CompiledPolicy: compile once,
+    pure-Python exact/wildcard index lookups; no FFI)
 RC  Rust CompiledPolicy (CompiledPolicyEvaluator: compile once, native
     exact/wildcard index lookups; per-Action PyO3 call)
 ```
@@ -135,13 +135,14 @@ RC  Rust CompiledPolicy (CompiledPolicyEvaluator: compile once, native
 Experimental code and harness:
 
 ```text
-benchmarks/python_compiled_policy.py          # PC control (pure Python)
-benchmarks/compiled_policy_evaluator.py       # RC experimental adapter
-benchmarks/compiled_policy_benchmark.py       # P/R/PC/RC harness
+mtmf_core.authorization.compiled_policy  # production PC implementation
+benchmarks/compiled_policy_evaluator.py  # RC experimental adapter
+benchmarks/compiled_policy_benchmark.py  # P/R/PC/RC harness
 packages/mtmf-permission-engine/src/compiled_policy.rs  # native kernel
 ```
 
-The PC control mirrors the Rust `CompiledPolicy` semantics: exact keys
+The production PC implementation mirrors the Rust `CompiledPolicy`
+semantics: exact keys
 `(namespace, resource, verb, qualifier)`, wildcard keys
 `(namespace, resource, verb)`, pre-aggregated frozen
 `EffectAggregate(matched_allow, matched_deny)`, duplicate collapse,
@@ -199,13 +200,17 @@ and PC compiled faster than RC at every scale. RC's raw native lookup
 cost is small; the per-Action PyO3 crossing, Action-URN
 transfer/parse, and the Python-side native-result validation/mapping
 overhead dominate. These results characterize this machine and this
-architecture only; no production direction is selected.
+architecture only. After PR 8H the production path adopts the
+pure-Python indexed semantics as the production
+:class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy` (PC);
+the Rust compiled path (RC) remains experimental.
 
-**Experimental status:** PR 8G is not a production cutover. After 8G the
-production authorization path remains
-`Authorizer() -> RustPermissionEvaluator -> native_evaluate(action, policy)`;
-no Authorizer/RustPermissionEvaluator change, backend selection,
-environment-var selection, fallback, or production cache exists, and
-results characterize an architectural hypothesis, not adoption. The PR
-is expected to remain unmerged until experimental review compares 8G
-with PR 8F evidence.
+**Experimental status:** the RC Rust compiled adapter and the linear
+Rust evaluator remain experimental and non-default. PR 8G was never a
+production cutover; PR 8H productionizes the PC semantics as
+``Authorizer() -> DefaultAuthorizationPolicyResolver ->
+EffectivePolicy(CompiledPolicy, context) -> CompiledPolicy.evaluate(action)``
+with no backend selection, environment-var selection, fallback, or
+production cache. The benchmark harness measures P/R/PC/RC parity
+before timing and remains runnable; results characterize an
+architectural decision, and no speed gate exists.

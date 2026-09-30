@@ -1,14 +1,24 @@
-"""Internal policy-evaluation protocol for the Authorizer seam.
+"""Internal policy-evaluation protocol (linear reference/experimental seam).
 
-The :class:`PermissionEvaluatorProtocol` describes exactly the
-policy-evaluation capability the
-:class:`~mtmf_core.authorization.authorizer.Authorizer` depends on:
-decide one exact
-:class:`~mtmf_core.domain.action.Action` against an iterable of
-already-applicable
+The :class:`PermissionEvaluatorProtocol` describes the linear
+policy-evaluation capability shared by the pure-Python reference
+:class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
+and the experimental Rust-backed
+:class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`:
+decide one exact :class:`~mtmf_core.domain.action.Action` against an
+iterable of already-applicable
 :class:`~mtmf_core.domain.role.Role` objects and return an
 :class:`AuthorizationDecision`.
-This protocol is intentionally narrow and internal:
+
+After PR 8H this is no longer the Authorizer's primary seam: the
+:class:`~mtmf_core.authorization.authorizer.Authorizer` depends on the
+:class:`~mtmf_core.authorization.policy_resolver.AuthorizationPolicyResolver`
+protocol and on :class:`~mtmf_core.authorization.policy.AuthorizationPolicy`,
+and the production policy implementation is the pure-Python indexed
+:class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy`.
+This protocol intentionally remains as the narrow seam for the linear
+Python reference/oracle and for Rust integration/differential
+experiments:
 
 - no lifecycle, configuration, persistence, capability-probing,
   backend-selection, or context-retrieval methods exist here;
@@ -18,14 +28,14 @@ This protocol is intentionally narrow and internal:
   :class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
   and the Rust-backed
   :class:`~mtmf_core.authorization.rust_permission_evaluator.RustPermissionEvaluator`
-  satisfy it, so the evaluator remains injectable for tests and
-  reference/comparison use while the Authorizer depends only on this
-  seam.
+  satisfy it, so evaluator injection remains available for tests and
+  reference/comparison use while the Authorizer no longer depends on
+  this seam for its default path.
 
 Python (the Authorizer) remains authoritative for authorization
 context, policy applicability, Tenant/session validation, scope and
 dominance, stewardship/delegation, operation-specific constraints, and
-fail-closed orchestration. The evaluator implementations only resolve
+fail-closed orchestration. Evaluation implementations only resolve
 policy against already-applicable Roles.
 """
 

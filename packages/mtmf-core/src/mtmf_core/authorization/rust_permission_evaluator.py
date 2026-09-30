@@ -1,10 +1,21 @@
-"""Rust-backed domain-facing policy evaluator.
+"""Rust-backed domain-facing policy evaluator (experimental, non-default).
 
 :class:`RustPermissionEvaluator` satisfies the same narrow internal
-evaluator protocol as the Python reference
+linear evaluator protocol as the Python reference
 :class:`~mtmf_core.authorization.permission_evaluator.PermissionEvaluator`
 but delegates the pure policy computation to the private Rust kernel
 through the internal ``rust_engine`` adapter.
+
+**Status after PR 8H:** this evaluator is retained for experimentation,
+differential testing, and Rust/Python integration evidence. It is
+experimental and non-default: the normally constructed
+:class:`~mtmf_core.authorization.authorizer.Authorizer` resolves the
+production pure-Python indexed
+:class:`~mtmf_core.authorization.compiled_policy.CompiledPolicy` through
+:class:`~mtmf_core.authorization.policy_resolver.DefaultAuthorizationPolicyResolver`.
+This evaluator is not the Authorizer fallback, is not selected by any
+backend/environment selector, and is not required for normal production
+authorization.
 
 Python still owns all authorization context, policy applicability,
 Tenant/session validation, scope/dominance, stewardship/delegation,

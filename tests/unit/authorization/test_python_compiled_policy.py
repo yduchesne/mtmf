@@ -1,7 +1,8 @@
-"""Pure-Python CompiledPolicy control tests (PR 8G amendment).
+"""Production pure-Python CompiledPolicy tests (PR 8H).
 
-Focused behavioral coverage of ``benchmarks/python_compiled_policy.py``
-(``PythonCompiledPolicy``, the PC control):
+Focused behavioral coverage of the production
+``mtmf_core.authorization.compiled_policy`` (:class:`CompiledPolicy`,
+the PR 8H productionization of the PR 8G ``PC`` control):
 
 - empty policy -> NO_MATCH;
 - exact ALLOW / exact DENY;
@@ -15,7 +16,8 @@ Focused behavioral coverage of ``benchmarks/python_compiled_policy.py``
 - ownership corruption rejected;
 - structurally immutable compiled representation;
 - no mutation across repeated evaluation;
-- large compiled policy.
+- large compiled policy;
+- deterministic diagnostics without full-policy disclosure.
 
 These tests are pure Python: they do NOT require the native module. The
 four-way P == R == PC == RC parity lives in
@@ -43,12 +45,12 @@ from mtmf_core import (
     MatchSpecificity,
     PermissionEffect,
 )
+from mtmf_core.authorization.compiled_policy import CompiledPolicy, EffectAggregate
 from mtmf_core.authorization.permission_evaluator import PermissionEvaluationError
-from python_compiled_policy import EffectAggregate, PythonCompiledPolicy
 
 
-def _compile(roles: object) -> PythonCompiledPolicy:
-    return PythonCompiledPolicy.compile(roles)
+def _compile(roles: object) -> CompiledPolicy:
+    return CompiledPolicy.compile(roles)
 
 
 def _single_set_role(
@@ -64,7 +66,7 @@ def _single_set_role(
 
 
 def _assert_decision(
-    compiled: PythonCompiledPolicy,
+    compiled: CompiledPolicy,
     verb: str,
     qualifier: str,
     *,
@@ -105,6 +107,15 @@ NO_MATCH = AuthorizationDecision.deny(DenyReason.NO_MATCH)
 
 
 # --- 1. Empty policy ------------------------------------------------------------
+
+
+def test_compiled_policy_satisfies_authorization_policy_protocol() -> None:
+    from mtmf_core import AuthorizationPolicy
+
+    compiled = _compile(())
+    assert isinstance(compiled, AuthorizationPolicy)
+    assert callable(compiled.evaluate)
+    assert callable(compiled.get_diagnostics)
 
 
 def test_empty_policy_is_valid_default_deny() -> None:
@@ -570,3 +581,40 @@ def test_no_mutation_across_repeated_evaluation() -> None:
     assert dict(compiled.wildcard) == wildcard_before
     assert compiled.exact_key_count == len(exact_before)
     assert compiled.wildcard_key_count == len(wildcard_before)
+
+
+# --- 17. Diagnostics (structural, deterministic, non-disclosing) --------------------
+
+
+def test_diagnostics_report_key_counts_only() -> None:
+    urn = make_role_urn(role_name="diag")
+    compiled = _compile(
+        (
+            make_role_from_sets(
+                role_urn=urn,
+                permission_sets=(
+                    make_permission_set_with_rules(
+                        role_urn=urn, rules=(("set", "active"), ("get", "*"), ("set", "*"))
+                    ),
+                ),
+            ),
+        )
+    )
+    text = compiled.get_diagnostics()
+    assert text == "CompiledPolicy(exact_keys=1, wildcard_keys=2)"
+
+
+def test_diagnostics_do_not_disclose_policy_internals() -> None:
+    compiled = _compile((_single_set_role(rules=(("set", "active"), ("get", "*"))),))
+    text = compiled.get_diagnostics()
+    # Never dump full Permissions, URNs, Roles, or other policy internals.
+    assert text == "CompiledPolicy(exact_keys=1, wildcard_keys=1)"
+    assert "urn:mtmf" not in text
+
+
+def test_diagnostics_are_deterministic_across_calls() -> None:
+    compiled = _compile((_single_set_role(rules=(("set", "active"), ("get", "*"))),))
+    assert compiled.get_diagnostics() == compiled.get_diagnostics()
+    # Evaluation does not change the diagnostic text either.
+    _assert_decision(compiled, "set", "active", expected=EXACT_ALLOW)
+    assert compiled.get_diagnostics() == "CompiledPolicy(exact_keys=1, wildcard_keys=1)"

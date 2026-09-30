@@ -11,7 +11,7 @@ FOUR paths for the SAME deterministic scenarios:
 
     P   Python linear evaluator (``PermissionEvaluator``)
     R   Rust linear evaluator (``RustPermissionEvaluator``, production default)
-    PC  Python CompiledPolicy (``PythonCompiledPolicy.compile`` once,
+    PC  production Python CompiledPolicy (``CompiledPolicy.compile`` once,
         pure-Python indexed evaluation; no FFI)
     RC  Rust CompiledPolicy (``CompiledPolicyEvaluator.compile`` once,
         native indexed evaluation)
@@ -72,6 +72,7 @@ from mtmf_core import (
     Action,
     ActionUrn,
     AuthorizationDecision,
+    CompiledPolicy,
     DomainId,
     Permission,
     PermissionEffect,
@@ -92,7 +93,6 @@ from mtmf_core.authorization.rust_permission_evaluator import RustPermissionEval
 # Reuse the PR 8E scenario fixtures unchanged so the 8G benchmark runs
 # against exactly the same policy as the 8E characterization.
 from permission_evaluator_benchmark import _build_scenarios as _build_8e_scenarios
-from python_compiled_policy import PythonCompiledPolicy
 
 # Deterministic multi-Action workload reused by the scale scenarios: one
 # exact hit, one wildcard-only hit, one wildcard DENY, and two
@@ -326,7 +326,7 @@ def _check_parity(scenario: Scenario) -> None:
     python_evaluator = PermissionEvaluator()
     rust_evaluator = RustPermissionEvaluator()
     rust_compiled = CompiledPolicyEvaluator.compile(scenario.roles)
-    python_compiled = PythonCompiledPolicy.compile(scenario.roles)
+    python_compiled = CompiledPolicy.compile(scenario.roles)
     try:
         for action in scenario.actions:
             python_decision = python_evaluator.evaluate(action, scenario.roles)
@@ -399,7 +399,7 @@ def _measure_compile_plus_n(scenario: Scenario, evaluations: int) -> float:
     return time.perf_counter_ns() - start
 
 
-def _measure_python_compiled(compiled: PythonCompiledPolicy, scenario: Scenario) -> float:
+def _measure_python_compiled(compiled: CompiledPolicy, scenario: Scenario) -> float:
     """One full workload pass in nanoseconds (Python compiled control)."""
     start = time.perf_counter_ns()
     for action in scenario.actions:
@@ -410,14 +410,14 @@ def _measure_python_compiled(compiled: PythonCompiledPolicy, scenario: Scenario)
 def _measure_python_compiled_compile_ns(scenario: Scenario) -> float:
     """One PC compile in nanoseconds (fresh compile per call)."""
     start = time.perf_counter_ns()
-    PythonCompiledPolicy.compile(scenario.roles)
+    CompiledPolicy.compile(scenario.roles)
     return time.perf_counter_ns() - start
 
 
 def _measure_python_compiled_compile_plus_n(scenario: Scenario, evaluations: int) -> float:
     """One PC compile plus ``evaluations`` full workload passes."""
     start = time.perf_counter_ns()
-    compiled = PythonCompiledPolicy.compile(scenario.roles)
+    compiled = CompiledPolicy.compile(scenario.roles)
     for _ in range(evaluations):
         for action in scenario.actions:
             compiled.evaluate(action)
@@ -521,7 +521,7 @@ def _run_scenario(scenario: Scenario, *, warmup: int, samples: int) -> ScenarioR
     python_evaluator = PermissionEvaluator()
     rust_evaluator = RustPermissionEvaluator()
     rust_compiled = CompiledPolicyEvaluator.compile(scenario.roles)
-    python_compiled = PythonCompiledPolicy.compile(scenario.roles)
+    python_compiled = CompiledPolicy.compile(scenario.roles)
 
     def timed(path: str) -> float:
         """Measure one full workload pass for the named path."""
