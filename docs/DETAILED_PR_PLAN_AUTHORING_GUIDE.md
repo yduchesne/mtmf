@@ -207,9 +207,9 @@ Avoid vague titles such as:
 
 ```text
 RAG improvements
-Coordinator updates
+Authorization updates
 Misc fixes
-Research work
+Persistence work
 ```
 
 The title should communicate the dominant architectural concern.
@@ -273,8 +273,7 @@ LocalConnector and HttpConnector preserve equivalent detached,
 remote-service semantics.
 
 MTMF-owned Podman resources are explicitly namespaced and tooling
-must never discover, mutate, or prune resources owned by ATI or
-another local application.
+must never discover, mutate, or prune resources owned by another local application.
 ```
 
 Use diagrams where they clarify ownership:
