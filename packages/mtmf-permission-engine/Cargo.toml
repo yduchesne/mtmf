@@ -27,5 +27,3 @@ crate-type = ["cdylib"]
 # PyO3 0.29.x is the stable binding generation used by the maturin build.
 # It supports the Python 3.14 baseline required by the workspace.
 pyo3 = "0.29.2"
-rmp-serde = "1.3.1"
-serde = { version = "1.0.229", features = ["derive"] }
