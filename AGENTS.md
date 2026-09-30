@@ -129,9 +129,9 @@ MTMF owns host-port prefix **`2`** for locally published Podman/Compose service 
 - Keep each container's internal service port at its standard port unless the service itself requires otherwise.
 - When publishing that port on the host for MTMF local development, use the MTMF `2` prefix convention. For example, PostgreSQL remains `5432` inside the MTMF Podman network and is published as host port `25432` (`25432:5432`).
 - Do not publish MTMF PostgreSQL on host port `5432`; that unprefixed port is reserved for ATI under the cross-project local-development convention.
-- Do not use host ports belonging to other project prefixes. The current cross-project convention is: ATI = no prefix, Digr = `1`, MTMF = `2`, Darkula = `3`.
+- Do not use host ports belonging to other known project namespaces. For public project guidance, ATI uses unprefixed standard host ports, MTMF uses prefix `2`, and Darkula uses prefix `3`.
 - Apply this convention to every MTMF service/container that publishes a host port, not only PostgreSQL. Internal Podman-network communication continues to use the service's standard container port.
-- Preserve the existing MTMF Podman isolation rules as well: MTMF tooling may manage only explicitly MTMF-owned Compose projects, containers, networks, and volumes and must never discover, mutate, prune, or otherwise control resources owned by ATI, Digr, Darkula, or another application.
+- Preserve the existing MTMF Podman isolation rules as well: MTMF tooling may manage only explicitly MTMF-owned Compose projects, containers, networks, and volumes and must never discover, mutate, prune, or otherwise control resources owned by ATI, Darkula, or another application.
 - Do not solve a host-port conflict by changing another application's resources, using broad container discovery, or introducing global cleanup/prune behavior.
 - If a standard service port cannot be represented safely under the assigned MTMF prefix convention, or a required host port conflicts with an existing MTMF assignment, STOP and request an explicit port assignment rather than inventing a new cross-project convention.
 
