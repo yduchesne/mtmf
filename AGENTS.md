@@ -122,6 +122,19 @@ Generated Python bytecode and local development artifacts must not be committed.
 - The Rust series introduces no PostgreSQL/Podman dependency; the `./build.sh --rust` gate is the canonical native conformance gate (cargo fmt/clippy/test, `maturin develop`, installed-native probe, focused boundary/differential/Authorizer tests, clean wheel build/install/use verification, and benchmark smoke) and never requires `MTMF_*` configuration, Podman, or external services.
 - PR 8G (`dev/compiled-policy-perf`) is an **experimental sibling** of PR 8F: it compiles already-applicable policy once into an opaque indexed native object (`_mtmf_permission_engine.compile_policy`) for repeated Action evaluation without resend/reparse/sort/scan. As an experiment it is merged and its harness remains runnable; PR 8H productionizes the pure-Python PC semantics so the production path is the Python `CompiledPolicy` described above, and experimental code lives under `benchmarks/` (`compiled_policy_evaluator.py`, `compiled_policy_benchmark.py`) and must preserve complete P == R == PC == RC parity before any timing claim, where PC is the production Python `CompiledPolicy` (no independent duplication of compiled semantics exists). After measurement on the campaign machine, the durable evidence is that compiled/indexed evaluation (PC and RC) dominates the current linear evaluators, and that PC beat RC for single-Action evaluation through the built adapter (per-Action PyO3/Action-transport/result-conversion overhead dominates RC); the Rust evaluators remain experimental/non-default.
 
+## Local Podman host-port namespace
+
+MTMF owns host-port prefix **`2`** for locally published Podman/Compose service ports.
+
+- Keep each container's internal service port at its standard port unless the service itself requires otherwise.
+- When publishing that port on the host for MTMF local development, use the MTMF `2` prefix convention. For example, PostgreSQL remains `5432` inside the MTMF Podman network and is published as host port `25432` (`25432:5432`).
+- Do not publish MTMF PostgreSQL on host port `5432`; that unprefixed port is reserved for ATI under the cross-project local-development convention.
+- Do not use host ports belonging to other known project namespaces. For public project guidance, ATI uses unprefixed standard host ports, MTMF uses prefix `2`, and Darkula uses prefix `3`.
+- Apply this convention to every MTMF service/container that publishes a host port, not only PostgreSQL. Internal Podman-network communication continues to use the service's standard container port.
+- Preserve the existing MTMF Podman isolation rules as well: MTMF tooling may manage only explicitly MTMF-owned Compose projects, containers, networks, and volumes and must never discover, mutate, prune, or otherwise control resources owned by ATI, Darkula, or another application.
+- Do not solve a host-port conflict by changing another application's resources, using broad container discovery, or introducing global cleanup/prune behavior.
+- If a standard service port cannot be represented safely under the assigned MTMF prefix convention, or a required host port conflicts with an existing MTMF assignment, STOP and request an explicit port assignment rather than inventing a new cross-project convention.
+
 ## Tests
 
 Tests should directly exercise documented invariants, not only happy-path API behavior.
