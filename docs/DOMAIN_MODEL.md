@@ -199,7 +199,19 @@ The model includes distinct relationships for the applicable member kinds, inclu
 
 A Principal may have PrincipalTenantMembership in multiple Tenants. An Identity may have IdentityTenantMembership in a subset of the Tenants in which its Principal is a member. Identity membership in Tenant T requires the Identity's Principal to have valid PrincipalTenantMembership in T.
 
-A Group is tenant-bound and has GroupTenantMembership in exactly its Tenant.
+A Group is exclusive to exactly one Tenant and has GroupTenantMembership in that Tenant only. The same Group MUST NOT have GroupTenantMembership in another Tenant, including concurrently active memberships.
+
+### Membership removal and dependent-state cascade
+
+Membership removal is a logical/soft deletion, not physical destruction of membership identity or provenance. Removal of a prerequisite membership MUST atomically transition every dependent membership in the affected Tenant to the removed state:
+
+1. Removing `PrincipalTenantMembership(P, T)` removes every `IdentityTenantMembership(I, T)` where Identity `I` belongs to Principal `P`. Each removed Identity-Tenant membership also triggers the dependent removals in rule 2.
+2. Removing `IdentityTenantMembership(I, T)` removes every `IdentityOrgMembership(I, O)` where Organization `O` belongs to Tenant `T`, and every `IdentityGroupMembership(I, G)` where Group `G` belongs exclusively to `T`.
+3. Removing `GroupTenantMembership(G, T)` removes every `GroupOrgMembership(G, O)` where Organization `O` belongs to `T`, and every `IdentityGroupMembership(I, G)` for that Group.
+
+A membership outside the affected Tenant MUST remain unchanged. No active dependent membership may remain after its prerequisite membership is removed. Cascades MUST be enforced at the trusted persistence/write boundary in one transaction; callers MUST NOT be required to perform dependent removals individually. Removal of a Group-Tenant membership does not, by itself, remove any Identity-Tenant membership.
+
+These rules apply to effective removal of membership (including soft deletion); deactivation semantics must not be silently conflated with deletion. Restoration/rejoining remains subject to the separately unresolved restoration policy and MUST NOT automatically resurrect prior dependent memberships.
 
 Tenant-bound authorization relationships MUST NOT cross Tenant boundaries.
 
