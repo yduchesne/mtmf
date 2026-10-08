@@ -204,7 +204,19 @@ An Identity MAY be usable in a subset of those Tenants through explicit Identity
 
 IdentityTenantMembership in Tenant T requires the Identity's Principal to have valid PrincipalTenantMembership in T.
 
-Groups are tenant-bound and use GroupTenantMembership.
+Groups are exclusive to exactly one Tenant and use GroupTenantMembership. An ordinary Group MUST NOT hold memberships in multiple Tenants.
+
+### 7.1 Mandatory cascading removal of typed memberships
+
+Removing a prerequisite Tenant membership MUST atomically remove its dependent membership relationships, using MTMF soft-deletion semantics:
+
+- Removal of `PrincipalTenantMembership(P, T)` MUST remove every `IdentityTenantMembership(I, T)` for Identities owned by `P`, including the downstream memberships described below.
+- Removal of `IdentityTenantMembership(I, T)` MUST remove `IdentityOrgMembership(I, O)` for every Organization `O` of `T` and `IdentityGroupMembership(I, G)` for every Group `G` belonging to `T`.
+- Removal of `GroupTenantMembership(G, T)` MUST remove `GroupOrgMembership(G, O)` for every Organization `O` of `T` and all `IdentityGroupMembership(I, G)` relationships for `G`.
+
+These are mandatory trusted-write-boundary invariants, not optional application cleanup. No active dependent membership may survive removal of its prerequisite; the entire removal/cascade MUST commit or roll back together. Other Tenants' memberships MUST remain unaffected. Removing a Group's Tenant membership does not itself remove the member Identities' Tenant memberships.
+
+The root Principal's immutable root-Tenant membership and other protected bootstrap/stewardship invariants remain authoritative; cascade semantics MUST NOT be used to bypass restrictions on whether a removal is permitted. Deactivation is distinct from removal; these rules do not authorize implicit restoration of soft-deleted memberships.
 
 MTMF uses typed membership relationships rather than a polymorphic member-type/member-id membership abstraction.
 
