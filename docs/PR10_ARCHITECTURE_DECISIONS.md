@@ -1,6 +1,6 @@
 # PR 10 architecture decisions: resolving the implementation STOP gates
 
-**Status:** Proposed normative design amendment for review. Documentation only; no implementation or privilege grant is implied.  
+**Status:** Architecture decisions approved for PR 10 planning; implementation remains pending. Documentation only; no implementation or privilege grant is implied.  
 **Applies to:** PR 10 — Bootstrap, root invariants, and Tenant Stewardship.  
 **Read first:** [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md), [Security Model](SECURITY_MODEL.md), [Domain Model](DOMAIN_MODEL.md), [Authorization](AUTHORIZATION.md), [Database Architecture](DATABASE.md).
 
@@ -113,4 +113,18 @@ A design decision marked resolved here does **not** mean the corresponding featu
 
 ## Explicitly still open outside these six decisions
 
-The full administrative Permission manifest and migration of legacy unknown-origin Identities require **reviewed concrete artifacts**, not guesswork. HTTP authentication/OAuth/IdP integration, service-to-service authentication, TenantManagementGroup actor eligibility, Principal service/agent kinds, and detailed operational root recovery approvals remain separate work. This document must not be read as implementing them.
+The agreed built-in Role policy and fresh-installation baseline are documented in [Built-in Access Policy and Installation](PR10_BUILTIN_ACCESS_AND_INSTALLATION.md). The **exact executable Action/Permission seed inventory** still requires review against existing code; it must not be inferred from shorthand capability families. There is no legacy unknown-origin Identity migration: v0.1 requires a fresh database, and Identity origin is explicitly LOCAL or FEDERATED. HTTP authentication/OAuth/IdP integration, service-to-service authentication, TenantManagementGroup actor eligibility, Principal service/agent kinds, and detailed operational root recovery approvals remain separate work. This document must not be read as implementing them.
+
+## Post-review policy clarification — fresh-install v0.1
+
+| Subject | Approved clarification |
+| --- | --- |
+| Built-in Roles | Retain all eleven SYSTEM-owned definitions; initial built-in grants match exact Actions only, no wildcards |
+| Administration | Tenant Administrator includes Tenant IAM; Tenant Security Administrator specializes in IAM; Contributors cannot administer Tenant/Organization containers |
+| SYSTEM policy | SYSTEM-owned definitions change only through controlled migrations; Tenant-owned definitions are customizable within their Tenant |
+| Delegation | Tenant Administrator may assign administrative Roles subject to dominance, scope and anti-escalation; assignment never creates stewardship |
+| Identity origin | Only explicit immutable LOCAL or FEDERATED; no UNKNOWN migration state |
+| Tenant lifecycle | New ordinary Tenants start PROVISIONING; activation validates stewardship; SUSPENDED is nonauthorizing |
+| Installation | Empty-database baseline; development reset is explicit; retain migrations 0001–0006; no pre-v0.1 production compatibility migration |
+
+These decisions supersede earlier *legacy backfill* discussion in this document. The fresh-install baseline does **not** relax privileged actor verification, database invariant enforcement, or runtime grant restrictions.
