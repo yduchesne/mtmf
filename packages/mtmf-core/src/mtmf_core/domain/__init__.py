@@ -5,7 +5,9 @@ from mtmf_core.domain.errors import (
     DomainInvariantError,
     ImmutabilityError,
     MembershipPrerequisiteError,
+    RootInvariantError,
     SessionContextError,
+    StewardshipInvariantError,
     TenantBoundaryError,
 )
 from mtmf_core.domain.group import Group
@@ -48,6 +50,12 @@ from mtmf_core.domain.role import Role
 from mtmf_core.domain.role_assignment import GroupRoleAssignment, IdentityRoleAssignment
 from mtmf_core.domain.scope import SecurityScope
 from mtmf_core.domain.session import SessionContext
+from mtmf_core.domain.stewardship import (
+    RootBootstrapRecord,
+    TenantStewardshipDesignation,
+    validate_root_bootstrap_record,
+    validate_stewardship_designation,
+)
 from mtmf_core.domain.tenant import Tenant
 from mtmf_core.domain.urn import Urn
 
@@ -86,11 +94,15 @@ __all__ = [
     "PrincipalTenantMembership",
     "Role",
     "RoleUrn",
+    "RootBootstrapRecord",
+    "RootInvariantError",
     "SecurityScope",
     "SessionContext",
     "SessionContextError",
+    "StewardshipInvariantError",
     "Tenant",
     "TenantBoundaryError",
+    "TenantStewardshipDesignation",
     "Urn",
     "match_permission",
     "match_permission_urn",
@@ -102,5 +114,7 @@ __all__ = [
     "validate_identity_org_membership",
     "validate_identity_role_assignment",
     "validate_identity_tenant_membership",
+    "validate_root_bootstrap_record",
     "validate_session_context",
+    "validate_stewardship_designation",
 ]

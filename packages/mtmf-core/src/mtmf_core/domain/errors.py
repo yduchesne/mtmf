@@ -31,3 +31,19 @@ class SessionContextError(DomainInvariantError):
 
 class ImmutabilityError(DomainInvariantError):
     """An attempt to replace an immutable identity/provenance field."""
+
+
+class RootInvariantError(DomainInvariantError):
+    """A root bootstrap/continuity invariant is violated.
+
+    Raised only by the structural root-bootstrap validators. It does not
+    represent authentication, authorization, or a privileged decision.
+    """
+
+
+class StewardshipInvariantError(DomainInvariantError):
+    """A structural Tenant-stewardship designation invariant is violated.
+
+    Raised only by the structural stewardship validators. Possessing or
+    passing such a designation confers no Role, Permission, or authority.
+    """
