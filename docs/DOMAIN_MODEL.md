@@ -167,11 +167,11 @@ Principal kinds such as human, service, or agent remain **UNRESOLVED**.
 
 ---
 
+## 6. Identity
+
 ### Local Identity classification (PR 10)
 
 An Identity has an explicit origin classification, LOCAL or FEDERATED. The classification is not inferred from names, UUIDs or the existence of credentials. Legacy unknown-origin Identities require verified classification before satisfying root-local continuity; they must not be defaulted to LOCAL. This is a domain attribute, not an authentication implementation. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
-
-## 6. Identity
 
 An Identity is a concrete identity associated with exactly one Principal.
 
