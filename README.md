@@ -5,7 +5,7 @@ A Python package implementing an Identity and Access Management framework.
 Current status: WIP.
 
 
-Project documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](docs/AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
+Project documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
 
 ## Development
 
