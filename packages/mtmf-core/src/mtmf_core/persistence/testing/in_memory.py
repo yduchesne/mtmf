@@ -50,6 +50,7 @@ from mtmf_core.domain.memberships import (
 from mtmf_core.domain.organization import Organization
 from mtmf_core.domain.principal import Principal
 from mtmf_core.domain.role import Role
+from mtmf_core.domain.role_assignment import GroupRoleAssignment, IdentityRoleAssignment
 from mtmf_core.domain.tenant import Tenant
 from mtmf_core.persistence.errors import (
     DuplicatePersistenceIdentityError,
@@ -61,10 +62,12 @@ from mtmf_core.persistence.repositories import (
     ActionRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
+    GroupRoleAssignmentRepository,
     GroupTenantMembershipRepository,
     IdentityGroupMembershipRepository,
     IdentityOrgMembershipRepository,
     IdentityRepository,
+    IdentityRoleAssignmentRepository,
     IdentityTenantMembershipRepository,
     OrganizationRepository,
     PrincipalRepository,
@@ -115,6 +118,14 @@ class _CommittedState:
         target = self._collections.setdefault(collection, {})
         target.update(writes)
 
+    def delete(self, collection: str, keys: set[object]) -> None:
+        """Physically remove committed ``keys`` from ``collection``."""
+        stored = self._collections.get(collection)
+        if stored is None:
+            return
+        for key in keys:
+            stored.pop(key, None)
+
 
 class _InMemoryUnitOfWork:
     """Concrete in-memory UnitOfWork implementing the contract."""
@@ -122,6 +133,7 @@ class _InMemoryUnitOfWork:
     def __init__(self, committed_state: _CommittedState) -> None:
         self._committed_state = committed_state
         self._staged: dict[str, dict[object, object]] = {}
+        self._staged_deletions: dict[str, set[object]] = {}
         self._state: _UnitOfWorkState = _UnitOfWorkState.PENDING
 
     def _require_active(self, operation: str) -> None:
@@ -140,9 +152,18 @@ class _InMemoryUnitOfWork:
             self._staged[collection] = staged
         return staged
 
+    def _staged_deletions_for(self, collection: str) -> set[object]:
+        """The transaction-local deleted-key set for one collection."""
+        deletions = self._staged_deletions.get(collection)
+        if deletions is None:
+            deletions = set()
+            self._staged_deletions[collection] = deletions
+        return deletions
+
     def _discard(self) -> None:
         """Discard staged writes and complete the UnitOfWork."""
         self._staged.clear()
+        self._staged_deletions.clear()
         self._state = _UnitOfWorkState.COMPLETED
 
     def __enter__(self) -> Self:
@@ -173,6 +194,8 @@ class _InMemoryUnitOfWork:
     def commit(self) -> None:
         """Make every staged write durable and complete this UnitOfWork."""
         self._require_active("commit")
+        for collection, deletions in self._staged_deletions.items():
+            self._committed_state.delete(collection, deletions)
         for collection, staged in self._staged.items():
             self._committed_state.merge(collection, staged)
         self._discard()
@@ -573,6 +596,148 @@ class _InMemoryGroupOrgMembershipRepository(_InMemoryMembershipRepository[GroupO
         return self._find(lambda membership: membership.organization_id == organization_id)
 
 
+class _InMemoryRoleAssignmentRepository[AssignmentT]:
+    """Shared add/get/find/remove mechanics for typed Role assignments.
+
+    Assignments carry both an immutable surrogate ``id`` and an immutable
+    logical assignment tuple. ``add`` rejects a duplicate surrogate or
+    logical tuple; ``remove`` physically drops the addressed assignment in
+    the current transaction; reads are detached(value) snapshots. A
+    transaction-local tombstone keeps a removed committed assignment
+    invisible until commit while never mutating provider state early.
+    """
+
+    _collection: ClassVar[str]
+
+    def __init__(self, uow: _InMemoryUnitOfWork) -> None:
+        self._uow = uow
+
+    def _key(self, assignment: AssignmentT) -> object:
+        return assignment.id  # type: ignore[attr-defined]
+
+    def _logical_tuple(self, assignment: AssignmentT) -> object:
+        raise NotImplementedError
+
+    def _visible_committed(self) -> tuple[AssignmentT, ...]:
+        """Committed assignments minus the current transaction's deletions."""
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        return tuple(
+            cast(AssignmentT, value)
+            for key, value in self._uow._committed_state.items(self._collection)
+            if key not in deletions
+        )
+
+    def add(self, assignment: AssignmentT) -> None:
+        """Stage a new assignment, rejecting a duplicate identity or tuple."""
+        self._uow._require_active(f"{type(self).__name__}.add")
+        key = self._key(assignment)
+        staged = self._uow._staged_for(self._collection)
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        committed_present = key not in deletions and self._uow._committed_state.has(
+            self._collection, key
+        )
+        if key in staged or committed_present:
+            raise DuplicatePersistenceIdentityError(
+                f"{self._collection}: identity {key!r} already exists"
+            )
+        logical = self._logical_tuple(assignment)
+        for existing in (*self._visible_committed(), *staged.values()):
+            if self._logical_tuple(cast(AssignmentT, existing)) == logical:
+                raise DuplicatePersistenceIdentityError(
+                    f"{self._collection}: logical assignment {logical!r} already exists"
+                )
+        staged[key] = assignment
+
+    def get(self, id: DomainId) -> AssignmentT | None:
+        """Return a detached assignment snapshot, or ``None`` when unknown."""
+        self._uow._require_active(f"{type(self).__name__}.get")
+        staged = self._uow._staged_for(self._collection)
+        if id in staged:
+            return cast(AssignmentT, staged[id])
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        if id in deletions:
+            return None
+        committed = self._uow._committed_state.get(self._collection, id)
+        return cast(AssignmentT, committed) if committed is not None else None
+
+    def _find(self, predicate: Callable[[AssignmentT], bool]) -> tuple[AssignmentT, ...]:
+        """Return every visible assignment matching ``predicate``."""
+        self._uow._require_active(f"{type(self).__name__} query")
+        staged = self._uow._staged_for(self._collection)
+        matches = [item for item in self._visible_committed() if predicate(item)]
+        matches.extend(
+            cast(AssignmentT, value)
+            for value in staged.values()
+            if predicate(cast(AssignmentT, value))
+        )
+        return tuple(matches)
+
+    def remove(self, id: DomainId) -> None:
+        """Physically remove one assignment, rejecting an unknown identity."""
+        self._uow._require_active(f"{type(self).__name__}.remove")
+        staged = self._uow._staged_for(self._collection)
+        if id in staged:
+            del staged[id]
+            return
+        deletions = self._uow._staged_deletions_for(self._collection)
+        if self._uow._committed_state.has(self._collection, id) and id not in deletions:
+            deletions.add(id)
+            return
+        raise UnknownPersistenceIdentityError(
+            f"{self._collection}: cannot remove unknown identity {id!r}"
+        )
+
+
+class _InMemoryIdentityRoleAssignmentRepository(
+    _InMemoryRoleAssignmentRepository[IdentityRoleAssignment]
+):
+    """In-memory direct Identity Role-assignment repository."""
+
+    _collection: ClassVar[str] = "IdentityRoleAssignment"
+
+    def _logical_tuple(self, assignment: IdentityRoleAssignment) -> object:
+        return (
+            assignment.tenant_id,
+            assignment.identity_id,
+            assignment.role_urn,
+            assignment.organization_id,
+        )
+
+    def find_by_tenant_and_identity(
+        self, tenant_id: DomainId, identity_id: DomainId
+    ) -> tuple[IdentityRoleAssignment, ...]:
+        """Return every assignment of one Identity in exactly one Tenant."""
+        return self._find(
+            lambda assignment: (
+                assignment.tenant_id == tenant_id and assignment.identity_id == identity_id
+            )
+        )
+
+
+class _InMemoryGroupRoleAssignmentRepository(
+    _InMemoryRoleAssignmentRepository[GroupRoleAssignment]
+):
+    """In-memory Group Role-assignment repository."""
+
+    _collection: ClassVar[str] = "GroupRoleAssignment"
+
+    def _logical_tuple(self, assignment: GroupRoleAssignment) -> object:
+        return (
+            assignment.tenant_id,
+            assignment.group_id,
+            assignment.role_urn,
+            assignment.organization_id,
+        )
+
+    def find_by_tenant_and_group(
+        self, tenant_id: DomainId, group_id: DomainId
+    ) -> tuple[GroupRoleAssignment, ...]:
+        """Return every assignment of one Group in exactly one Tenant."""
+        return self._find(
+            lambda assignment: assignment.tenant_id == tenant_id and assignment.group_id == group_id
+        )
+
+
 class InMemoryMtmfSpi:
     """Deterministic in-memory :class:`~mtmf_core.persistence.spi.MtmfSpi`.
 
@@ -631,6 +796,18 @@ class InMemoryMtmfSpi:
     def create_action_repository(self, uow: UnitOfWork) -> ActionRepository:
         """Create an Action repository bound to ``uow``."""
         return _InMemoryActionRepository(self._require_own_uow(uow))
+
+    def create_identity_role_assignment_repository(
+        self, uow: UnitOfWork
+    ) -> IdentityRoleAssignmentRepository:
+        """Create a direct Identity Role-assignment repository bound to ``uow``."""
+        return _InMemoryIdentityRoleAssignmentRepository(self._require_own_uow(uow))
+
+    def create_group_role_assignment_repository(
+        self, uow: UnitOfWork
+    ) -> GroupRoleAssignmentRepository:
+        """Create a Group Role-assignment repository bound to ``uow``."""
+        return _InMemoryGroupRoleAssignmentRepository(self._require_own_uow(uow))
 
     def create_principal_tenant_membership_repository(
         self, uow: UnitOfWork

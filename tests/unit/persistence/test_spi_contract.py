@@ -15,10 +15,12 @@ from mtmf_core.persistence import (
     ForeignUnitOfWorkError,
     GroupOrgMembershipRepository,
     GroupRepository,
+    GroupRoleAssignmentRepository,
     GroupTenantMembershipRepository,
     IdentityGroupMembershipRepository,
     IdentityOrgMembershipRepository,
     IdentityRepository,
+    IdentityRoleAssignmentRepository,
     IdentityTenantMembershipRepository,
     MtmfSpi,
     OrganizationRepository,
@@ -47,6 +49,8 @@ def test_s02_create_repository_with_own_unit_of_work_succeeds(spi: MtmfSpi) -> N
         spi.create_group_repository,
         spi.create_role_repository,
         spi.create_action_repository,
+        spi.create_identity_role_assignment_repository,
+        spi.create_group_role_assignment_repository,
         spi.create_principal_tenant_membership_repository,
         spi.create_identity_tenant_membership_repository,
         spi.create_group_tenant_membership_repository,
@@ -81,6 +85,8 @@ def test_s04_create_all_defined_repositories(spi: MtmfSpi) -> None:
         group_repo = spi.create_group_repository(uow)
         role_repo = spi.create_role_repository(uow)
         action_repo = spi.create_action_repository(uow)
+        iram = spi.create_identity_role_assignment_repository(uow)
+        gram = spi.create_group_role_assignment_repository(uow)
         ptm = spi.create_principal_tenant_membership_repository(uow)
         itm = spi.create_identity_tenant_membership_repository(uow)
         gtm = spi.create_group_tenant_membership_repository(uow)
@@ -94,6 +100,8 @@ def test_s04_create_all_defined_repositories(spi: MtmfSpi) -> None:
     assert isinstance(group_repo, GroupRepository)
     assert isinstance(role_repo, RoleRepository)
     assert isinstance(action_repo, ActionRepository)
+    assert isinstance(iram, IdentityRoleAssignmentRepository)
+    assert isinstance(gram, GroupRoleAssignmentRepository)
     assert isinstance(ptm, PrincipalTenantMembershipRepository)
     assert isinstance(itm, IdentityTenantMembershipRepository)
     assert isinstance(gtm, GroupTenantMembershipRepository)

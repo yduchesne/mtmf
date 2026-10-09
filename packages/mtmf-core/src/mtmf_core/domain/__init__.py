@@ -14,9 +14,11 @@ from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
 from mtmf_core.domain.invariants import (
     validate_group_org_membership,
+    validate_group_role_assignment,
     validate_group_tenant_membership,
     validate_identity_group_membership,
     validate_identity_org_membership,
+    validate_identity_role_assignment,
     validate_identity_tenant_membership,
     validate_session_context,
 )
@@ -43,6 +45,7 @@ from mtmf_core.domain.permission_set import PermissionSet
 from mtmf_core.domain.policy import DefinitionNamespace, PermissionEffect
 from mtmf_core.domain.principal import Principal
 from mtmf_core.domain.role import Role
+from mtmf_core.domain.role_assignment import GroupRoleAssignment, IdentityRoleAssignment
 from mtmf_core.domain.scope import SecurityScope
 from mtmf_core.domain.session import SessionContext
 from mtmf_core.domain.tenant import Tenant
@@ -60,10 +63,12 @@ __all__ = [
     "DomainInvariantError",
     "Group",
     "GroupOrgMembership",
+    "GroupRoleAssignment",
     "GroupTenantMembership",
     "Identity",
     "IdentityGroupMembership",
     "IdentityOrgMembership",
+    "IdentityRoleAssignment",
     "IdentityTenantMembership",
     "ImmutabilityError",
     "JsonObject",
@@ -91,9 +96,11 @@ __all__ = [
     "match_permission_urn",
     "new_extension",
     "validate_group_org_membership",
+    "validate_group_role_assignment",
     "validate_group_tenant_membership",
     "validate_identity_group_membership",
     "validate_identity_org_membership",
+    "validate_identity_role_assignment",
     "validate_identity_tenant_membership",
     "validate_session_context",
 ]

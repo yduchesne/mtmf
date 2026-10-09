@@ -1,6 +1,6 @@
 """Migration and runtime-security integration slice (V5).
 
-Clean install, in-place ``0003`` -> ``0004`` upgrade, the exact function
+Clean install, in-place ``0003`` -> ``0005`` upgrade, the exact function
 allowlist, owner-owned ``SECURITY DEFINER`` posture with a fixed
 ``search_path``, absence of PUBLIC/runtime table and sequence privileges,
 and the mandatory post-upgrade verifier's fail-closed and recovery
@@ -37,7 +37,7 @@ def test_v5_fresh_install_has_the_exact_reviewed_allowlist(db: psycopg.Connectio
     verify_runtime_privileges(db)
 
 
-def test_v5_in_place_0003_to_0004_upgrade(
+def test_v5_in_place_0003_to_0005_upgrade(
     migrator_config: PostgresConfig, mtmf_config: PostgresConfig
 ) -> None:
     with psycopg.connect(mtmf_config.psycopg_dsn, autocommit=True) as connection:
@@ -47,7 +47,7 @@ def test_v5_in_place_0003_to_0004_upgrade(
     assert PostgresMigrationManager(migrator_config).current_revision() == "0003"
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0004"
+    assert manager.current_revision() == "0005"
     with psycopg.connect(mtmf_config.psycopg_dsn, autocommit=True) as connection:
         assert _runtime_signatures(connection) == set(expected_runtime_signatures())
 
@@ -98,7 +98,7 @@ def test_v5_unapproved_grant_fails_postflight_then_recovers(
     finally:
         db.execute("REVOKE EXECUTE ON FUNCTION mtmf.mtf_schema_version() FROM mtmf_runtime")
     PostgresMigrationManager(migrator_config).upgrade_to_head()
-    assert PostgresMigrationManager(migrator_config).current_revision() == "0004"
+    assert PostgresMigrationManager(migrator_config).current_revision() == "0005"
 
 
 def test_v5_runtime_roles_cannot_manage_migrations(runtime_config: PostgresConfig) -> None:
@@ -123,4 +123,4 @@ def test_v5_head_revision_is_the_migrated_revision(
     db: psycopg.Connection, migrator_config: PostgresConfig
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
-    assert manager.current_revision() == manager.head_revision == "0004"
+    assert manager.current_revision() == manager.head_revision == "0005"

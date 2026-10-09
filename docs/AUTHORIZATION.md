@@ -46,7 +46,13 @@ An authorization decision may require:
 - TenantManagementGroup delegation and contextual scope;
 - operation-specific invariants.
 
-The final input model remains to be designed.
+The final input model remains to be designed, but PR 9 settles the Role-
+assignment slice: persisted typed assignments and their prerequisite typed
+memberships are resolved by the application-layer
+``EffectiveRoleResolver`` (section 8.3) into a detached, Tenant-filtered
+``applicable_roles`` tuple. The ``Authorizer`` consumes that already-resolved
+tuple and remains responsible for session validation, target-Tenant
+isolation, and the remaining checks.
 
 ## 5. Permission Resolution
 
@@ -75,7 +81,7 @@ principal:set-*
 
 Resolution rules are:
 
-1. discard Roles and PermissionSets that do not apply to the session Tenant and current assignment/context;
+1. discard Roles and PermissionSets that do not apply to the session Tenant and current assignment/context (the trusted PR 9 ``EffectiveRoleResolver`` establishes the applicable Role set, excluding any assignment outside the session Tenant/context);
 2. collect Permissions matching the requested Action;
 3. select the most-specific matching Permission or Permissions;
 4. exact qualifier match is more specific than wildcard qualifier match;
@@ -241,11 +247,49 @@ experimental and is not selected by the default :class:`Authorizer`.
 - No caching exists yet: no repository, ``MtmfSpi``, UnitOfWork,
 PostgreSQL, Redis, network, filesystem, global cache, local cache, or
 policy fingerprinting. ``AuthorizationContext.applicable_roles``
-remains trusted, pre-filtered caller input (Role-assignment/effective-
-Role loading is PR 9 work). Future caching/decoration composes behind
-the resolver contract (for example
+remains trusted, pre-filtered caller input; since PR 9 the production way
+to obtain it is the trusted application-layer effective-Role resolver
+described in section 8.3. The ``Authorizer`` and
+``DefaultAuthorizationPolicyResolver`` still never retrieve assignment
+state themselves. Future caching/decoration composes behind the resolver
+contract (for example
 ``InMemoryCachingAuthorizationPolicyResolver(RedisCachingAuthorizationPolicyResolver(DefaultAuthorizationPolicyResolver()))``)
 and is not implemented here.
+
+### 8.3 Effective-Role resolution (PR 9)
+
+The application layer owns the transition from persisted, Tenant-bound Role
+assignments to the trusted ``applicable_roles`` tuple:
+
+```text
+verified (Tenant, Principal, Identity) session + optional target Organization
+    -> EffectiveRoleResolver (one UnitOfWork)
+    -> ResolvedAuthorizationState(applicable_roles=...)
+    -> build_authorization_context(...)
+    -> AuthorizationContext
+    -> Authorizer -> DefaultAuthorizationPolicyResolver -> CompiledPolicy
+```
+
+- :class:`~mtmf_core.application.effective_roles.EffectiveRoleResolver`
+is **not** an ``AuthorizationPolicyResolver`` and makes no ALLOW/DENY
+decision. It verifies the session Principal/Identity Tenant memberships,
+Identity-to-Principal ownership, and lifecycle; loads direct Identity
+assignments scoped to the session Tenant; derives Group assignments only
+through same-Tenant ``IdentityGroupMembership`` and
+``GroupTenantMembership``; and applies Organization refinement only for a
+matching target Organization with the required typed Organization
+membership. It never unions authorization state across Tenants,
+Identities, Principals, or Organizations.
+- A TENANT-defined Role assigned outside its defining Tenant, an unknown
+Role, or an unknown Group is a fail-closed integrity failure
+(``EffectiveRoleIntegrityError``), never a silent non-match. A deleted
+Group/Organization or a missing prerequisite membership contributes no
+grant. A database/infrastructure failure propagates as a
+``PersistenceError`` and is never converted to an empty applicable-Role
+list.
+- Duplicate Role contributions (for example direct plus Group) collapse to
+one Role; deterministic URN ordering is diagnostic only and never implies
+precedence. The resolver performs no caching and no invalidation.
 
 Python remains authoritative for authorization-context retrieval and orchestration: session validation, Tenant isolation, context validation, scope/dominance, stewardship/delegation, operation-specific constraints, and fail-closed orchestration all stay in Python, and the `Authorizer` remains the authoritative decision orchestrator.
 

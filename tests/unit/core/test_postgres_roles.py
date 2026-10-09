@@ -339,14 +339,25 @@ def test_expected_removal_signatures_are_exactly_six() -> None:
     assert all(signature.startswith("mtmf.remove_") for signature in signatures)
 
 
-def test_expected_runtime_signatures_add_the_44_repository_functions() -> None:
+def test_expected_runtime_signatures_add_repository_and_assignment_functions() -> None:
     removal = roles.expected_removal_signatures()
     runtime = roles.expected_runtime_signatures()
-    assert len(runtime) == 50
+    assert len(runtime) == 58
     assert removal <= runtime
-    assert len(runtime - removal) == 44
-    for name in ("mtmf.tenant_add", "mtmf.role_add", "mtmf.action_get"):
+    # 44 repository functions through v004 plus 8 role-assignment entry points.
+    assert len(runtime - removal) == 52
+    for name in (
+        "mtmf.tenant_add",
+        "mtmf.role_add",
+        "mtmf.action_get",
+        "mtmf.identity_role_assignment_add",
+        "mtmf.group_role_assignment_find_by_tenant_and_group",
+    ):
         assert any(signature.startswith(name + "(") for signature in runtime)
+    # The private validation helpers are never approved entry points.
+    assert not any(
+        "role_assignment_validate" in signature for signature in roles.expected_runtime_signatures()
+    )
 
 
 def test_verify_runtime_privileges_passes_on_healthy_catalog() -> None:

@@ -32,6 +32,18 @@ ACTION_URN = "urn:mtmf:iam:actions:system:principal:get-object"
 PERMISSION_URN_EXACT = "urn:mtmf:iam:permissions:system:principal:get-object"
 PERMISSION_URN_WILDCARD = "urn:mtmf:iam:permissions:system:principal:get-*"
 
+# Typed Role-assignment tables and their runtime entry points (PR 9).
+IDENTITY_ROLE_ASSIGNMENT_TABLE = "identity_role_assignment"
+GROUP_ROLE_ASSIGNMENT_TABLE = "group_role_assignment"
+ROLE_ASSIGNMENT_TABLES = (
+    IDENTITY_ROLE_ASSIGNMENT_TABLE,
+    GROUP_ROLE_ASSIGNMENT_TABLE,
+)
+
+# A TENANT-A-defined Role URN used to prove a TENANT Role may only be
+# assigned inside its defining Tenant.
+TENANT_A_ROLE_URN = f"urn:mtmf:iam:roles:tenant:{TENANT_A}:integration-tenant-role"
+
 ENTITY_TABLES = ("tenant", "organization", "principal", "identity", "group")
 DELETION_TABLES = ENTITY_TABLES
 EXTENSION_TABLES = ("tenant", "organization", "principal", "identity", "group", "role")
@@ -60,6 +72,34 @@ def reset_and_migrate(connection: psycopg.Connection, config: object) -> None:
 
     connection.execute("DROP SCHEMA IF EXISTS mtmf CASCADE")
     PostgresMigrationManager(config).upgrade_to_head()
+
+
+def seed_role(
+    connection: psycopg.Connection,
+    urn: str,
+    *,
+    defining_tenant_id: str | None = None,
+) -> None:
+    """Insert one complete Role aggregate (caller commits).
+
+    The Role owns a single ALLOW PermissionSet with one exact Permission so
+    it can be loaded through the trusted Role aggregate read function.
+    """
+    connection.execute(
+        "INSERT INTO mtmf.role (urn, name, description, defining_tenant_id) "
+        "VALUES (%s, 'Integration Role', '', %s)",
+        (urn, defining_tenant_id),
+    )
+    permission_set_id = new_id()
+    connection.execute(
+        "INSERT INTO mtmf.permission_set (id, role_urn, effect, position) "
+        "VALUES (%s, %s, 'allow', 0)",
+        (permission_set_id, urn),
+    )
+    connection.execute(
+        "INSERT INTO mtmf.permission (id, permission_set_id, urn, position) VALUES (%s, %s, %s, 0)",
+        (new_id(), permission_set_id, PERMISSION_URN_EXACT),
+    )
 
 
 def seed_base_entities(connection: psycopg.Connection) -> None:

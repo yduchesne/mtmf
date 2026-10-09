@@ -39,7 +39,15 @@ def test_sec01_direct_delete_is_rejected(db, table: str) -> None:
 @pytest.mark.parametrize("table", sorted(helpers.MEMBERSHIP_TABLES))
 def test_sec01_direct_truncate_is_rejected(db, table: str) -> None:
     helpers.seed_full_membership_graph(db)
-    with pytest.raises(psycopg.errors.RaiseException), db.transaction():
+    # Direct TRUNCATE is always rejected. A membership table that is now
+    # referenced by a Role-assignment foreign key is refused by PostgreSQL
+    # before the BEFORE TRUNCATE guard trigger runs; the remaining tables
+    # still raise the guard's deterministic exception. Both outcomes
+    # preserve the documented ``direct truncate is rejected`` invariant.
+    with (
+        pytest.raises((psycopg.errors.RaiseException, psycopg.errors.FeatureNotSupported)),
+        db.transaction(),
+    ):
         db.execute(_table_statement("TRUNCATE", table))
 
 
