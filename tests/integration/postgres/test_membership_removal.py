@@ -570,3 +570,307 @@ def test_cas16_rejoin_does_not_restore_dependents(graph: psycopg.Connection) -> 
         )
         == 0
     )
+
+
+# --- LEAF: individual leaf-relationship removals ------------------------------
+
+
+def _snapshot(connection: psycopg.Connection) -> dict[str, int]:
+    return {
+        table: helpers.membership_count(connection, table) for table in helpers.MEMBERSHIP_TABLES
+    }
+
+
+def test_leaf01_identity_group_removal_deletes_only_exact_row(
+    graph: psycopg.Connection,
+) -> None:
+    assert helpers.remove_identity_group_membership(graph, helpers.IDENTITY_A, helpers.GROUP_A)
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_group_membership",
+            "identity_id = %s AND group_id = %s",
+            (helpers.IDENTITY_A, helpers.GROUP_A),
+        )
+        == 0
+    )
+    # Prerequisites, the sibling relationship, and the parallel Tenant B
+    # relationship are all untouched.
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_tenant_membership",
+            "identity_id = %s AND tenant_id = %s",
+            (helpers.IDENTITY_A, helpers.TENANT_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_tenant_membership",
+            "group_id = %s AND tenant_id = %s",
+            (helpers.GROUP_A, helpers.TENANT_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_org_membership",
+            "identity_id = %s AND organization_id = %s",
+            (helpers.IDENTITY_A, helpers.ORG_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_org_membership",
+            "group_id = %s AND organization_id = %s",
+            (helpers.GROUP_A, helpers.ORG_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_group_membership",
+            "identity_id = %s AND group_id = %s",
+            (helpers.IDENTITY_B, helpers.GROUP_B),
+        )
+        == 1
+    )
+    row = helpers.audit_rows(graph)[0]
+    assert row[2] == "identity_group_membership"
+    assert str(row[3]) == helpers.TENANT_A
+    assert str(row[5]) == helpers.IDENTITY_A
+    assert str(row[6]) == helpers.GROUP_A
+    assert row[12] == 1
+    assert (row[9], row[10], row[11], row[13], row[14]) == (0, 0, 0, 0, 0)
+
+
+def test_leaf02_identity_org_removal_deletes_only_exact_row(
+    graph: psycopg.Connection,
+) -> None:
+    assert helpers.remove_identity_org_membership(graph, helpers.IDENTITY_A, helpers.ORG_A)
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_org_membership",
+            "identity_id = %s AND organization_id = %s",
+            (helpers.IDENTITY_A, helpers.ORG_A),
+        )
+        == 0
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_tenant_membership",
+            "identity_id = %s AND tenant_id = %s",
+            (helpers.IDENTITY_A, helpers.TENANT_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_group_membership",
+            "identity_id = %s AND group_id = %s",
+            (helpers.IDENTITY_A, helpers.GROUP_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_org_membership",
+            "group_id = %s AND organization_id = %s",
+            (helpers.GROUP_A, helpers.ORG_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_org_membership",
+            "identity_id = %s AND organization_id = %s",
+            (helpers.IDENTITY_B, helpers.ORG_B),
+        )
+        == 1
+    )
+    row = helpers.audit_rows(graph)[0]
+    assert row[2] == "identity_org_membership"
+    assert str(row[3]) == helpers.TENANT_A
+    assert str(row[5]) == helpers.IDENTITY_A
+    assert str(row[7]) == helpers.ORG_A
+    assert row[13] == 1
+    assert (row[9], row[10], row[11], row[12], row[14]) == (0, 0, 0, 0, 0)
+
+
+def test_leaf03_group_org_removal_deletes_only_exact_row(
+    graph: psycopg.Connection,
+) -> None:
+    assert helpers.remove_group_org_membership(graph, helpers.GROUP_A, helpers.ORG_A)
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_org_membership",
+            "group_id = %s AND organization_id = %s",
+            (helpers.GROUP_A, helpers.ORG_A),
+        )
+        == 0
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_tenant_membership",
+            "group_id = %s AND tenant_id = %s",
+            (helpers.GROUP_A, helpers.TENANT_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_group_membership",
+            "identity_id = %s AND group_id = %s",
+            (helpers.IDENTITY_A, helpers.GROUP_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_org_membership",
+            "identity_id = %s AND organization_id = %s",
+            (helpers.IDENTITY_A, helpers.ORG_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_org_membership",
+            "group_id = %s AND organization_id = %s",
+            (helpers.GROUP_B, helpers.ORG_B),
+        )
+        == 1
+    )
+    row = helpers.audit_rows(graph)[0]
+    assert row[2] == "group_org_membership"
+    assert str(row[3]) == helpers.TENANT_A
+    assert str(row[6]) == helpers.GROUP_A
+    assert str(row[7]) == helpers.ORG_A
+    assert row[14] == 1
+    assert (row[9], row[10], row[11], row[12], row[13]) == (0, 0, 0, 0, 0)
+
+
+def test_leaf03b_group_org_cross_tenant_inconsistency_fails_closed(
+    graph: psycopg.Connection,
+) -> None:
+    # Simulate a structural inconsistency that the normal precondition forbids
+    # by disabling that trigger and inserting a cross-Tenant GroupOrg row.
+    graph.execute(
+        "ALTER TABLE mtmf.group_org_membership "
+        "DISABLE TRIGGER group_org_membership_precondition_trigger"
+    )
+    helpers.insert_memberships(graph, group_org=(helpers.GROUP_A, helpers.ORG_B))
+    graph.commit()
+    with pytest.raises(psycopg.errors.RaiseException):
+        helpers.remove_group_org_membership(graph, helpers.GROUP_A, helpers.ORG_B)
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_org_membership",
+            "group_id = %s AND organization_id = %s",
+            (helpers.GROUP_A, helpers.ORG_B),
+        )
+        == 1
+    )
+    assert helpers.audit_rows(graph) == []
+
+
+def test_leaf04_other_tenant_and_siblings_unaffected(
+    graph: psycopg.Connection,
+) -> None:
+    helpers.remove_identity_group_membership(graph, helpers.IDENTITY_A, helpers.GROUP_A)
+    assert (
+        helpers.membership_count(
+            graph,
+            "principal_tenant_membership",
+            "principal_id = %s AND tenant_id = %s",
+            (helpers.PRINCIPAL, helpers.TENANT_B),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_tenant_membership",
+            "identity_id = %s AND tenant_id = %s",
+            (helpers.IDENTITY_B, helpers.TENANT_B),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_org_membership",
+            "identity_id = %s AND organization_id = %s",
+            (helpers.IDENTITY_B, helpers.ORG_B),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_tenant_membership",
+            "group_id = %s AND tenant_id = %s",
+            (helpers.GROUP_B, helpers.TENANT_B),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "identity_group_membership",
+            "identity_id = %s AND group_id = %s",
+            (helpers.IDENTITY_B, helpers.GROUP_B),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            graph,
+            "group_org_membership",
+            "group_id = %s AND organization_id = %s",
+            (helpers.GROUP_B, helpers.ORG_B),
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    ("kind", "first_id", "second_id"),
+    [
+        ("identity_group_membership", helpers.IDENTITY_A, helpers.GROUP_B),
+        ("identity_org_membership", helpers.IDENTITY_A, helpers.ORG_B),
+        ("group_org_membership", helpers.GROUP_A, helpers.ORG_B),
+    ],
+)
+def test_leaf08_missing_membership_is_a_noop_without_audit(
+    graph: psycopg.Connection, kind: str, first_id: str, second_id: str
+) -> None:
+    before = _snapshot(graph)
+    assert not helpers.remove_membership(graph, kind, first_id, second_id)
+    assert _snapshot(graph) == before
+    assert helpers.audit_rows(graph) == []
+
+
+def test_leaf09_repeated_leaf_removal_writes_one_audit(
+    graph: psycopg.Connection,
+) -> None:
+    assert helpers.remove_identity_org_membership(graph, helpers.IDENTITY_A, helpers.ORG_A)
+    assert not helpers.remove_identity_org_membership(graph, helpers.IDENTITY_A, helpers.ORG_A)
+    assert len(helpers.audit_rows(graph)) == 1

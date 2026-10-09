@@ -61,3 +61,37 @@ def test_sec02_sec03_protected_root_and_stewardship_enforcement_deferred(db) -> 
     # Authorization/protection is applied above the persistence boundary; the
     # removal functions themselves consult no session or role context.
     assert "remove_principal_tenant_membership" in helpers.functions_in_schema(db)
+
+
+def test_sec04_privilege_model_is_single_trusted_role_not_unforgeable(db) -> None:
+    # Verified facts, **not** an assertion of adversarial enforcement:
+    # - no explicit function ACLs, so functions carry the default PUBLIC
+    #   EXECUTE grant and the transaction-local marker can be set by any role
+    #   able to run arbitrary SQL;
+    # - no explicit table grants, so only the owner role holds DML;
+    # - all six removal functions are SECURITY INVOKER.
+    # There is no distinct restricted runtime role in this schema/fixture
+    # model, so the delete guard is a trusted-path control, not an unforgeable
+    # privilege boundary (documented in docs/ARCHITECTURE.md).
+    function_acl = db.execute(
+        "SELECT count(*) FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = %s AND p.proacl IS NOT NULL",
+        (helpers.SCHEMA,),
+    ).fetchone()[0]
+    assert function_acl == 0
+    table_acl = db.execute(
+        "SELECT count(*) FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relkind = 'r' AND c.relacl IS NOT NULL",
+        (helpers.SCHEMA,),
+    ).fetchone()[0]
+    assert table_acl == 0
+    invoker_functions = db.execute(
+        "SELECT count(*) FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = %s AND p.proname LIKE 'remove_%%_membership' "
+        "AND NOT p.prosecdef",
+        (helpers.SCHEMA,),
+    ).fetchone()[0]
+    assert invoker_functions == 6

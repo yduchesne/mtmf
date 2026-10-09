@@ -54,6 +54,9 @@ EXPECTED_FUNCTION_NAMES = {
     "remove_principal_tenant_membership",
     "remove_identity_tenant_membership",
     "remove_group_tenant_membership",
+    "remove_identity_group_membership",
+    "remove_identity_org_membership",
+    "remove_group_org_membership",
 }
 
 _FORBIDDEN_TABLES = (

@@ -147,18 +147,36 @@ def functions_in_schema(connection: psycopg.Connection) -> set[str]:
 AUDIT_TABLE = "membership_removal_audit"
 
 # Mapping from the initiating typed membership to its sanctioned removal
-# function. Only the three tenant memberships can initiate a removal cascade.
+# function. The three tenant memberships cascade to their dependents; the
+# three leaf memberships remove only their own row.
 REMOVAL_FUNCTIONS = {
     "principal_tenant_membership": "mtmf.remove_principal_tenant_membership",
     "identity_tenant_membership": "mtmf.remove_identity_tenant_membership",
     "group_tenant_membership": "mtmf.remove_group_tenant_membership",
+    "identity_group_membership": "mtmf.remove_identity_group_membership",
+    "identity_org_membership": "mtmf.remove_identity_org_membership",
+    "group_org_membership": "mtmf.remove_group_org_membership",
 }
 
-# Participant column used to address each tenant membership.
+# First participant column for each typed membership.
 INITIATOR_PARTICIPANT_COLUMN = {
     "principal_tenant_membership": "principal_id",
     "identity_tenant_membership": "identity_id",
     "group_tenant_membership": "group_id",
+    "identity_group_membership": "identity_id",
+    "identity_org_membership": "identity_id",
+    "group_org_membership": "group_id",
+}
+
+# Second participant column: the Tenant for the three tenant memberships,
+# the other entity for the three leaf memberships.
+INITIATOR_SECOND_PARTICIPANT_COLUMN = {
+    "principal_tenant_membership": "tenant_id",
+    "identity_tenant_membership": "tenant_id",
+    "group_tenant_membership": "tenant_id",
+    "identity_group_membership": "group_id",
+    "identity_org_membership": "organization_id",
+    "group_org_membership": "organization_id",
 }
 
 # The membership table whose count column records the initiating row.
@@ -166,6 +184,9 @@ INITIATOR_COUNT_COLUMN = {
     "principal_tenant_membership": "principal_tenant_count",
     "identity_tenant_membership": "identity_tenant_count",
     "group_tenant_membership": "group_tenant_count",
+    "identity_group_membership": "identity_group_count",
+    "identity_org_membership": "identity_org_count",
+    "group_org_membership": "group_org_count",
 }
 
 
@@ -206,17 +227,49 @@ def membership_count(
 def remove_membership(
     connection: psycopg.Connection,
     initiating_kind: str,
-    participant: str,
-    tenant: str,
+    first_id: str,
+    second_id: str,
     actor: str | None = None,
 ) -> bool:
-    """Call the sanctioned removal function for one tenant membership."""
+    """Call the sanctioned removal function for one typed membership.
+
+    ``first_id``/``second_id`` are the two participants: for a tenant
+    membership ``(participant, tenant)``; for a leaf membership the exact
+    ``(first_entity, second_entity)`` pair. Leaf functions derive the Tenant
+    themselves and take no caller Tenant.
+    """
     function = REMOVAL_FUNCTIONS[initiating_kind]
     row = connection.execute(
         psycopg.sql.SQL("SELECT {}(%s, %s, %s)").format(psycopg.sql.SQL(function)),
-        (participant, tenant, actor),
+        (first_id, second_id, actor),
     ).fetchone()
     return bool(row[0])
+
+
+def remove_identity_group_membership(
+    connection: psycopg.Connection, identity: str, group: str, actor: str | None = None
+) -> bool:
+    """Remove exactly one IdentityGroupMembership (leaf, no cascade)."""
+    return remove_membership(connection, "identity_group_membership", identity, group, actor=actor)
+
+
+def remove_identity_org_membership(
+    connection: psycopg.Connection,
+    identity: str,
+    organization: str,
+    actor: str | None = None,
+) -> bool:
+    """Remove exactly one IdentityOrgMembership (leaf, no cascade)."""
+    return remove_membership(
+        connection, "identity_org_membership", identity, organization, actor=actor
+    )
+
+
+def remove_group_org_membership(
+    connection: psycopg.Connection, group: str, organization: str, actor: str | None = None
+) -> bool:
+    """Remove exactly one GroupOrgMembership (leaf, no cascade)."""
+    return remove_membership(connection, "group_org_membership", group, organization, actor=actor)
 
 
 def audit_rows(connection: psycopg.Connection) -> list[tuple[object, ...]]:

@@ -325,3 +325,51 @@ def test_txn06_identity_tenant_insert_loses_to_principal_tenant_delete(db, dsn: 
         )
         == 0
     )
+
+
+def test_leaf13_concurrent_double_leaf_removal_yields_one_audit(db, dsn: str) -> None:
+    helpers.seed_full_membership_graph(db)
+    barrier = threading.Barrier(2)
+    outcomes: list[bool] = []
+    guard = threading.Lock()
+
+    def worker() -> None:
+        connection = psycopg.connect(dsn, autocommit=True)
+        try:
+            barrier.wait(timeout=10)
+            removed = helpers.remove_identity_group_membership(
+                connection, helpers.IDENTITY_A, helpers.GROUP_A
+            )
+            with guard:
+                outcomes.append(removed)
+        finally:
+            connection.close()
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+
+    assert sorted(outcomes) == [False, True]
+    assert len(helpers.audit_rows(db)) == 1
+    # The removed leaf's prerequisite and the sibling identity's membership
+    # are untouched by the duplicate attempt.
+    assert (
+        helpers.membership_count(
+            db,
+            "identity_tenant_membership",
+            "identity_id = %s AND tenant_id = %s",
+            (helpers.IDENTITY_A, helpers.TENANT_A),
+        )
+        == 1
+    )
+    assert (
+        helpers.membership_count(
+            db,
+            "identity_group_membership",
+            "identity_id = %s AND group_id = %s",
+            (helpers.IDENTITY_B, helpers.GROUP_B),
+        )
+        == 1
+    )
