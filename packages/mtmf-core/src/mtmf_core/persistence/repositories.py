@@ -41,6 +41,7 @@ from mtmf_core.domain.memberships import (
 from mtmf_core.domain.organization import Organization
 from mtmf_core.domain.principal import Principal
 from mtmf_core.domain.role import Role
+from mtmf_core.domain.role_assignment import GroupRoleAssignment, IdentityRoleAssignment
 from mtmf_core.domain.tenant import Tenant
 
 
@@ -149,6 +150,73 @@ class RoleRepository(Protocol):
 
     def save(self, role: Role) -> None:
         """Stage an update to an existing Role aggregate."""
+        ...
+
+
+@runtime_checkable
+class IdentityRoleAssignmentRepository(Protocol):
+    """Persistence for :class:`~mtmf_core.domain.role_assignment.IdentityRoleAssignment`.
+
+    Assignments are physical current-state facts with an immutable
+    surrogate identity. ``add`` rejects a duplicate surrogate identity and
+    a duplicate logical assignment tuple ``(tenant, identity, role,
+    organization)`` (with a NULL organization treated as a real, distinct
+    value). ``remove`` physically deletes exactly the addressed assignment
+    and reports an unknown identity as
+    :class:`~mtmf_core.persistence.errors.UnknownPersistenceIdentityError`;
+    there is no history or tombstone in PR 9. Reads are detached snapshots
+    and add/get are always scoped by the caller's Tenant and subject.
+    """
+
+    def add(self, assignment: IdentityRoleAssignment) -> None:
+        """Stage a new direct Identity Role assignment."""
+        ...
+
+    def get(self, id: DomainId) -> IdentityRoleAssignment | None:
+        """Return the assignment with ``id``, or ``None`` when unknown."""
+        ...
+
+    def find_by_tenant_and_identity(
+        self, tenant_id: DomainId, identity_id: DomainId
+    ) -> tuple[IdentityRoleAssignment, ...]:
+        """Return every assignment of one Identity in exactly one Tenant."""
+        ...
+
+    def remove(self, id: DomainId) -> None:
+        """Physically remove one assignment, rejecting an unknown identity."""
+        ...
+
+
+@runtime_checkable
+class GroupRoleAssignmentRepository(Protocol):
+    """Persistence for :class:`~mtmf_core.domain.role_assignment.GroupRoleAssignment`.
+
+    Assignments are physical current-state facts with an immutable
+    surrogate identity. ``add`` rejects a duplicate surrogate identity and
+    a duplicate logical assignment tuple ``(tenant, group, role,
+    organization)`` (with a NULL organization treated as a real, distinct
+    value). ``remove`` physically deletes exactly the addressed assignment
+    and reports an unknown identity as
+    :class:`~mtmf_core.persistence.errors.UnknownPersistenceIdentityError`.
+    Reads are detached snapshots scoped by the caller's Tenant and Group.
+    """
+
+    def add(self, assignment: GroupRoleAssignment) -> None:
+        """Stage a new Group Role assignment."""
+        ...
+
+    def get(self, id: DomainId) -> GroupRoleAssignment | None:
+        """Return the assignment with ``id``, or ``None`` when unknown."""
+        ...
+
+    def find_by_tenant_and_group(
+        self, tenant_id: DomainId, group_id: DomainId
+    ) -> tuple[GroupRoleAssignment, ...]:
+        """Return every assignment of one Group in exactly one Tenant."""
+        ...
+
+    def remove(self, id: DomainId) -> None:
+        """Physically remove one assignment, rejecting an unknown identity."""
         ...
 
 

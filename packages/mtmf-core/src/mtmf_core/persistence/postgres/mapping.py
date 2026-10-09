@@ -32,6 +32,7 @@ from mtmf_core.domain.permission_set import PermissionSet
 from mtmf_core.domain.policy import PermissionEffect
 from mtmf_core.domain.principal import Principal
 from mtmf_core.domain.role import Role
+from mtmf_core.domain.role_assignment import GroupRoleAssignment, IdentityRoleAssignment
 from mtmf_core.domain.scope import SecurityScope
 from mtmf_core.domain.tenant import Tenant
 from mtmf_core.persistence.errors import PersistenceDataError
@@ -39,7 +40,9 @@ from mtmf_core.persistence.errors import PersistenceDataError
 __all__ = [
     "action_from_urn",
     "group_from_payload",
+    "group_role_assignment_from_payload",
     "identity_from_payload",
+    "identity_role_assignment_from_payload",
     "organization_from_payload",
     "principal_from_payload",
     "role_from_payload",
@@ -241,6 +244,30 @@ def role_from_payload(payload: object) -> Role:
         defining_tenant_id=_optional_uuid(source, "defining_tenant_id"),
         permission_sets=permission_sets,
         extension=_require_extension(source),
+    )
+
+
+def identity_role_assignment_from_payload(payload: object) -> IdentityRoleAssignment:
+    """Reconstruct a direct Identity Role assignment from a detached payload."""
+    source = _require_object(payload, "IdentityRoleAssignment")
+    return IdentityRoleAssignment(
+        id=_require_uuid(source, "id"),
+        tenant_id=_require_uuid(source, "tenant_id"),
+        identity_id=_require_uuid(source, "identity_id"),
+        role_urn=RoleUrn(_require_str(source, "role_urn")),
+        organization_id=_optional_uuid(source, "organization_id"),
+    )
+
+
+def group_role_assignment_from_payload(payload: object) -> GroupRoleAssignment:
+    """Reconstruct a Group Role assignment from a detached payload."""
+    source = _require_object(payload, "GroupRoleAssignment")
+    return GroupRoleAssignment(
+        id=_require_uuid(source, "id"),
+        tenant_id=_require_uuid(source, "tenant_id"),
+        group_id=_require_uuid(source, "group_id"),
+        role_urn=RoleUrn(_require_str(source, "role_urn")),
+        organization_id=_optional_uuid(source, "organization_id"),
     )
 
 

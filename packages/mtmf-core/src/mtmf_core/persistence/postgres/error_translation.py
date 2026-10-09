@@ -40,12 +40,13 @@ from mtmf_core.persistence.errors import (
     PersistenceValueError,
 )
 
-#: Reviewed custom SQLSTATEs raised by the v004 stored functions.
-#: They are intentionally not PostgreSQL standard codes; the strings are
-#: internal to the provider and never exposed to callers as text.
+#: Reviewed custom SQLSTATEs raised by the stored functions. They are
+#: intentionally not PostgreSQL standard codes; the strings are internal
+#: to the provider and never exposed to callers as text.
 CUSTOM_AGGREGATE_INTEGRITY = "MT001"
 CUSTOM_MISSING_PREREQUISITE = "MT002"
 CUSTOM_INVALID_PAYLOAD = "MT003"
+CUSTOM_ASSIGNMENT_CONTEXT = "MT004"
 
 _UNIQUE_VIOLATION = "23505"
 _FOREIGN_KEY_VIOLATION = "23503"
@@ -55,7 +56,14 @@ _SERIALIZATION_FAILURE = "40001"
 _DEADLOCK_DETECTED = "40P01"
 
 _REFERENCE_CODES = frozenset({_FOREIGN_KEY_VIOLATION, CUSTOM_MISSING_PREREQUISITE})
-_INTEGRITY_CODES = frozenset({_CHECK_VIOLATION, CUSTOM_AGGREGATE_INTEGRITY, CUSTOM_INVALID_PAYLOAD})
+_INTEGRITY_CODES = frozenset(
+    {
+        _CHECK_VIOLATION,
+        CUSTOM_AGGREGATE_INTEGRITY,
+        CUSTOM_INVALID_PAYLOAD,
+        CUSTOM_ASSIGNMENT_CONTEXT,
+    }
+)
 
 
 def _sqlstate(exc: psycopg.Error) -> str | None:

@@ -152,6 +152,28 @@ _REPOSITORY_FUNCTION_ARGUMENTS = {
     "group_org_membership_find_by_organization": ("organization_id_value uuid"),
 }
 
+#: Exact approved runtime EXECUTE signatures introduced by revision 0005
+#: (the eight typed Role-assignment read/write entry points). The three
+#: Role-assignment validation helpers are private and are never granted.
+_ROLE_ASSIGNMENT_FUNCTION_ARGUMENTS = {
+    "identity_role_assignment_add": (
+        "id_value uuid, tenant_id_value uuid, identity_id_value uuid, "
+        "role_urn_value text, organization_id_value uuid"
+    ),
+    "identity_role_assignment_get": ("id_value uuid"),
+    "identity_role_assignment_find_by_tenant_and_identity": (
+        "tenant_id_value uuid, identity_id_value uuid"
+    ),
+    "identity_role_assignment_remove": ("id_value uuid"),
+    "group_role_assignment_add": (
+        "id_value uuid, tenant_id_value uuid, group_id_value uuid, "
+        "role_urn_value text, organization_id_value uuid"
+    ),
+    "group_role_assignment_get": ("id_value uuid"),
+    "group_role_assignment_find_by_tenant_and_group": ("tenant_id_value uuid, group_id_value uuid"),
+    "group_role_assignment_remove": ("id_value uuid"),
+}
+
 
 class RoleProvisioningError(RuntimeError):
     """The MTMF role topology or effective privileges are unsafe."""
@@ -173,15 +195,21 @@ def expected_removal_signatures() -> frozenset[str]:
 
 
 def expected_runtime_signatures() -> frozenset[str]:
-    """Return the reviewed runtime EXECUTE allowlist through revision 0004.
+    """Return the reviewed runtime EXECUTE allowlist through revision 0005.
 
-    This is the six membership-removal entry points plus the 44
-    repository read/write functions. The mandatory post-upgrade verifier
-    compares the runtime's effective EXECUTE set against exactly this
-    manifest, so a function is only approved when both the v004 grants and
-    this manifest are updated in the same migration.
+    This is the six membership-removal entry points plus the 44 repository
+    read/write functions introduced through v004, plus the eight typed
+    Role-assignment entry points introduced by v005. The mandatory
+    post-upgrade verifier compares the runtime's effective EXECUTE set
+    against exactly this manifest, so a function is only approved when both
+    the migration grants and this manifest are updated in the same
+    migration.
     """
-    arguments = {**_REMOVAL_FUNCTION_ARGUMENTS, **_REPOSITORY_FUNCTION_ARGUMENTS}
+    arguments = {
+        **_REMOVAL_FUNCTION_ARGUMENTS,
+        **_REPOSITORY_FUNCTION_ARGUMENTS,
+        **_ROLE_ASSIGNMENT_FUNCTION_ARGUMENTS,
+    }
     return frozenset(
         f"{SCHEMA}.{name}({arguments_text})" for name, arguments_text in arguments.items()
     )

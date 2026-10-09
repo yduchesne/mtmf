@@ -22,10 +22,12 @@ from mtmf_core.persistence.repositories import (
     ActionRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
+    GroupRoleAssignmentRepository,
     GroupTenantMembershipRepository,
     IdentityGroupMembershipRepository,
     IdentityOrgMembershipRepository,
     IdentityRepository,
+    IdentityRoleAssignmentRepository,
     IdentityTenantMembershipRepository,
     OrganizationRepository,
     PrincipalRepository,
@@ -79,6 +81,18 @@ class MtmfSpi(Protocol):
 
     def create_action_repository(self, uow: UnitOfWork) -> ActionRepository:
         """Create an Action repository bound to ``uow``."""
+        ...
+
+    def create_identity_role_assignment_repository(
+        self, uow: UnitOfWork
+    ) -> IdentityRoleAssignmentRepository:
+        """Create a direct Identity Role-assignment repository bound to ``uow``."""
+        ...
+
+    def create_group_role_assignment_repository(
+        self, uow: UnitOfWork
+    ) -> GroupRoleAssignmentRepository:
+        """Create a Group Role-assignment repository bound to ``uow``."""
         ...
 
     def create_principal_tenant_membership_repository(

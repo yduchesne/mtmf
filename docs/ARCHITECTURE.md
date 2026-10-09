@@ -6,7 +6,7 @@ This document describes the technical architecture of the Multi-Tenant Managemen
 
 Security semantics are defined by [SECURITY_MODEL.md](SECURITY_MODEL.md). Authorization-engine behavior is described in [AUTHORIZATION.md](AUTHORIZATION.md). The structural domain model is defined in [DOMAIN_MODEL.md](DOMAIN_MODEL.md).
 
-PostgreSQL-specific architecture and the implemented restricted runtime privilege model are documented in [DATABASE.md](DATABASE.md). PR 7A (revision `0003`) implements the owner/migrator/runtime role separation, default-deny grants, and the six reviewed `SECURITY DEFINER` membership-removal entry points described there. PR 7B (revision `0004`) implements the production `PostgresMtmfSpi` provider, its real-transaction UnitOfWork, all 13 typed repositories, and the 44 reviewed repository stored-function entry points.
+PostgreSQL-specific architecture and the implemented restricted runtime privilege model are documented in [DATABASE.md](DATABASE.md). PR 7A (revision `0003`) implements the owner/migrator/runtime role separation, default-deny grants, and the six reviewed `SECURITY DEFINER` membership-removal entry points described there. PR 7B (revision `0004`) implements the production `PostgresMtmfSpi` provider, its real-transaction UnitOfWork, all 13 typed repositories, and the 44 reviewed repository stored-function entry points. PR 9 (revision `0005`) adds the two typed Role-assignment tables, their restrictive prerequisite foreign keys, eight reviewed Role-assignment stored functions, and the application-layer `EffectiveRoleResolver` that produces the trusted `applicable_roles` tuple consumed by the unchanged `Authorizer`.
 
 ## 2. Technology Baseline
 
@@ -226,6 +226,15 @@ Authorizer
 - :class:`AuthorizationPolicy` is the static policy surface:
   ``evaluate(action)`` plus ``get_diagnostics()``, no Roles at
   evaluation time, no persistence, no retrieval.
+- PR 9 adds the application-layer
+  :class:`~mtmf_core.application.effective_roles.EffectiveRoleResolver`
+  and ``build_authorization_context``: the trusted, non-caching entry
+  point that reads persisted typed Role assignments and their
+  prerequisite typed memberships in one UnitOfWork and produces the
+  detached, Tenant-filtered ``applicable_roles`` tuple. It is *not* an
+  ``AuthorizationPolicyResolver``, it makes no decision, and it does not
+  change the Authorizer or the policy implementations. It never unions
+  state across Tenant, Identity, Principal, or Organization.
 - **Future caching and invalidation belong behind resolver
   implementations**, never inside the Authorizer or the policy
   implementations. The resolver contract intentionally permits later
@@ -285,7 +294,7 @@ A deliberate PR 6 decision: PostgreSQL does not ship the deferred-constraint mec
 
 ### 10.2 Stored-function convention
 
-Substantial SQL functions ship as immutable, versioned, packaged resources under `mtmf_core/persistence/postgres/sql/vNNN/<function>.sql` and are installed by Alembic revisions in sorted filename order. Functions are schema-qualified, do not rely on caller `search_path` (`SET search_path = ''`), and avoid dynamic SQL. PR 6 installs a single infrastructure proof function (`mtmf.mtf_schema_version()`); PR 6B installs the typed-membership precondition replacements, guards, and removal functions described below. PR 7A (revision `0003`) converts only the six reviewed membership-removal entry points to owner-owned `SECURITY DEFINER` and grants the restricted runtime role `EXECUTE` on exactly those signatures. PR 7B (revision `0004`) adds 44 reviewed repository read/write functions with the same owner-owned `SECURITY DEFINER`, fixed `search_path = ''`, PUBLIC-EXECUTE-revoked, exact-runtime-grant posture; the mandatory post-upgrade verifier compares the runtime's effective `EXECUTE` set against the full 50-signature allowlist. Non-entry-point helpers are not runtime-executable.
+Substantial SQL functions ship as immutable, versioned, packaged resources under `mtmf_core/persistence/postgres/sql/vNNN/<function>.sql` and are installed by Alembic revisions in sorted filename order. Functions are schema-qualified, do not rely on caller `search_path` (`SET search_path = ''`), and avoid dynamic SQL. PR 6 installs a single infrastructure proof function (`mtmf.mtf_schema_version()`); PR 6B installs the typed-membership precondition replacements, guards, and removal functions described below. PR 7A (revision `0003`) converts only the six reviewed membership-removal entry points to owner-owned `SECURITY DEFINER` and grants the restricted runtime role `EXECUTE` on exactly those signatures. PR 7B (revision `0004`) adds 44 reviewed repository read/write functions with the same owner-owned `SECURITY DEFINER`, fixed `search_path = ''`, PUBLIC-EXECUTE-revoked, exact-runtime-grant posture. PR 9 (revision `0005`) adds the two typed Role-assignment tables and eight Role-assignment entry points with the same posture (plus three private, non-runtime-granted validation helpers). The mandatory post-upgrade verifier compares the runtime's effective `EXECUTE` set against the full 58-signature allowlist. Non-entry-point helpers are not runtime-executable.
 
 Security-critical invariants are enforced at trusted persistence/write boundaries in addition to higher layers where appropriate.
 
@@ -310,6 +319,18 @@ Each of the six calls deletes the applicable rows in one database transaction an
 Removing a nonexistent initiating row is a documented no-op: it deletes nothing and writes no audit row. A repeated removal therefore produces exactly one audit row in total. Concurrent duplicate removals serialize on the initiating row lock, so only one succeeds. Any failure (including a bad actor or a failing dependent delete) rolls back every deletion and the audit row together.
 
 Lock protocol and concurrency: every precondition check locks its prerequisite membership fact `FOR KEY SHARE`; each removal function locks the initiating row `FOR UPDATE` first (and, for a Principal removal, every owned Identity-Tenant membership in the Tenant) before deleting any dependent. Under `READ COMMITTED` a waiting dependent INSERT re-evaluates its precondition after the removing transaction commits, so it cannot commit an orphan; a dependent that committed first is still cascaded away because the removal holds the prerequisite lock. There are no global locks and no serializable-isolation requirement; concurrent operations may still surface a retryable deadlock/serialization error, which callers may retry.
+
+PR 9 extends this boundary with two restrictive composite foreign keys:
+`identity_role_assignment(identity_id, tenant_id)` references
+`identity_tenant_membership`, and `group_role_assignment(group_id,
+tenant_id)` references `group_tenant_membership`, while both reference
+`organization(id, tenant_id)`. A Role assignment therefore cannot outlive
+its prerequisite membership: removing a prerequisite membership while a
+dependent assignment exists is rejected deterministically and the whole
+removal (including any membership cascade/audit) rolls back, rather than
+silently cascade-deleting the assignment. The assignment write functions
+take the same `FOR KEY SHARE` prerequisite locks as the membership
+preconditions, so a concurrent removal and assignment creation serialize.
 
 Trust boundary: a row-level `BEFORE DELETE` (and statement-level `BEFORE TRUNCATE`) guard rejects direct membership deletion unless the transaction-local `mtmf.membership_removal` marker set by the sanctioned functions is present. The enforced privilege model (PR 7A) is owner/migrator/runtime separation: the six removal functions are owner-owned `SECURITY DEFINER` entry points with PUBLIC EXECUTE revoked and `EXECUTE` granted only to `mtmf_runtime`; tables have no runtime grant, so the restricted runtime login cannot issue direct DML, read authoritative/audit tables, use sequences, or alter triggers regardless of the marker. The marker therefore remains defense in depth only, not an authorization boundary; a superuser/owner can disable triggers, and `mtmf_owner`/`mtmf_migrator` are outside the adversarial guarantee. `SECURITY DEFINER` EXECUTE is database capability, not domain authorization: a shared runtime login does not provide per-Tenant SQL isolation, and a fabricated `actor_identity_id` is an unverified caller assertion (see `docs/DATABASE.md` section 7). Root/bootstrap and Tenant Stewardship protection is **not** enforced by these structural functions: revisions through `0003` persist no authoritative root Principal marker, root-membership flag, or stewardship state, so a protected membership cannot yet be identified from data. That protection is deferred to PR 10 and must be applied above the persistence boundary once the authoritative state exists; the removal functions must not invent a root detector or inferred privileged identity.
 

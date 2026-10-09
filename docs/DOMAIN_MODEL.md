@@ -211,6 +211,13 @@ Typed membership relationships are current-state facts, not soft-deletable domai
 
 A membership outside the affected Tenant MUST remain unchanged. No dependent membership row may remain after its prerequisite membership is removed. Cascades MUST be enforced at the trusted persistence/write boundary in one transaction; callers MUST NOT be required to perform dependent removals individually. Removal of a Group-Tenant membership does not, by itself, remove any Identity-Tenant membership.
 
+Role assignments are **not** membership rows and are never silently
+cascade-deleted. A Role assignment references its prerequisite membership
+restrictively: removing a prerequisite membership while a dependent
+assignment exists is rejected deterministically (and the whole removal,
+including any membership cascade and its audit, rolls back). The caller must
+revoke the assignment explicitly first.
+
 Membership rows have no deletion-status or activation-status lifecycle. Rejoining requires an explicit new membership insertion; it MUST NOT automatically recreate previously removed Organization or Group memberships. Domain-entity soft-deletion and unresolved entity-restoration policy are separate concerns.
 
 ### Membership removal audit
@@ -309,7 +316,16 @@ Identity * ---- * Role
 Group    * ---- * Role
 ```
 
-Every Role assignment is Tenant-bound. An assignment associates a Role with an Identity or Group in exactly one Tenant context and may optionally refine that context to an Organization belonging to the same Tenant. The exact Role-assignment domain object representation remains **UNRESOLVED**.
+Every Role assignment is Tenant-bound. An assignment associates a Role with an Identity or Group in exactly one Tenant context and may optionally refine that context to an Organization belonging to the same Tenant.
+
+The assignment representation is two explicit typed entities,
+`IdentityRoleAssignment` and `GroupRoleAssignment`; there is deliberately
+no polymorphic `(subject_type, subject_id)` assignment. Each assignment has
+an immutable UUID identity, an immutable structural `tenant_id`, an
+immutable target (`identity_id` or `group_id`), an immutable `role_urn`, and
+an optional immutable `organization_id` (`NULL` means Tenant-wide). There is
+no mutable assignment state: revocation physically removes the row and a
+later regrant uses a new UUID.
 
 A Role has:
 
@@ -389,7 +405,27 @@ SYSTEM-defined Roles may be assigned in appropriate Tenant or Organization conte
 
 Role assignment must not create cross-Tenant authorization.
 
-The exact assignment entity or entities remain **UNRESOLVED**.
+Assignment context is exactly one Tenant, optionally refined by exactly one
+Organization belonging to that Tenant. The Role definition namespace is
+never inferred from assignment context.
+
+Prerequisites are explicit and are not inferred:
+
+- a direct `IdentityRoleAssignment` requires an active same-Tenant
+  `IdentityTenantMembership`;
+- a `GroupRoleAssignment` requires an active same-Tenant
+  `GroupTenantMembership` and the Group's structural Tenant must agree;
+- an Organization-refined direct assignment additionally requires an
+  `IdentityOrgMembership`;
+- an Organization-refined Group assignment additionally requires a
+  `GroupOrgMembership`.
+
+Assignment cardinality is many-to-many. A uniqueness constraint prevents an
+exact duplicate active assignment tuple `(tenant, subject, role,
+organization)`; duplicate Role contributions are non-voting. Assignment
+reads and writes are structural persistence only: authenticating and
+authorizing grant/revoke operations is application-layer work, and
+possession of repository access confers no authority.
 
 ---
 
@@ -491,7 +527,8 @@ flowchart TD
     IOM[IdentityOrgMembership]
     GOM[GroupOrgMembership]
     IGM[IdentityGroupMembership]
-    RA[Role Assignment]
+    IRA[IdentityRoleAssignment]
+    GRA[GroupRoleAssignment]
     TMG[TenantManagementGroup]
 
     T -->|contains| O
@@ -512,10 +549,12 @@ flowchart TD
     G --> GOM
     GOM --> O
 
-    I --> RA
-    G --> RA
-    RA -->|bound to| T
-    RA --> R
+    I --> IRA
+    G --> GRA
+    IRA -->|bound to| T
+    GRA -->|bound to| T
+    IRA --> R
+    GRA --> R
 
     R -->|owns| PS
     PS -->|owns| PM
@@ -547,8 +586,7 @@ Additional aggregate boundaries will be identified during detailed implementatio
 
 The following remain intentionally unsettled:
 
-1. exact Role-assignment entity/entities and assignment-context representation;
-4. which acting Identity of a steward Principal exercises stewardship authority;
+1. which acting Identity of a steward Principal exercises stewardship authority;
 5. which manager-Tenant Identities or Groups exercise TenantManagementGroup authority;
 6. exact TenantManagementGroup persistence representation;
 7. nested Group support;

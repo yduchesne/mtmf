@@ -22,10 +22,12 @@ from mtmf_core.persistence.postgres.repositories import (
     PostgresActionRepository,
     PostgresGroupOrgMembershipRepository,
     PostgresGroupRepository,
+    PostgresGroupRoleAssignmentRepository,
     PostgresGroupTenantMembershipRepository,
     PostgresIdentityGroupMembershipRepository,
     PostgresIdentityOrgMembershipRepository,
     PostgresIdentityRepository,
+    PostgresIdentityRoleAssignmentRepository,
     PostgresIdentityTenantMembershipRepository,
     PostgresOrganizationRepository,
     PostgresPrincipalRepository,
@@ -38,10 +40,12 @@ from mtmf_core.persistence.repositories import (
     ActionRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
+    GroupRoleAssignmentRepository,
     GroupTenantMembershipRepository,
     IdentityGroupMembershipRepository,
     IdentityOrgMembershipRepository,
     IdentityRepository,
+    IdentityRoleAssignmentRepository,
     IdentityTenantMembershipRepository,
     OrganizationRepository,
     PrincipalRepository,
@@ -113,6 +117,18 @@ class PostgresMtmfSpi:
     def create_action_repository(self, uow: UnitOfWork) -> ActionRepository:
         """Create an Action repository bound to ``uow``."""
         return PostgresActionRepository(self._require_own_uow(uow))
+
+    def create_identity_role_assignment_repository(
+        self, uow: UnitOfWork
+    ) -> IdentityRoleAssignmentRepository:
+        """Create a direct Identity Role-assignment repository bound to ``uow``."""
+        return PostgresIdentityRoleAssignmentRepository(self._require_own_uow(uow))
+
+    def create_group_role_assignment_repository(
+        self, uow: UnitOfWork
+    ) -> GroupRoleAssignmentRepository:
+        """Create a Group Role-assignment repository bound to ``uow``."""
+        return PostgresGroupRoleAssignmentRepository(self._require_own_uow(uow))
 
     def create_principal_tenant_membership_repository(
         self, uow: UnitOfWork

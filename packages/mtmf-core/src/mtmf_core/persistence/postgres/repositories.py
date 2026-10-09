@@ -45,6 +45,7 @@ from mtmf_core.domain.memberships import (
 from mtmf_core.domain.organization import Organization
 from mtmf_core.domain.principal import Principal
 from mtmf_core.domain.role import Role
+from mtmf_core.domain.role_assignment import GroupRoleAssignment, IdentityRoleAssignment
 from mtmf_core.domain.tenant import Tenant
 from mtmf_core.persistence.errors import (
     DuplicatePersistenceIdentityError,
@@ -53,7 +54,9 @@ from mtmf_core.persistence.errors import (
 )
 from mtmf_core.persistence.postgres.mapping import (
     group_from_payload,
+    group_role_assignment_from_payload,
     identity_from_payload,
+    identity_role_assignment_from_payload,
     organization_from_payload,
     principal_from_payload,
     role_from_payload,
@@ -66,10 +69,12 @@ __all__ = [
     "PostgresActionRepository",
     "PostgresGroupOrgMembershipRepository",
     "PostgresGroupRepository",
+    "PostgresGroupRoleAssignmentRepository",
     "PostgresGroupTenantMembershipRepository",
     "PostgresIdentityGroupMembershipRepository",
     "PostgresIdentityOrgMembershipRepository",
     "PostgresIdentityRepository",
+    "PostgresIdentityRoleAssignmentRepository",
     "PostgresIdentityTenantMembershipRepository",
     "PostgresOrganizationRepository",
     "PostgresPrincipalRepository",
@@ -363,6 +368,131 @@ class PostgresActionRepository(_Repository):
         """Return the Action with exact ``urn``, or ``None`` when unknown."""
         present = self._bool("SELECT mtmf.action_get(%s)", (urn.value,))
         return Action(urn) if present else None
+
+
+class _RoleAssignmentRepository[AssignmentT]:
+    """Shared add/get/remove mechanics for one typed Role assignment."""
+
+    _add_query: ClassVar[str]
+    _get_query: ClassVar[str]
+    _remove_query: ClassVar[str]
+    _collection: ClassVar[str]
+    _find_query: ClassVar[str]
+
+    def __init__(self, uow: PostgresUnitOfWork) -> None:
+        self._uow = uow
+
+    def _add(self, params: tuple[object, ...]) -> None:
+        row = self._uow._execute(self._add_query, params).fetchone()
+        if not (row is not None and row[0]):
+            raise DuplicatePersistenceIdentityError(
+                f"{self._collection}: the requested assignment already exists"
+            )
+
+    def _get(self, key: object) -> dict[str, object] | None:
+        row = self._uow._execute(self._get_query, (key,)).fetchone()
+        if row is None or row[0] is None:
+            return None
+        payload = row[0]
+        if not isinstance(payload, dict):
+            raise PersistenceIntegrityError(
+                f"{self._collection}: stored assignment payload is not a JSON object"
+            )
+        return payload
+
+    def _find(self, params: tuple[object, ...]) -> tuple[AssignmentT, ...]:
+        rows = self._uow._execute(self._find_query, params).fetchall()
+        return tuple(self._from_payload(row[0]) for row in rows)
+
+    def _from_payload(self, payload: object) -> AssignmentT:
+        raise NotImplementedError
+
+    def _remove(self, id: DomainId) -> None:
+        row = self._uow._execute(self._remove_query, (id.value,)).fetchone()
+        if not (row is not None and row[0]):
+            raise UnknownPersistenceIdentityError(
+                f"{self._collection}: cannot remove unknown identity {id!r}"
+            )
+
+
+class PostgresIdentityRoleAssignmentRepository(_RoleAssignmentRepository[IdentityRoleAssignment]):
+    """PostgreSQL direct Identity Role-assignment repository."""
+
+    _collection = "IdentityRoleAssignment"
+    _add_query = "SELECT mtmf.identity_role_assignment_add(%s, %s, %s, %s, %s)"
+    _get_query = "SELECT mtmf.identity_role_assignment_get(%s)"
+    _find_query = "SELECT * FROM mtmf.identity_role_assignment_find_by_tenant_and_identity(%s, %s)"
+    _remove_query = "SELECT mtmf.identity_role_assignment_remove(%s)"
+
+    def _from_payload(self, payload: object) -> IdentityRoleAssignment:
+        return identity_role_assignment_from_payload(payload)
+
+    def add(self, assignment: IdentityRoleAssignment) -> None:
+        """Stage a new direct Identity Role assignment."""
+        self._add(
+            (
+                assignment.id.value,
+                assignment.tenant_id.value,
+                assignment.identity_id.value,
+                assignment.role_urn.value,
+                None if assignment.organization_id is None else assignment.organization_id.value,
+            )
+        )
+
+    def get(self, id: DomainId) -> IdentityRoleAssignment | None:
+        """Return the assignment with ``id``, or ``None`` when unknown."""
+        payload = self._get(id.value)
+        return None if payload is None else self._from_payload(payload)
+
+    def find_by_tenant_and_identity(
+        self, tenant_id: DomainId, identity_id: DomainId
+    ) -> tuple[IdentityRoleAssignment, ...]:
+        """Return every assignment of one Identity in exactly one Tenant."""
+        return self._find((tenant_id.value, identity_id.value))
+
+    def remove(self, id: DomainId) -> None:
+        """Physically remove one assignment, rejecting an unknown identity."""
+        self._remove(id)
+
+
+class PostgresGroupRoleAssignmentRepository(_RoleAssignmentRepository[GroupRoleAssignment]):
+    """PostgreSQL Group Role-assignment repository."""
+
+    _collection = "GroupRoleAssignment"
+    _add_query = "SELECT mtmf.group_role_assignment_add(%s, %s, %s, %s, %s)"
+    _get_query = "SELECT mtmf.group_role_assignment_get(%s)"
+    _find_query = "SELECT * FROM mtmf.group_role_assignment_find_by_tenant_and_group(%s, %s)"
+    _remove_query = "SELECT mtmf.group_role_assignment_remove(%s)"
+
+    def _from_payload(self, payload: object) -> GroupRoleAssignment:
+        return group_role_assignment_from_payload(payload)
+
+    def add(self, assignment: GroupRoleAssignment) -> None:
+        """Stage a new Group Role assignment."""
+        self._add(
+            (
+                assignment.id.value,
+                assignment.tenant_id.value,
+                assignment.group_id.value,
+                assignment.role_urn.value,
+                None if assignment.organization_id is None else assignment.organization_id.value,
+            )
+        )
+
+    def get(self, id: DomainId) -> GroupRoleAssignment | None:
+        """Return the assignment with ``id``, or ``None`` when unknown."""
+        payload = self._get(id.value)
+        return None if payload is None else self._from_payload(payload)
+
+    def find_by_tenant_and_group(
+        self, tenant_id: DomainId, group_id: DomainId
+    ) -> tuple[GroupRoleAssignment, ...]:
+        """Return every assignment of one Group in exactly one Tenant."""
+        return self._find((tenant_id.value, group_id.value))
+
+    def remove(self, id: DomainId) -> None:
+        """Physically remove one assignment, rejecting an unknown identity."""
+        self._remove(id)
 
 
 class _MembershipRepository[MembershipT]:

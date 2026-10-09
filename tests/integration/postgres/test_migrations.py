@@ -7,9 +7,10 @@ the ``mtmf`` schema; and packaged resources resolve without the
 repository working directory.
 
 BND: the PR 7B PostgreSQL provider, repositories, and UnitOfWork exist
-and satisfy the persistence SPI; RoleAssignment, stewardship,
-TenantManagementGroup, bootstrap/root state, IdP state, public API DTOs,
-and new authorization semantics still do not exist.
+and satisfy the persistence SPI; PR 9 adds only the two typed
+Role-assignment tables and their trusted functions. No polymorphic
+RoleAssignment table, stewardship, TenantManagementGroup, bootstrap/root
+state, IdP state, or public API DTOs exist.
 """
 
 from __future__ import annotations
@@ -103,6 +104,17 @@ EXPECTED_FUNCTION_NAMES = {
     "group_org_membership_get",
     "group_org_membership_find_by_group",
     "group_org_membership_find_by_organization",
+    "role_assignment_validate_role",
+    "identity_role_assignment_validate",
+    "group_role_assignment_validate",
+    "identity_role_assignment_add",
+    "identity_role_assignment_get",
+    "identity_role_assignment_find_by_tenant_and_identity",
+    "identity_role_assignment_remove",
+    "group_role_assignment_add",
+    "group_role_assignment_get",
+    "group_role_assignment_find_by_tenant_and_group",
+    "group_role_assignment_remove",
 }
 
 _FORBIDDEN_TABLES = (
@@ -135,7 +147,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0004"
+    assert revision == "0005"
     assert revision == manager.head_revision
 
 

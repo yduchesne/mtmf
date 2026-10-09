@@ -460,7 +460,21 @@ A tenant-defined Role MAY be assigned only in its defining Tenant, optionally re
 
 Assignments MUST NOT cause Roles or authorization to cross Tenant boundaries.
 
-The exact storage representation of assignment context is not prescribed by this document.
+Assignment context is represented by two explicit typed entities,
+`IdentityRoleAssignment` and `GroupRoleAssignment` (never a polymorphic
+subject type). Each assignment is bound to exactly one `tenant_id` and may
+carry at most one `organization_id` that MUST belong to that Tenant.
+Prerequisite typed memberships are mandatory and are never inferred: a
+direct assignment requires an `IdentityTenantMembership`, a Group assignment
+requires a `GroupTenantMembership`, and an Organization refinement
+additionally requires the corresponding `IdentityOrgMembership` or
+`GroupOrgMembership`. Duplicate Role contributions are non-voting.
+
+Effective Roles for a `(Tenant, Principal, acting Identity)` session are
+resolved from persisted assignments by a trusted application-layer context
+assembler before authorization; the core `Authorizer` continues to consume
+already-resolved `applicable_roles` and never retrieves assignment state
+itself.
 
 ---
 
@@ -877,8 +891,7 @@ The following security details have not yet been fully specified and MUST NOT be
 1. the exact mechanism identifying which Identity of the steward Principal may exercise stewardship-derived authority;
 2. the final complete Permission catalog and exact Permission composition of each built-in Role;
 3. the exhaustive classification of operations requiring strict scope dominance;
-4. the precise domain/persistence representation of Role assignments and their contexts;
-5. detailed Principal/Identity lifecycle and tombstone/soft-deletion behavior required to preserve immutable provenance;
+4. detailed Principal/Identity lifecycle and tombstone/soft-deletion behavior required to preserve immutable provenance;
 6. agent/service-principal authentication and authorization details;
 7. IdP-specific federation semantics beyond the invariant that every Principal retains a mandatory local MTMF Identity;
 8. which manager-Tenant Identities or Groups are eligible to exercise TenantManagementGroup delegated authority;
