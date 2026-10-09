@@ -435,7 +435,7 @@ Tenant Stewardship is a Tenant-only administrative concept.
 
 It is not ownership, a Role, a Permission, or a security Scope.
 
-For every active ordinary Tenant there is exactly one ACTIVE steward Principal.
+For every active ordinary Tenant there is exactly one ACTIVE steward Principal and one explicitly designated eligible steward acting Identity. An ordinary Tenant MUST NOT become active without both; incomplete provisioning remains inactive and non-authorizing.
 
 The steward must satisfy the eligibility requirements in the security model, including Tenant membership, appropriate scope, active status, and Tenant Administrator Role requirements.
 
@@ -443,7 +443,7 @@ The root Tenant's steward is the root Principal and cannot be transferred.
 
 Stewardship transfer does not alter immutable object ownership.
 
-The exact acting Identity through which a steward Principal exercises stewardship-derived authority remains **UNRESOLVED**.
+Each active Tenant stewardship designation identifies one explicit, eligible acting Identity of its steward Principal. Only that authenticated Identity can exercise stewardship-derived dominance, and only with separately applicable Permissions. Designation and transfer are atomic; the root designated local Identity is protected. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md).
 
 ---
 
@@ -573,7 +573,7 @@ The diagram is structural and intentionally omits security-evaluation details.
 At minimum, the following operations must preserve their related invariants atomically where partial completion would produce invalid domain state:
 
 - Organization creation and owner IdentityOrgMembership;
-- Tenant Stewardship transfer;
+- Tenant Stewardship transfer and designated acting-Identity replacement;
 - steward deactivation combined with replacement stewardship, if supported as one operation;
 - creation or mutation of security relationships whose Tenant consistency must be validated;
 - Role policy writes where Role definition ownership and owned Permission structure must remain consistent.
@@ -586,7 +586,6 @@ Additional aggregate boundaries will be identified during detailed implementatio
 
 The following remain intentionally unsettled:
 
-1. which acting Identity of a steward Principal exercises stewardship authority;
 5. which manager-Tenant Identities or Groups exercise TenantManagementGroup authority;
 6. exact TenantManagementGroup persistence representation;
 7. nested Group support;
