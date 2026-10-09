@@ -169,7 +169,7 @@ All non-root Tenants have `TENANT` scope.
 
 Non-root Principals MAY be members of the root Tenant. Such membership uses `SYSTEM` scope, not `ROOT` scope. This is the mechanism for delegated system administration.
 
-No other root-Principal lifecycle restrictions are implied unless explicitly specified by this constitution.
+The root Principal and root Tenant MUST NOT be deleted, deactivated, reassigned, or demoted through ordinary operations. At least one designated, active local root Identity and its required Tenant membership MUST remain valid; changing the designated root Identity requires an explicitly authorized atomic replacement. These continuity requirements do not imply that an external login provider or credentials are always available. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md).
 
 ---
 
@@ -346,7 +346,7 @@ The ACTIVE steward of an ordinary Tenant MUST:
 3. have `TENANT` scope in the applicable membership context;
 4. hold the built-in Tenant Administrator Role.
 
-An active ordinary Tenant MUST never be left without a valid ACTIVE steward.
+An active ordinary Tenant MUST never be left without a valid ACTIVE steward. The stewardship designation also identifies exactly one eligible acting Identity; activating an ordinary Tenant requires both a valid steward and this designated Identity. Tenant creation/activation and initial designation MUST be atomic, or incomplete Tenant state MUST remain inactive and non-authorizing.
 
 ### 10.2 Root Tenant stewardship
 
@@ -381,7 +381,7 @@ A delegate MUST NOT self-promote to steward.
 
 An appropriately authorized `SYSTEM` administrator MAY perform recovery transfer for an ordinary Tenant because SYSTEM strictly dominates TENANT.
 
-Stewardship transfer MUST be explicit, auditable, and atomic with respect to the invariant that an active ordinary Tenant has exactly one valid ACTIVE steward.
+Stewardship transfer MUST be explicit, auditable, and atomic with respect to the invariant that an active ordinary Tenant has exactly one valid ACTIVE steward and one eligible designated acting Identity. Concurrent or stale transfers MUST NOT silently overwrite one another.
 
 If the current steward is to be deactivated or otherwise made ineligible, stewardship MUST first be transferred, or the operation MUST atomically establish a new valid steward.
 
@@ -393,7 +393,7 @@ Stewardship is associated with Tenant membership at the Principal level, while a
 
 MTMF MUST NOT silently grant stewardship-derived authority to every Identity of the steward Principal.
 
-The exact mechanism by which an Identity of the steward Principal is authorized to exercise stewardship authority remains to be specified. Until specified, implementations MUST NOT infer cross-Identity stewardship privileges.
+Every active stewardship designation MUST identify exactly one explicitly designated **steward acting Identity** of the steward Principal. That Identity MUST be active, belong to the steward Principal, have valid active membership in the Tenant, and independently possess the applicable Permission through effective Roles. Stewardship-derived dominance is available only when the authenticated acting Identity matches this designation; no other Identity inherits it. The designation MUST be established or changed through an explicit authorized atomic operation; it MUST NOT be inferred from Principal ownership, Group membership, or a Role assignment. The root Principal has a protected designated local root acting Identity, replaceable only through privileged atomic recovery. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md).
 
 ---
 
@@ -880,7 +880,7 @@ In particular, implementations MUST independently validate security-critical con
 - ownership immutability;
 - authorization of security-sensitive operations.
 
-Operations that establish multiple required invariants MUST be atomic where partial completion would create an invalid security state.
+Operations that establish multiple required invariants MUST be atomic where partial completion would create an invalid security state. Bootstrap MUST be serialized, idempotent on complete valid state, and fail closed on inconsistent partial state; no automatic privileged repair is permitted. Existing membership-removal, Role-assignment, and lifecycle write paths MUST enforce protected root/stewardship continuity, not just newly introduced operations. A shared database runtime login or caller-supplied actor ID is not authenticated end-user authority. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md).
 
 ---
 
@@ -888,7 +888,6 @@ Operations that establish multiple required invariants MUST be atomic where part
 
 The following security details have not yet been fully specified and MUST NOT be invented by an implementation:
 
-1. the exact mechanism identifying which Identity of the steward Principal may exercise stewardship-derived authority;
 2. the final complete Permission catalog and exact Permission composition of each built-in Role;
 3. the exhaustive classification of operations requiring strict scope dominance;
 4. detailed Principal/Identity lifecycle and tombstone/soft-deletion behavior required to preserve immutable provenance;
