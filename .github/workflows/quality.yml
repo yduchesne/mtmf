@@ -27,3 +27,40 @@ jobs:
 
       - name: Run canonical quality gate
         run: ./build.sh --qa
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: mtmf
+          POSTGRES_USER: mtmf
+          POSTGRES_PASSWORD: mtmf-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mtmf -d mtmf"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MTMF_POSTGRES_HOST: 127.0.0.1
+      MTMF_POSTGRES_PORT: "5432"
+      MTMF_POSTGRES_DB: mtmf
+      MTMF_POSTGRES_USER: mtmf
+      MTMF_POSTGRES_PASSWORD: mtmf-ci-password
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      - name: Synchronize locked dependencies
+        run: uv sync --locked
+
+      - name: Run PostgreSQL integration gate
+        run: ./build.sh --integration

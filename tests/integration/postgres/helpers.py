@@ -140,3 +140,193 @@ def functions_in_schema(connection: psycopg.Connection) -> set[str]:
         (SCHEMA,),
     ).fetchall()
     return {row[0] for row in rows}
+
+
+# --- Membership removal helpers (PR 6B) --------------------------------------
+
+AUDIT_TABLE = "membership_removal_audit"
+
+# Mapping from the initiating typed membership to its sanctioned removal
+# function. The three tenant memberships cascade to their dependents; the
+# three leaf memberships remove only their own row.
+REMOVAL_FUNCTIONS = {
+    "principal_tenant_membership": "mtmf.remove_principal_tenant_membership",
+    "identity_tenant_membership": "mtmf.remove_identity_tenant_membership",
+    "group_tenant_membership": "mtmf.remove_group_tenant_membership",
+    "identity_group_membership": "mtmf.remove_identity_group_membership",
+    "identity_org_membership": "mtmf.remove_identity_org_membership",
+    "group_org_membership": "mtmf.remove_group_org_membership",
+}
+
+# First participant column for each typed membership.
+INITIATOR_PARTICIPANT_COLUMN = {
+    "principal_tenant_membership": "principal_id",
+    "identity_tenant_membership": "identity_id",
+    "group_tenant_membership": "group_id",
+    "identity_group_membership": "identity_id",
+    "identity_org_membership": "identity_id",
+    "group_org_membership": "group_id",
+}
+
+# Second participant column: the Tenant for the three tenant memberships,
+# the other entity for the three leaf memberships.
+INITIATOR_SECOND_PARTICIPANT_COLUMN = {
+    "principal_tenant_membership": "tenant_id",
+    "identity_tenant_membership": "tenant_id",
+    "group_tenant_membership": "tenant_id",
+    "identity_group_membership": "group_id",
+    "identity_org_membership": "organization_id",
+    "group_org_membership": "organization_id",
+}
+
+# The membership table whose count column records the initiating row.
+INITIATOR_COUNT_COLUMN = {
+    "principal_tenant_membership": "principal_tenant_count",
+    "identity_tenant_membership": "identity_tenant_count",
+    "group_tenant_membership": "group_tenant_count",
+    "identity_group_membership": "identity_group_count",
+    "identity_org_membership": "identity_org_count",
+    "group_org_membership": "group_org_count",
+}
+
+
+def insert_memberships(connection: psycopg.Connection, **memberships: tuple[str, ...]) -> None:
+    """Insert typed membership rows by keyword (caller commits).
+
+    Recognized keywords: ``principal_tenant``, ``identity_tenant``,
+    ``group_tenant``, ``identity_org``, ``identity_group``, ``group_org``.
+    Each value is the participant pair expected by the table.
+    """
+    inserts = {
+        "principal_tenant": "INSERT INTO mtmf.principal_tenant_membership VALUES (%s, %s)",
+        "identity_tenant": "INSERT INTO mtmf.identity_tenant_membership VALUES (%s, %s)",
+        "group_tenant": "INSERT INTO mtmf.group_tenant_membership VALUES (%s, %s)",
+        "identity_org": "INSERT INTO mtmf.identity_org_membership VALUES (%s, %s)",
+        "identity_group": "INSERT INTO mtmf.identity_group_membership VALUES (%s, %s)",
+        "group_org": "INSERT INTO mtmf.group_org_membership VALUES (%s, %s)",
+    }
+    for name, values in memberships.items():
+        connection.execute(inserts[name], values)
+
+
+def membership_count(
+    connection: psycopg.Connection,
+    table: str,
+    where: str = "TRUE",
+    params: tuple[object, ...] = (),
+) -> int:
+    """Count rows in one ``mtmf`` table with an optional predicate."""
+    row = connection.execute(
+        psycopg.sql.SQL("SELECT count(*) FROM mtmf.{} WHERE ").format(psycopg.sql.Identifier(table))
+        + psycopg.sql.SQL(where),
+        params,
+    ).fetchone()
+    return int(row[0])
+
+
+def remove_membership(
+    connection: psycopg.Connection,
+    initiating_kind: str,
+    first_id: str,
+    second_id: str,
+    actor: str | None = None,
+) -> bool:
+    """Call the sanctioned removal function for one typed membership.
+
+    ``first_id``/``second_id`` are the two participants: for a tenant
+    membership ``(participant, tenant)``; for a leaf membership the exact
+    ``(first_entity, second_entity)`` pair. Leaf functions derive the Tenant
+    themselves and take no caller Tenant.
+    """
+    function = REMOVAL_FUNCTIONS[initiating_kind]
+    row = connection.execute(
+        psycopg.sql.SQL("SELECT {}(%s, %s, %s)").format(psycopg.sql.SQL(function)),
+        (first_id, second_id, actor),
+    ).fetchone()
+    return bool(row[0])
+
+
+def remove_identity_group_membership(
+    connection: psycopg.Connection, identity: str, group: str, actor: str | None = None
+) -> bool:
+    """Remove exactly one IdentityGroupMembership (leaf, no cascade)."""
+    return remove_membership(connection, "identity_group_membership", identity, group, actor=actor)
+
+
+def remove_identity_org_membership(
+    connection: psycopg.Connection,
+    identity: str,
+    organization: str,
+    actor: str | None = None,
+) -> bool:
+    """Remove exactly one IdentityOrgMembership (leaf, no cascade)."""
+    return remove_membership(
+        connection, "identity_org_membership", identity, organization, actor=actor
+    )
+
+
+def remove_group_org_membership(
+    connection: psycopg.Connection, group: str, organization: str, actor: str | None = None
+) -> bool:
+    """Remove exactly one GroupOrgMembership (leaf, no cascade)."""
+    return remove_membership(connection, "group_org_membership", group, organization, actor=actor)
+
+
+def audit_rows(connection: psycopg.Connection) -> list[tuple[object, ...]]:
+    """Return all membership-removal audit rows in insertion (id) order."""
+    return list(
+        connection.execute(
+            "SELECT id, occurred_at, initiating_kind, tenant_id, principal_id, "
+            "identity_id, group_id, organization_id, actor_identity_id, "
+            "principal_tenant_count, identity_tenant_count, group_tenant_count, "
+            "identity_group_count, identity_org_count, group_org_count "
+            "FROM mtmf.membership_removal_audit ORDER BY occurred_at, id"
+        ).fetchall()
+    )
+
+
+def seed_full_membership_graph(connection: psycopg.Connection) -> None:
+    """Seed the canonical two-Tenant entity graph with every membership.
+
+    Tenant A: P/IA/ORG_A/GROUP_A; Tenant B: P/IB/ORG_B/GROUP_B. Both
+    Tenant memberships exist for the Principal, and each Identity, Org,
+    Group, and cross relationship is complete in its own Tenant.
+    """
+    seed_base_entities(connection)
+    insert_memberships(
+        connection,
+        principal_tenant=(PRINCIPAL, TENANT_A),
+        identity_tenant=(IDENTITY_A, TENANT_A),
+        identity_org=(IDENTITY_A, ORG_A),
+        group_tenant=(GROUP_A, TENANT_A),
+        identity_group=(IDENTITY_A, GROUP_A),
+        group_org=(GROUP_A, ORG_A),
+    )
+    insert_memberships(
+        connection,
+        principal_tenant=(PRINCIPAL, TENANT_B),
+        identity_tenant=(IDENTITY_B, TENANT_B),
+        identity_org=(IDENTITY_B, ORG_B),
+        group_tenant=(GROUP_B, TENANT_B),
+        identity_group=(IDENTITY_B, GROUP_B),
+        group_org=(GROUP_B, ORG_B),
+    )
+    connection.commit()
+
+
+def upgrade_to_revision(config: object, revision: str) -> None:
+    """Run packaged Alembic migrations to an explicit revision (test-only).
+
+    The production contract only supports ``upgrade_to_head``; this helper
+    lets the migration test build a populated revision-``0001`` database and
+    then verify an in-place upgrade to head.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    from mtmf_core.persistence.postgres.resources import migrations_script_directory
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(migrations_script_directory()))
+    cfg.attributes["mtmf_url"] = config.sqlalchemy_url  # type: ignore[attr-defined]
+    command.upgrade(cfg, revision)

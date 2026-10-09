@@ -93,7 +93,7 @@ def test_iso08_host_postgres_port_is_configurable() -> None:
     compose = _compose_dict()
     ports = compose["services"]["postgres"]["ports"]
     assert not any("5432:5432" in str(port) for port in ports)
-    assert any("${MTMF_POSTGRES_PORT" in str(port) and "55432" in str(port) for port in ports)
+    assert any("${MTMF_POSTGRES_PORT" in str(port) and "25432" in str(port) for port in ports)
 
 
 def test_iso010_to_iso011_no_broad_discovery_or_global_prune_in_scripts() -> None:

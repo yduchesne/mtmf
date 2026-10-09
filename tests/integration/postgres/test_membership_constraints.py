@@ -142,6 +142,10 @@ def test_mem07b_valid_identity_group_membership_accepted(db, dsn: str) -> None:
                 (helpers.IDENTITY_A, helpers.TENANT_A),
             )
             connection.execute(
+                "INSERT INTO mtmf.group_tenant_membership VALUES (%s, %s)",
+                (helpers.GROUP_A, helpers.TENANT_A),
+            )
+            connection.execute(
                 "INSERT INTO mtmf.identity_group_membership VALUES (%s, %s)",
                 (helpers.IDENTITY_A, helpers.GROUP_A),
             )
@@ -397,6 +401,10 @@ _PREREQUISITES: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
         (
             "INSERT INTO mtmf.identity_tenant_membership VALUES (%s, %s)",
             (helpers.IDENTITY_A, helpers.TENANT_A),
+        ),
+        (
+            "INSERT INTO mtmf.group_tenant_membership VALUES (%s, %s)",
+            (helpers.GROUP_A, helpers.TENANT_A),
         ),
     ),
     "identity_org_membership": (

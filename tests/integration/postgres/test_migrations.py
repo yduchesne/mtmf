@@ -49,6 +49,14 @@ EXPECTED_FUNCTION_NAMES = {
     "guard_permission_immutable_columns",
     "guard_action_immutable_columns",
     "block_membership_updates",
+    "membership_delete_guard",
+    "guard_membership_removal_audit",
+    "remove_principal_tenant_membership",
+    "remove_identity_tenant_membership",
+    "remove_group_tenant_membership",
+    "remove_identity_group_membership",
+    "remove_identity_org_membership",
+    "remove_group_org_membership",
 }
 
 _FORBIDDEN_TABLES = (
@@ -81,7 +89,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(mtmf_config)
     revision = manager.current_revision()
-    assert revision == "0001"
+    assert revision == "0002"
     assert revision == manager.head_revision
 
 

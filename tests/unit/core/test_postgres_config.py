@@ -33,7 +33,7 @@ def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def _components() -> dict[str, str]:
     return {
         "MTMF_POSTGRES_HOST": "127.0.0.1",
-        "MTMF_POSTGRES_PORT": "55432",
+        "MTMF_POSTGRES_PORT": "25432",
         "MTMF_POSTGRES_DB": "mtmf",
         "MTMF_POSTGRES_USER": "mtmf",
         "MTMF_POSTGRES_PASSWORD": "mtmf-dev-password",
@@ -87,7 +87,7 @@ def test_ambiguous_url_and_components_fails_closed(monkeypatch: pytest.MonkeyPat
         "os.environ",
         {
             **_components(),
-            "MTMF_DATABASE_URL": "postgresql+psycopg://mtmf:pw@127.0.0.1:55432/mtmf",
+            "MTMF_DATABASE_URL": "postgresql+psycopg://mtmf:pw@127.0.0.1:25432/mtmf",
         },
     )
     with pytest.raises(PostgresConfigError):
