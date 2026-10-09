@@ -34,7 +34,7 @@ Ownership is immutable creator provenance. It is distinct from current administr
 
 ### 2.3 Lifecycle
 
-Soft deletion is represented independently from active/inactive state:
+For domain entities, soft deletion is represented independently from active/inactive state. Typed membership relationships instead use physical deletion (Section 7):
 
 ```python
 class DeletionStatus(IntEnum):
@@ -203,15 +203,19 @@ A Group is exclusive to exactly one Tenant and has GroupTenantMembership in that
 
 ### Membership removal and dependent-state cascade
 
-Membership removal is a logical/soft deletion, not physical destruction of membership identity or provenance. Removal of a prerequisite membership MUST atomically transition every dependent membership in the affected Tenant to the removed state:
+Typed membership relationships are current-state facts, not soft-deletable domain entities. Removing a membership MUST physically delete its row. Removal of a prerequisite membership MUST atomically hard-delete every dependent membership in the affected Tenant:
 
 1. Removing `PrincipalTenantMembership(P, T)` removes every `IdentityTenantMembership(I, T)` where Identity `I` belongs to Principal `P`. Each removed Identity-Tenant membership also triggers the dependent removals in rule 2.
 2. Removing `IdentityTenantMembership(I, T)` removes every `IdentityOrgMembership(I, O)` where Organization `O` belongs to Tenant `T`, and every `IdentityGroupMembership(I, G)` where Group `G` belongs exclusively to `T`.
 3. Removing `GroupTenantMembership(G, T)` removes every `GroupOrgMembership(G, O)` where Organization `O` belongs to `T`, and every `IdentityGroupMembership(I, G)` for that Group.
 
-A membership outside the affected Tenant MUST remain unchanged. No active dependent membership may remain after its prerequisite membership is removed. Cascades MUST be enforced at the trusted persistence/write boundary in one transaction; callers MUST NOT be required to perform dependent removals individually. Removal of a Group-Tenant membership does not, by itself, remove any Identity-Tenant membership.
+A membership outside the affected Tenant MUST remain unchanged. No dependent membership row may remain after its prerequisite membership is removed. Cascades MUST be enforced at the trusted persistence/write boundary in one transaction; callers MUST NOT be required to perform dependent removals individually. Removal of a Group-Tenant membership does not, by itself, remove any Identity-Tenant membership.
 
-These rules apply to effective removal of membership (including soft deletion); deactivation semantics must not be silently conflated with deletion. Restoration/rejoining remains subject to the separately unresolved restoration policy and MUST NOT automatically resurrect prior dependent memberships.
+Membership rows have no deletion-status or activation-status lifecycle. Rejoining requires an explicit new membership insertion; it MUST NOT automatically recreate previously removed Organization or Group memberships. Domain-entity soft-deletion and unresolved entity-restoration policy are separate concerns.
+
+### Membership removal audit
+
+Each initiating membership-removal operation MUST write **one compact operation-level audit record**, atomically with the hard deletion and its entire cascade. The record MUST identify the initiating typed relationship and its participants (and Tenant context), operation timestamp, actor Identity when available, and aggregate counts of physically removed memberships **by membership type** (including the initiating membership in its corresponding count). Audit records MUST NOT enumerate or embed all affected identities, groups, organizations, or dependent memberships; MUST NOT emit one audit event per cascaded membership; and MUST NOT be treated as a complete historical membership ledger. The counts MUST reflect actual deleted rows, not estimates. A failed or rolled-back removal MUST leave neither committed deletions nor a committed audit record. An unauthorized or protected removal MUST be rejected before mutation; an unavailable actor is represented explicitly rather than fabricated. Audit data is retained independently of current membership rows and is not a source of authorization membership.
 
 Tenant-bound authorization relationships MUST NOT cross Tenant boundaries.
 
