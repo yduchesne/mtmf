@@ -56,7 +56,7 @@ Activation and deactivation are explicit state transitions. Setting an object ac
 
 Whether restoration of soft-deleted objects is supported remains **UNRESOLVED**.
 
-The exact set of domain object types supporting ACTIVE/INACTIVE state remains **UNRESOLVED**.
+For ordinary Tenants, PR 10 specifies explicit PROVISIONING, ACTIVE and SUSPENDED states; only ACTIVE supports ordinary Tenant sessions. The root Tenant is ACTIVE and cannot be suspended. The exact active/inactive applicability for **other** domain object types remains **UNRESOLVED**. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
 
 ### 2.4 Application extension data
 
@@ -168,6 +168,10 @@ Principal kinds such as human, service, or agent remain **UNRESOLVED**.
 ---
 
 ## 6. Identity
+
+### Local Identity classification (PR 10)
+
+An Identity has an explicit origin classification, LOCAL or FEDERATED. The classification is not inferred from names, UUIDs or the existence of credentials. Legacy unknown-origin Identities require verified classification before satisfying root-local continuity; they must not be defaulted to LOCAL. This is a domain attribute, not an authentication implementation. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
 
 An Identity is a concrete identity associated with exactly one Principal.
 
@@ -592,7 +596,7 @@ The following remain intentionally unsettled:
 8. Principal Organization membership;
 9. Principal kinds, including service and agent principals;
 10. exact local/federated Identity representation;
-11. complete active/inactive applicability and transition rules by object type;
+11. active/inactive applicability and transition rules for object types other than Tenant;
 12. whether soft-deleted objects can be restored;
 
 
