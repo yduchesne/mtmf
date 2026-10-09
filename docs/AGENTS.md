@@ -8,6 +8,7 @@ Before implementing a change, read the relevant authoritative project documents:
 - `docs/DOMAIN_MODEL.md` — domain objects, relationships, lifecycle, and aggregate semantics.
 - `docs/AUTHORIZATION.md` — authorization evaluation and Permission matching.
 - `docs/ARCHITECTURE.md` — package, connector, persistence, transport, and infrastructure boundaries.
+- `docs/DATABASE.md` — PostgreSQL design, proposed least-privilege runtime model, and database security verification.
 - `docs/ROADMAP_V01.md` — current high-level implementation sequence.
 
 Major architecture and security decisions are already documented. Do not replace them with alternate designs without an explicit approved documentation change.
