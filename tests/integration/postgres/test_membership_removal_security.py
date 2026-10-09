@@ -1,4 +1,4 @@
-"""Removal trust-boundary tests (SEC-01..SEC-03).
+"""Removal trust-boundary tests (SEC-01..SEC-04).
 
 SEC-01: a direct DELETE/TRUNCATE cannot bypass the cascade/audit boundary;
 memberships are hard-deleted only through the sanctioned removal functions.
@@ -8,6 +8,8 @@ stewardship state to identify a protected membership (PR 10 owns it). The
 removal functions enforce structural cascade and audit invariants only; the
 gap is asserted here and documented in ``docs/ARCHITECTURE.md`` rather than
 silently claimed as enforced.
+SEC-04: PR 7A separates the restricted runtime role from the owner and
+limits runtime EXECUTE to the six approved removal functions.
 """
 
 from __future__ import annotations
@@ -63,35 +65,34 @@ def test_sec02_sec03_protected_root_and_stewardship_enforcement_deferred(db) -> 
     assert "remove_principal_tenant_membership" in helpers.functions_in_schema(db)
 
 
-def test_sec04_privilege_model_is_single_trusted_role_not_unforgeable(db) -> None:
-    # Verified facts, **not** an assertion of adversarial enforcement:
-    # - no explicit function ACLs, so functions carry the default PUBLIC
-    #   EXECUTE grant and the transaction-local marker can be set by any role
-    #   able to run arbitrary SQL;
-    # - no explicit table grants, so only the owner role holds DML;
-    # - all six removal functions are SECURITY INVOKER.
-    # There is no distinct restricted runtime role in this schema/fixture
-    # model, so the delete guard is a trusted-path control, not an unforgeable
-    # privilege boundary (documented in docs/ARCHITECTURE.md).
-    function_acl = db.execute(
-        "SELECT count(*) FROM pg_catalog.pg_proc p "
-        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
-        "WHERE n.nspname = %s AND p.proacl IS NOT NULL",
-        (helpers.SCHEMA,),
+def test_sec04_privilege_model_separates_runtime_from_owner(db) -> None:
+    # PR 7A replaces the single-trusted-role posture with a restricted
+    # runtime login. The runtime role holds no direct table privileges, no
+    # schema CREATE, and EXECUTE only on the six approved removal
+    # signatures, which are owner-owned SECURITY DEFINER entry points.
+    assert not db.execute(
+        "SELECT has_schema_privilege('mtmf_runtime', 'mtmf', 'CREATE')"
     ).fetchone()[0]
-    assert function_acl == 0
-    table_acl = db.execute(
+    table_privileges = db.execute(
         "SELECT count(*) FROM pg_catalog.pg_class c "
         "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-        "WHERE n.nspname = %s AND c.relkind = 'r' AND c.relacl IS NOT NULL",
+        "WHERE n.nspname = %s AND c.relkind IN ('r', 'p', 'v', 'm') "
+        "AND has_table_privilege('mtmf_runtime', c.oid, 'SELECT')",
         (helpers.SCHEMA,),
     ).fetchone()[0]
-    assert table_acl == 0
-    invoker_functions = db.execute(
+    assert table_privileges == 0
+    runtime_functions = db.execute(
+        "SELECT count(*) FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = %s AND has_function_privilege('mtmf_runtime', p.oid, 'EXECUTE')",
+        (helpers.SCHEMA,),
+    ).fetchone()[0]
+    assert runtime_functions == 6
+    definer_functions = db.execute(
         "SELECT count(*) FROM pg_catalog.pg_proc p "
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = %s AND p.proname LIKE 'remove_%%_membership' "
-        "AND NOT p.prosecdef",
+        "AND p.prosecdef AND pg_get_userbyid(p.proowner) = 'mtmf_owner'",
         (helpers.SCHEMA,),
     ).fetchone()[0]
-    assert invoker_functions == 6
+    assert definer_functions == 6

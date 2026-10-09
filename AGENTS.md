@@ -8,7 +8,7 @@ Before implementing a change, read the relevant authoritative project documents:
 - `docs/DOMAIN_MODEL.md` — domain objects, relationships, lifecycle, and aggregate semantics.
 - `docs/AUTHORIZATION.md` — authorization evaluation and Permission matching.
 - `docs/ARCHITECTURE.md` — package, connector, persistence, transport, and infrastructure boundaries.
-- `docs/DATABASE.md` — PostgreSQL design, proposed least-privilege runtime model, and database security verification.
+- `docs/DATABASE.md` — PostgreSQL design, implemented least-privilege runtime role model, and database security verification.
 - `docs/ROADMAP_V01.md` — current high-level implementation sequence.
 
 Major architecture and security decisions are already documented. Do not replace them with alternate designs without an explicit approved documentation change.
@@ -69,6 +69,7 @@ Canonical Python tooling:
 - Pytest is the unit-test runner; the canonical unit suite lives under `tests/unit`.
 - Unit-test coverage must remain at least **85%** for all production MTMF packages; the gate fails below that threshold.
 - `./build.sh --qa` is the canonical quality command and runs the full gate (Ruff format check, Ruff lint, strict Mypy, unit tests with the coverage gate).
+- `./build.sh --integration` runs the real-PostgreSQL suite against the explicitly configured MTMF database. Provision the administrator-owned `mtmf_owner`/`mtmf_migrator`/`mtmf_runtime` roles first with `scripts/mtmf-provision-roles.py` and export the role-scoped `MTMF_MIGRATOR_*`/`MTMF_RUNTIME_*` configuration (see `.env.example`). The privilege tests connect as the actual restricted runtime login and fail closed when role credentials are absent.
 
 Keep domain objects independent of transport, HTTP frameworks, PostgreSQL drivers, and persistence implementations.
 

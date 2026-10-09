@@ -2,29 +2,29 @@
 
 ## 1. Status, authority, and scope
 
-**Status: proposed target architecture for PR 7A; not yet implemented.**
+**Status: implemented in PR 7A (Alembic revision `0003`); verified by real-role integration tests.**
 
-This document is the authoritative PostgreSQL-specific design for MTMF's database roles, grants, stored-function execution boundary, migrations, connection handling, and privilege verification. It does **not** assert that these controls already exist.
+This document is the authoritative PostgreSQL-specific design for MTMF's database roles, grants, stored-function execution boundary, migrations, connection handling, and privilege verification. Sections 3-10 describe implemented controls exercised by `tests/integration/postgres/test_runtime_privileges.py` (PRIV-01..PRIV-20), the existing membership-removal regression suite, and the canonical `./build.sh --qa`, `--sec`, and `--integration` gates.
 
 Normative security invariants remain in [SECURITY_MODEL.md](SECURITY_MODEL.md); domain semantics in [DOMAIN_MODEL.md](DOMAIN_MODEL.md); application authorization in [AUTHORIZATION.md](AUTHORIZATION.md); component boundaries in [ARCHITECTURE.md](ARCHITECTURE.md). If this document conflicts with the security constitution, **SECURITY_MODEL.md wins**.
 
 The PostgreSQL provider is an internal implementation of MTMF's persistence SPI. MTMF application code uses versioned stored functions for database operations; migrations are owned by the MTMF migration manager, not the runtime application identity.
 
-## 2. Current implementation and known gaps (PR 6B / 6B1)
+## 2. Transition history (pre-PR 7A) and what replaced it
 
-As of the PR 6B/6B1 implementation on `dev/db-adjustments` (not yet incorporated into `main` at the time this document was authored):
+Before PR 7A, the schema and migrations operated under a single trusted database role; there was no separate restricted runtime role. The six membership removal functions were `SECURITY INVOKER` with `SET search_path = ''`, functions carried PostgreSQL's default `PUBLIC EXECUTE`, membership tables had no explicit grants (so only the owner held DML), and the membership DELETE/TRUNCATE triggers checked a transaction-local `mtmf.membership_removal` marker that a SQL-capable caller could forge. That posture was a transitional development assumption, not a production-ready privilege model, and it is no longer the operating model.
 
-- Schema and migrations operate under a single trusted database role; there is no separate restricted runtime role.
-- Six membership removal functions use `SECURITY INVOKER` and `SET search_path = ''`.
-- Functions have no explicit ACLs, leaving PostgreSQL's default `PUBLIC EXECUTE` behavior in effect.
-- Membership tables have no explicit grants; the owner can directly mutate them.
-- Membership DELETE and TRUNCATE triggers check the transaction-local `mtmf.membership_removal` marker. A SQL-capable caller can set this custom GUC, so it is **not** an adversarial authorization boundary.
-- An append-only audit trigger blocks ordinary UPDATE/DELETE/TRUNCATE, but a privileged table owner or superuser can disable triggers; a role with INSERT can forge audit records.
-- Root/bootstrap and Tenant Stewardship protection is **not** enforced by these structural removal functions; PR 10 must add authoritative state and protection.
+PR 7A (revision `0003`) replaced it with a demonstrably restricted runtime login, reviewed privileged entry points, and migration credentials isolated from runtime:
 
-**Never describe the current marker-based guard as a security boundary against arbitrary SQL.** The current operating assumption is that unrestricted SQL is available only to trusted persistence code. This is a transitional development posture, not a production-ready privilege model.
+- `mtmf_owner` owns the `mtmf` schema and every MTMF object;
+- `mtmf_migrator` runs migrations by `SET ROLE mtmf_owner` (INHERIT FALSE);
+- `mtmf_runtime` has schema `USAGE` and `EXECUTE` on exactly the six approved removal signatures, with no direct table/sequence DML/SELECT, no schema CREATE, no audit write, no trigger or migration access, and no membership in owner/migrator;
+- the six removal functions are owner-owned `SECURITY DEFINER` entry points with fixed `search_path = ''` and schema-qualified bodies;
+- the transaction-local marker remains only as defense in depth; the enforced boundary is the runtime role's inability to issue direct DML.
 
-## 3. Target security invariants (PR 7A)
+The marker is still **not** an authorization boundary against a role able to run arbitrary SQL, and `SECURITY DEFINER` EXECUTE is database capability, not domain authorization (sections 6-7).
+
+## 3. Implemented security invariants (PR 7A)
 
 1. The application connects using a **non-owner, non-superuser, non-CREATEROLE, non-BYPASSRLS** runtime login with no schema creation, table mutation, trigger-management, or role-escalation privileges.
 2. Runtime callers can invoke **only explicitly approved MTMF functions**. They cannot directly INSERT, UPDATE, DELETE, TRUNCATE, or otherwise mutate MTMF authoritative tables or audit tables.
@@ -34,98 +34,107 @@ As of the PR 6B/6B1 implementation on `dev/db-adjustments` (not yet incorporated
 6. MTMF authorization remains deny-by-default and Tenant-scoped. **SQL EXECUTE privilege is not a substitute for domain authorization**: application use cases must authorize the acting Identity, and security-critical invariants must be enforced at the appropriate trusted write boundary.
 7. All PostgreSQL operations remain scoped to the MTMF-owned database/schema. Local Podman/Compose resources remain isolated from unrelated projects.
 
-## 4. Roles and ownership
+## 4. Roles, ownership, and bootstrap
 
 | Role | LOGIN | Owns schema/tables | Primary use | Restrictions |
 |---|---|---|---|---|
-| `mtmf_owner` | NOLOGIN (preferred) | Yes | Own MTMF schema, tables, functions, and audit | Not used for application connections |
-| `mtmf_migrator` | LOGIN (deployment only) | No direct ownership required; controlled ability to `SET ROLE mtmf_owner` | Apply packaged Alembic revisions and grants | Credentials absent from application runtime |
+| `mtmf_owner` | NOLOGIN | Yes | Own MTMF schema, tables, functions, and audit | Not used for application connections |
+| `mtmf_migrator` | LOGIN (deployment only) | No direct ownership; may `SET ROLE mtmf_owner` (`INHERIT FALSE`, `SET TRUE`) | Apply packaged Alembic revisions and grants | Credentials absent from application runtime |
 | `mtmf_runtime` | LOGIN | No | Execute approved application stored functions | No direct table DML/DDL, no membership in owner/migrator roles |
 | PostgreSQL administrator | Deployment-specific | Administrative | Provision roles/database and emergency recovery | Not used by MTMF application |
 
-These are **logical role names**; deployment may namespace them. PR 7A must explicitly settle and test PostgreSQL's role membership and `SET ROLE` semantics for the chosen PostgreSQL 18 configuration. `mtmf_owner` should own security-definer functions; `mtmf_runtime` must never inherit or assume that owner role.
+Roles are cluster-wide and are provisioned **outside** Alembic by an administrator-invoked, idempotent operation:
 
-Migration ownership must be deterministic: avoid object ownership accidentally defaulting to `mtmf_migrator` when the intended owner is `mtmf_owner`. Bootstrap role creation may require an administrator and must not be attempted by an ordinary runtime process.
+```text
+uv run python scripts/mtmf-provision-roles.py
+uv run python scripts/mtmf-provision-roles.py --adopt-existing-schema  # legacy handoff
+```
 
-## 5. Target privilege matrix
+`scripts/mtmf-provision-roles.py` reads the administrator connection from `MTMF_POSTGRES_*` / `MTMF_DATABASE_URL`, reads the deployment passwords from `MTMF_MIGRATOR_POSTGRES_PASSWORD` / `MTMF_RUNTIME_POSTGRES_PASSWORD`, and never logs a DSN. The shared implementation lives in `mtmf_core.persistence.postgres.roles`. Re-running it never errors or escalates rights. `mtmf_owner` alone receives database-level `CREATE` (it creates the `mtmf` schema); the runtime role receives none.
+
+`--adopt-existing-schema` is the one-time administrator-approved ownership handoff for a database whose `mtmf` objects predate this model; it only touches objects inside the `mtmf` schema. Without it, `PostgresMigrationManager.upgrade_to_head` fails loudly before Alembic runs with an actionable message listing the non-owner objects (revision `0003` repeats the assertion as defense in depth), rather than silently reassigning ownership.
+
+Migration ownership is deterministic: every migration connection (the plain-psycopg schema bootstrap and the SQLAlchemy Alembic connection) executes under `SET ROLE mtmf_owner`, so objects never default to the authenticating migrator login. `PostgresMigrationManager` rejects a configuration carrying the runtime role.
+
+## 5. Privilege matrix
 
 | Object / operation | Owner | Migrator (controlled deployment) | Runtime |
 |---|---|---|---|
 | `mtmf` schema USAGE | Yes | Yes | Yes |
 | `mtmf` schema CREATE / ALTER / DROP | Yes | Via controlled owner role | **No** |
-| MTMF table SELECT | Yes | Via controlled owner role | **No by default** |
+| MTMF table SELECT | Yes | Via controlled owner role | **No** |
 | MTMF table INSERT / UPDATE / DELETE / TRUNCATE | Yes | Via controlled owner role | **No** |
-| MTMF sequences USAGE / UPDATE | Yes | Via controlled owner role | **No by default** |
+| MTMF sequences USAGE / UPDATE | Yes | Via controlled owner role | **No** |
 | Approved application function EXECUTE | Yes | Via controlled owner role | **Explicit allowlist only** |
 | Internal trigger/helper function EXECUTE | Yes | Via controlled owner role | **No** |
 | Audit table direct INSERT / UPDATE / DELETE / TRUNCATE | Yes | Via controlled owner role | **No** |
 | Schema migration and Alembic version changes | Yes | Yes, controlled | **No** |
 | Trigger disable, table ownership changes, arbitrary grants | Owner/admin | Controlled deployment | **No** |
 
-Runtime reads should use reviewed read functions, not broad table SELECT grants, consistent with MTMF's stored-function-only persistence convention. If PR 7A identifies a required exception, it must be justified, documented, and covered by tests before approval.
+Runtime reads use reviewed read functions in future PRs, not broad table SELECT grants, consistent with MTMF's stored-function-only persistence convention.
 
 ## 6. Function execution and ownership
 
 ### 6.1 Default-deny grants
 
-- Revoke `EXECUTE ON ALL FUNCTIONS IN SCHEMA mtmf FROM PUBLIC` for existing functions and set **default privileges for each object-creating role** so newly created functions are not automatically executable by `PUBLIC`.
-- Grant `EXECUTE` on an **enumerated set of public persistence entry-point signatures** to `mtmf_runtime`; internal functions are not granted merely because they live in `mtmf`.
-- Do not grant schema CREATE, table DML, sequence write, or membership in the owner role to runtime.
-- Account for overloads and default arguments when enumerating signatures: PostgreSQL function privileges are signature-specific.
-- Review grants on every migration and assert effective privileges, not merely the presence/absence of ACL text.
+- `REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA mtmf FROM PUBLIC` removes existing PUBLIC grants.
+- `ALTER DEFAULT PRIVILEGES FOR ROLE mtmf_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` sets owner-global default privileges so newly created functions are not automatically executable by `PUBLIC`. A schema-scoped `ALTER DEFAULT PRIVILEGES` cannot negate the built-in global PUBLIC default, so the global form is required; both global and schema-scoped revokes are applied.
+- Only the six public persistence entry-point signatures are granted `EXECUTE` to `mtmf_runtime`; internal functions are not granted merely because they live in `mtmf`.
+- Runtime holds no schema CREATE, table DML, sequence write, or owner-role membership.
+- Function privileges are signature-specific; grants enumerate the exact `(uuid, uuid, uuid)` removal signatures, and default-argument invocations resolve to those signatures.
+- Revision `0003` asserts effective privileges (via `has_*_privilege` and `aclexplode`) inside the migration transaction and rolls back if the intended posture is not achieved.
 
 ### 6.2 SECURITY DEFINER boundary
 
-Current membership functions are `SECURITY INVOKER`; revoking table DELETE from runtime would break them. PR 7A must deliberately establish a privileged execution boundary, normally by converting approved write entry points to tightly reviewed `SECURITY DEFINER` functions owned by `mtmf_owner`, or by another demonstrably equivalent least-privilege design.
+The six membership-removal functions are converted to owner-owned `SECURITY DEFINER` entry points by revision `0003` (their bodies and `SET search_path = ''` are unchanged). Each:
 
-For each `SECURITY DEFINER` function:
+- uses `SET search_path = ''` and schema-qualifies every referenced table, function, and type;
+- uses no dynamic SQL and no caller-controllable object names;
+- derives Tenant scope from authoritative entity rows (`organization.tenant_id`, `group.tenant_id`) rather than trusting a caller Tenant alone;
+- preserves its row locks, cascade, actual affected-row counts, no-op semantics, and single atomic audit insert;
+- has PUBLIC EXECUTE revoked before the runtime grant is issued.
 
-- Use `SET search_path = ''` and schema-qualify every referenced table, function, type, and sequence as applicable.
-- Do not use untrusted dynamic SQL or caller-controllable object names.
-- Keep function scope narrow and input validation explicit; derive Tenant from authoritative rows.
-- Review any nested function calls and object resolution for privilege escalation.
-- Revoke default PUBLIC EXECUTE before exposing the function; explicitly grant only approved signatures.
-- Do not expose generic mutation, trigger-control, GUC-setting, or audit-insertion entry points.
-- Preserve transaction ownership by the caller: the function must not independently commit.
-- Audit any changes to function ownership or execution rights as part of migration review.
+No generic mutation, trigger-control, GUC-setting, or audit-insertion entry point is exposed. The function caller owns the transaction; no function commits independently.
 
-`SECURITY DEFINER` elevates database permissions, **not application authorization**. PR 7A must decide whether a function is safe to expose to any holder of runtime credentials or must require additional trusted context/authorization. Merely accepting an `actor_identity_id` parameter is not proof that the actor is authenticated or authorized. If the design cannot enforce the necessary trust boundary, **STOP** rather than treating function EXECUTE as an authorization decision.
+`SECURITY DEFINER` elevates database permissions, **not application authorization**. Merely accepting an `actor_identity_id` parameter is not proof that the actor is authenticated or authorized (section 7).
 
 ### 6.3 Audit and removal functions
 
-The six membership-removal entry points remain the supported deletion surface. They must retain row locking, Tenant-scoped cascades, actual affected-row counts, no-op semantics, and one atomic audit insertion.
+The six membership-removal entry points remain the supported deletion surface. They retain row locking, Tenant-scoped cascades, actual affected-row counts, no-op semantics, and one atomic audit insertion.
 
-The transaction-local marker may remain as **defense in depth**, but the enforced boundary must be runtime's inability to issue direct table DELETE/TRUNCATE or insert into audit tables. Test this with the actual runtime login, not with an owner connection. An attacker able to issue arbitrary SQL using runtime credentials must still be unable to bypass the audited removal functions.
+The transaction-local marker remains as **defense in depth**. The enforced boundary is that runtime cannot issue direct table DELETE/TRUNCATE or insert into audit tables; a forced marker still cannot bypass the privilege check. Tests exercise this with the actual runtime login, not with an owner connection (PRIV-06).
 
 The migration/owner/admin roles are outside that adversarial guarantee; they require separate operational controls and audit.
 
 ## 7. Tenant isolation and authorization boundaries
 
 - Domain authorization uses the acting Identity and active `(Tenant, Principal, Identity)` session; it is enforced by MTMF's authoritative Authorizer.
-- Database stored functions enforce structural invariants and cross-Tenant constraints. They must not trust a caller-supplied Tenant when authoritative ownership data is available.
-- A restricted runtime role shared across Tenants does **not** itself provide per-Tenant SQL isolation. A compromised runtime credential can invoke any granted function unless the function or trusted caller context enforces a narrower boundary.
-- Do not claim row-level security (RLS), per-Tenant database roles, or authenticated database session identity is implemented unless a separate approved design actually introduces it.
-- PR 10 remains responsible for root/bootstrap and Tenant Stewardship semantics; do not infer protected principals from names, UUIDs, or ownership fields.
+- Database stored functions enforce structural invariants and cross-Tenant constraints. They do not trust a caller-supplied Tenant when authoritative ownership data is available.
+- A restricted runtime role shared across Tenants does **not** itself provide per-Tenant SQL isolation. A compromised holder of the shared runtime credential can invoke any granted function, so PR 7A does **not** claim per-Tenant protection at the database level (PRIV-14 is an explicit boundary-disclosure test).
+- Row-level security, per-Tenant database roles, and authenticated database session identity are **not** implemented.
+- PR 10 remains responsible for root/bootstrap and Tenant Stewardship semantics; no protected principal is inferred from names, UUIDs, or ownership fields.
 
 ## 8. Migration and default-privilege lifecycle
 
-- Versioned SQL resources under `mtmf_core/persistence/postgres/sql/vNNN/` are installed through packaged Alembic revisions. Do not rewrite shipped `v001`, `v002`, or `0001`/ `0002` revisions to retrofit security.
-- PR 7A introduces a new additive migration and versioned SQL where appropriate, with a repeatable owner/grant bootstrap procedure.
-- Ensure every migration creates objects under the intended owner role, revokes PUBLIC privileges, and applies explicit runtime grants.
-- PostgreSQL `ALTER DEFAULT PRIVILEGES` is scoped to the object-creating role; test it under the actual migration role-switching flow.
-- Migration and runtime connection configurations must be distinct. An application startup must not silently migrate with privileged credentials.
-- No migration may discard authoritative Tenant, Principal, Identity, Group, Organization, membership, or audit data.
-- Rollback/retry failures must not leave a partially applied privilege posture; document PostgreSQL transactional DDL and any nontransactional bootstrap steps.
+- Versioned SQL resources under `mtmf_core/persistence/postgres/sql/vNNN/` are installed through packaged Alembic revisions. Shipped `v001`, `v002`, and revisions `0001`/`0002` are never rewritten.
+- Revision `0003` is additive: it normalizes ownership, revokes PUBLIC/runtime grants, sets default privileges, converts the six removal functions, grants runtime EXECUTE on exactly those signatures, and asserts the posture.
+- Every migration creates objects under the owner role (via `SET ROLE`), revokes PUBLIC privileges, and applies explicit runtime grants.
+- `ALTER DEFAULT PRIVILEGES` is scoped to the object-creating role; because all DDL runs as `mtmf_owner`, owner-scoped defaults cover every future MTMF object. Future grant changes are explicit migration responsibilities.
+- Migration and runtime connection configurations are distinct. Application startup never silently migrates with privileged credentials.
+- No migration discards authoritative Tenant, Principal, Identity, Group, Organization, membership, or audit data; upgrade-to-head is idempotent and preserves data.
+- PostgreSQL DDL is transactional; the migration assertions roll back the whole revision on failure. Role provisioning is a separate, idempotent, non-Alembic administrator step.
 
 ## 9. Connection and deployment security
 
-- Supply migration and runtime credentials through separate secrets; never commit passwords or put privileged credentials in application environment defaults.
-- Prefer least-privilege login roles, TLS as appropriate to deployment, bounded connection pools, and explicit connection timeout settings.
-- Runtime connection setup must not permit privilege escalation via role switching, untrusted `search_path`, unsafe extension installation, or object creation.
-- Integration CI may provision temporary privileged roles to set up the database, but **the test subject must connect as `mtmf_runtime`**.
-- Local Compose/Podman setup must retain MTMF resource isolation and configured host-port conventions; CI PostgreSQL service port may differ from local host ports.
+- Migration and runtime credentials are supplied through separate secrets (`MTMF_MIGRATOR_*`, `MTMF_RUNTIME_*`); the administrator security context uses `MTMF_POSTGRES_*` / `MTMF_DATABASE_URL`. Privileged credentials are never in application environment defaults and never committed.
+- `PostgresConfig.from_env(PostgresRole)` reads explicitly role-scoped variables and fails closed on missing, malformed, or ambiguous configuration; it never falls back to another PostgreSQL instance.
+- Runtime connection setup cannot escalate via role switching (`SET ROLE` is denied), untrusted `search_path`, unsafe extension installation, or object creation.
+- Integration CI provisions temporary privileged roles to set up the database, but **the privilege-test subject connects as `mtmf_runtime`** and the fixture fails setup if the identity is elevated or a superuser.
+- Local Compose/Podman setup retains MTMF resource isolation and the configured host-port prefix-2 convention.
 
-## 10. Required PR 7A verification
+## 10. Verification
+
+`tests/integration/postgres/test_runtime_privileges.py` implements PRIV-01..PRIV-20 on the actual runtime login, asserting effective privileges (`has_table_privilege`, `has_sequence_privilege`, `has_function_privilege`, `has_schema_privilege`, `aclexplode`, role membership, `prosecdef`, and function/table ownership) as well as real SQL behavior. The existing membership removal, audit, concurrency, transaction, schema, and migration suites remain the behavioral regression baseline and now run on a migrations/owner-created schema.
 
 | ID | Test using real PostgreSQL roles | Expected |
 |---|---|---|
@@ -137,30 +146,36 @@ The migration/owner/admin roles are outside that adversarial guarantee; they req
 | PRIV-06 | Runtime sets `mtmf.membership_removal=on` then attempts direct DELETE | Permission denied |
 | PRIV-07 | Runtime attempts `SET ROLE mtmf_owner` or `mtmf_migrator` | Permission denied |
 | PRIV-08 | Runtime queries/updates Alembic version table or disables triggers | Permission denied |
-| PRIV-09 | Fresh migration creates a new function | Not PUBLIC executable; only explicitly approved grants work |
+| PRIV-09 | Owner creates a new function without an explicit grant | Not PUBLIC executable; runtime denied; explicit grant works |
 | PRIV-10 | Audit insert fails during approved removal | Whole removal rolls back |
-| PRIV-11 | Runtime tries cross-Tenant or malformed membership operations | Structural rules fail closed |
-| PRIV-12 | Concurrent duplicate removals through restricted role | At most one removal and one audit |
+| PRIV-11 | Runtime tries cross-Tenant or malformed membership operations | Documented no-op; no cross-Tenant deletion |
+| PRIV-12 | Concurrent duplicate removals through restricted role | One removal and one audit |
 | PRIV-13 | Runtime attempts table SELECT or sequence use without grants | Permission denied |
-| PRIV-14 | Caller spoofs an actor Identity or Tenant | No unauthorized domain action; test at the correct trusted application boundary |
+| PRIV-14 | Runtime supplies a fabricated `actor_identity_id` | Audit records the unverified caller assertion; no authentication/authorization claim |
+| PRIV-15 | Introspect every owner, effective privilege, and `prosecdef` | Exactly the documented posture |
+| PRIV-16 | Populated re-run of `upgrade_to_head` | Data/audit preserved; revision `0003`; no permission drift |
+| PRIV-17 | Runtime config supplied to migration manager | Rejected; no schema mutation |
+| PRIV-18 | New owner-created function after default-privilege setup | No PUBLIC EXECUTE without explicit grant |
+| PRIV-19 | Non-owner, non-runtime login attempts an approved function | Denied |
+| PRIV-20 | Runtime attempts GRANT, ALTER FUNCTION, CREATE FUNCTION, trigger disable, audit spoof | Denied |
 
-Tests must introspect `has_table_privilege`, `has_function_privilege`, role membership, function owner/`prosecdef`, schema privileges, and actual behavior. A test that merely inspects missing ACLs does **not** prove effective denial. Run the normal QA and PostgreSQL integration gates without weakening thresholds.
+A test that merely inspects missing ACLs does not prove effective denial. Run the normal QA and PostgreSQL integration gates without weakening thresholds.
 
 ## 11. Delivery sequence and acceptance
 
-1. **Documentation PR (this document):** agree on roles, threat model, privilege matrix, function execution boundary, and testing contract.
-2. **PR 7A:** implement role provisioning, new migration/SQL, restricted runtime connectivity, grants, and real-role security tests.
+1. **Documentation (this document):** agree on roles, threat model, privilege matrix, function execution boundary, and testing contract.
+2. **PR 7A (implemented):** role provisioning, migration/SQL revision `0003`, restricted runtime connectivity, grants, and real-role security tests.
 3. **PR 7B:** implement production PostgreSQL repositories and UnitOfWork against that restricted runtime role.
 4. **PR 10:** implement authoritative root/bootstrap and Tenant Stewardship protection and test it through the production write path.
 
-PR 7A is not complete until privileged migration access and restricted runtime access are operationally distinct, direct DML and audit bypass are denied under the runtime role, approved persistence operations succeed, and the privilege posture remains correct after subsequent migrations.
+PR 7A is complete when privileged migration access and restricted runtime access are operationally distinct, direct DML and audit bypass are denied under the runtime role, approved persistence operations succeed, and the privilege posture remains correct after subsequent migrations. PR 7B cannot claim security conformance until these real-role acceptance gates pass.
 
-## 12. Open design decisions requiring explicit review before PR 7A
+## 12. Residual trust limitations and open design decisions
 
-- Whether one shared runtime login is sufficient for the threat model, or whether stronger Tenant isolation is required at the database level.
-- How authenticated acting-Identity context is bound to stored-function calls without trusting arbitrary caller-supplied actor IDs.
-- Whether all public write entry points use `SECURITY DEFINER` or a more granular equivalent; the exact owner/migrator membership configuration.
-- How to deploy role bootstrap and credential rotation without exposing privileged credentials to application startup.
-- Whether the membership-removal GUC guard remains as defense in depth after privilege separation.
+- **Shared runtime login.** One runtime login is used for all Tenants. A compromised holder can invoke any granted function for any Tenant; per-Tenant isolation is not enforced at the database level. A trusted-identity/authentication design that binds authenticated acting-Identity context to stored-function calls without trusting caller-supplied IDs remains an explicit open decision.
+- **Actor provenance is unverified.** `actor_identity_id` is provenance input, never authentication or Tenant authorization.
+- **Write entry points.** PR 7B must add reviewed read/write functions under the same default-deny model; the exact set and whether every entry point uses `SECURITY DEFINER` remains PR 7B scope.
+- **Credential rotation.** Deployment/rotation of role credentials without exposing privileged credentials to startup remains an operational concern.
+- **Defense in depth.** The membership-removal GUC marker remains but is not an authorization boundary.
 
 Do not let a coding agent silently resolve these security architecture choices by convenience.

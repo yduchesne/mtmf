@@ -60,7 +60,7 @@ def test_mig02_populated_0001_upgrades_to_head_without_data_loss(db, mtmf_config
     # upgrade in place and confirm every membership fact survived.
     with psycopg.connect(dsn, autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS mtmf CASCADE")
-        connection.execute("CREATE SCHEMA mtmf")
+        connection.execute("CREATE SCHEMA mtmf AUTHORIZATION mtmf_owner")
     helpers.upgrade_to_revision(mtmf_config, "0001")
     with psycopg.connect(dsn, autocommit=True) as connection:
         helpers.seed_full_membership_graph(connection)
@@ -81,7 +81,7 @@ def test_mig02_populated_0001_upgrades_to_head_without_data_loss(db, mtmf_config
 def test_mig02b_upgrade_fails_loudly_on_new_invariant_violation(db, mtmf_config, dsn: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS mtmf CASCADE")
-        connection.execute("CREATE SCHEMA mtmf")
+        connection.execute("CREATE SCHEMA mtmf AUTHORIZATION mtmf_owner")
     helpers.upgrade_to_revision(mtmf_config, "0001")
     with psycopg.connect(dsn, autocommit=True) as connection:
         helpers.seed_base_entities(connection)

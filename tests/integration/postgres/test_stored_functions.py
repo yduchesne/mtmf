@@ -2,9 +2,10 @@
 
 PR 6 installs one infrastructure proof function from the versioned,
 packaged SQL resources to establish the convention PR 7 extends. It must
-be schema-qualified, callable after an empty-database migration, carry
-no repository CRUD family, use no SECURITY DEFINER, and receive no
-broad privilege grants.
+be schema-qualified and callable after an empty-database migration. PR 7A
+adds the reviewed ``SECURITY DEFINER`` membership-removal entry points and
+their explicit runtime grants; every other function stays a plain,
+non-elevated helper with PUBLIC EXECUTE revoked.
 """
 
 from __future__ import annotations
@@ -40,21 +41,43 @@ def test_fun04_no_repository_crud_function_family(db) -> None:
         assert not any(name.startswith(fragment) for name in functions)
 
 
-def test_fun05_no_security_definer_used(db) -> None:
-    row = db.execute(
-        "SELECT count(*) FROM pg_catalog.pg_proc p "
+def test_fun05_only_approved_removal_functions_use_security_definer(db) -> None:
+    rows = db.execute(
+        "SELECT p.proname, p.prosecdef, pg_get_userbyid(p.proowner) "
+        "FROM pg_catalog.pg_proc p "
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
-        "WHERE n.nspname = %s AND p.prosecdef",
+        "WHERE n.nspname = %s AND p.prosecdef "
+        "ORDER BY p.proname",
         (helpers.SCHEMA,),
-    ).fetchone()
-    assert row[0] == 0
+    ).fetchall()
+    assert len(rows) == 6
+    assert all(name.startswith("remove_") and owner == "mtmf_owner" for name, _def, owner in rows)
+    # The infrastructure proof function is deliberately not elevated.
+    assert not db.execute(
+        "SELECT prosecdef FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = %s AND p.proname = 'mtf_schema_version'",
+        (helpers.SCHEMA,),
+    ).fetchone()[0]
 
 
-def test_fun06_privileges_are_minimal_no_explicit_grants(db) -> None:
-    row = db.execute(
+def test_fun06_privileges_are_explicit_default_deny(db) -> None:
+    # PR 7A makes function ACLs explicit: PUBLIC EXECUTE is revoked for
+    # every function, and only the six approved removal signatures are
+    # granted to the restricted runtime role.
+    public_executable = db.execute(
         "SELECT count(*) FROM pg_catalog.pg_proc p "
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
-        "WHERE n.nspname = %s AND p.proacl IS NOT NULL",
+        "WHERE n.nspname = %s AND EXISTS ("
+        "  SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+        "  WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')",
         (helpers.SCHEMA,),
-    ).fetchone()
-    assert row[0] == 0
+    ).fetchone()[0]
+    assert public_executable == 0
+    runtime_executable = db.execute(
+        "SELECT count(*) FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = %s AND has_function_privilege('mtmf_runtime', p.oid, 'EXECUTE')",
+        (helpers.SCHEMA,),
+    ).fetchone()[0]
+    assert runtime_executable == 6
