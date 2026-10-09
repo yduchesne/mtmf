@@ -239,7 +239,7 @@ A test that merely inspects missing ACLs does not prove effective denial. Run th
 2. **PR 7A (implemented):** role provisioning, migration/SQL revision `0003`, restricted runtime connectivity, grants, and real-role security tests.
 3. **PR 7B (implemented):** the production `PostgresMtmfSpi` provider, one-real-transaction UnitOfWork, all 13 typed repositories, the 44 reviewed repository stored functions in additive revision `0004`, error translation, and real-runtime provider integration slices V1-V6.
 4. **PR 9 (implemented):** the two typed Role-assignment tables and their restrictive composite foreign keys, the eight reviewed Role-assignment stored functions plus three private validation helpers in additive revision `0005`, the matching in-memory and PostgreSQL repositories, and the application-layer effective-Role resolver.
-5. **PR 10:** implement authoritative root/bootstrap and Tenant Stewardship protection and test it through the production write path.
+5. **PR 10:** implement the [root and stewardship security contract](ROOT_AND_STEWARDSHIP.md): serialized/idempotent bootstrap; protected root and designated local Identity; one eligible steward and explicitly designated acting Identity per active ordinary Tenant; atomic transfer and controlled recovery; safeguards across existing write paths; and real-runtime security tests.
 
 PR 7A is complete when privileged migration access and restricted runtime access are operationally distinct, direct DML and audit bypass are denied under the runtime role, approved persistence operations succeed, and the privilege posture remains correct after subsequent migrations. PR 7B cannot claim security conformance until these real-role acceptance gates pass.
 
@@ -253,5 +253,7 @@ PR 7A is complete when privileged migration access and restricted runtime access
 - **Assignment prerequisite restriction.** Role assignments reference their prerequisite membership rows with restrictive composite foreign keys, so removing a prerequisite membership while a dependent assignment exists fails deterministically and rolls back the whole removal. Revocation of the assignment is an explicit, separately authorized application operation; a shared runtime login invoking the assignment function is database capability, not domain authorization.
 - **Credential rotation.** Deployment/rotation of role credentials without exposing privileged credentials to startup remains an operational concern.
 - **Defense in depth.** The membership-removal GUC marker remains but is not an authorization boundary.
+
+**PR 10 design, not yet implemented:** structural root/stewardship invariants must be enforced by reviewed database constraints, guards and transaction-safe functions across existing and new mutation paths. Bootstrap and root recovery require separately controlled deployment authority. Stewardship operations require trusted acting-Identity authorization; merely granting EXECUTE to the shared runtime login is insufficient. The exact privileged orchestration mechanism must be reviewed before exposing any sensitive write function. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md).
 
 Do not let a coding agent silently resolve these security architecture choices by convenience.

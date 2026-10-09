@@ -124,7 +124,7 @@ Verified by the unit suite (domain, in-memory persistence contracts, effective-R
 
 Implement system bootstrap, root Principal/root Tenant invariants, mandatory local Identity establishment, root membership, built-in Roles/policy, ordinary Tenant stewardship, transfer/recovery rules that are sufficiently specified, and atomic stewardship constraints.
 
-Any still-unresolved acting-Identity stewardship rule must be settled before its dependent behavior is implemented.
+The acting-Identity rule and root continuity requirements are now specified in [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md), with normative updates in the Security and Domain Models. PR 10 must implement the explicit steward acting-Identity designation, protected local root Identity, serialized/idempotent bootstrap, atomic stewardship transfer, existing-write-path guards, and controlled recovery without treating the shared runtime database login as an authenticated user. Exact privileged service orchestration and built-in Permission composition must be reviewed before enabling sensitive operations.
 
 ### PR 11 — TenantManagementGroup delegation
 
