@@ -58,6 +58,7 @@ EXPECTED_FUNCTION_NAMES = {
     "remove_identity_org_membership",
     "remove_group_org_membership",
     "role_insert_children",
+    "role_validate_children",
     "tenant_add",
     "tenant_get",
     "tenant_save",

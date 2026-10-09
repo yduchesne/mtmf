@@ -100,6 +100,8 @@ The six membership-removal functions are converted to owner-owned `SECURITY DEFI
 
 No generic mutation, trigger-control, GUC-setting, or audit-insertion entry point is exposed. The function caller owns the transaction; no function commits independently.
 
+The Role aggregate writer (`mtmf.role_add`/`mtmf.role_save` via the private `mtmf.role_validate_children` helper) additionally preserves child persistence identity: a retained `PermissionSet.id` must still belong to the saved `Role.urn`, and a retained `Permission.id` must still belong to its enclosing `PermissionSet.id`. The persisted-parent check runs **before** any Role metadata update or child delete, so a save can never reparent a currently persisted child UUID (including a same-Role cross-`PermissionSet` move). Legitimate retention, reordering, metadata changes, and removal/addition of genuinely new UUIDs are unaffected. Because there are no child tombstones, this guarantees ownership only for UUIDs that exist when the save begins; reuse of a UUID after its owning transaction has committed a removal is out of scope.
+
 `SECURITY DEFINER` elevates database permissions, **not application authorization**. Merely accepting an `actor_identity_id` parameter is not proof that the actor is authenticated or authorized (section 7).
 
 ### 6.3 Audit and removal functions
