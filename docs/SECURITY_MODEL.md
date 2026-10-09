@@ -884,6 +884,14 @@ Operations that establish multiple required invariants MUST be atomic where part
 
 ---
 
+### PR 10 decisions: local Identity, Tenant lifecycle and trusted execution
+
+PR 10 uses explicit Identity origin classification (LOCAL or FEDERATED); names or existing IDs MUST NOT be treated as evidence of LOCAL origin. Legacy unknown-origin Identities MUST NOT be silently classified LOCAL. Ordinary Tenants use PROVISIONING, ACTIVE and SUSPENDED lifecycle states; only ACTIVE is authorizing. The root Tenant is established ACTIVE and cannot be suspended. A PROVISIONING or SUSPENDED Tenant MUST NOT form an ordinary authorizing session. An ACTIVE ordinary Tenant MUST have a valid steward and explicitly designated acting Identity. These states do not replace soft-deletion semantics.
+
+Privileged bootstrap/root recovery uses separately controlled installation authority. Stewardship transfers require a verified authenticated acting Identity and applicable Permission; a shared runtime PostgreSQL credential or caller-provided actor ID does not establish that authority. Privileged functions MUST NOT be runtime-exposed before the trusted invocation boundary exists. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md) for precise design and implementation checkpoints.
+
+---
+
 ## 25. Explicitly Unresolved Security Design
 
 The following security details have not yet been fully specified and MUST NOT be invented by an implementation:
