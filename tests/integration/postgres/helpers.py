@@ -329,4 +329,144 @@ def upgrade_to_revision(config: object, revision: str) -> None:
     cfg = Config()
     cfg.set_main_option("script_location", str(migrations_script_directory()))
     cfg.attributes["mtmf_url"] = config.sqlalchemy_url  # type: ignore[attr-defined]
+    cfg.attributes["mtmf_owner_role"] = "mtmf_owner"
     command.upgrade(cfg, revision)
+
+
+# --- Effective privilege snapshot (PR 7A-1) ----------------------------------
+
+_MTMF_ROLES = ("mtmf_migrator", "mtmf_owner", "mtmf_runtime")
+_MTMF_MEMBERS = ("mtmf_migrator", "mtmf_runtime")
+
+
+def privilege_snapshot(connection: psycopg.Connection) -> dict[str, object]:
+    """Return a normalized, OID-free snapshot of the MTMF effective privilege surface.
+
+    Covers role attributes, direct memberships, MTMF object ownership, the
+    runtime's effective database/schema/table/sequence/function privileges,
+    the runtime EXECUTE allowlist, PUBLIC function EXECUTE, and owner default
+    privileges. Used to compare fresh-install and legacy-handoff semantics.
+    """
+    roles = {
+        row[0]: {
+            "super": row[1],
+            "createrole": row[2],
+            "createdb": row[3],
+            "login": row[4],
+            "bypassrls": row[5],
+        }
+        for row in connection.execute(
+            "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, "
+            "       rolbypassrls FROM pg_catalog.pg_roles "
+            "WHERE rolname = ANY(%s) ORDER BY rolname",
+            (list(_MTMF_ROLES),),
+        ).fetchall()
+    }
+    memberships = sorted(
+        (row[0], row[1], row[2], row[3], row[4])
+        for row in connection.execute(
+            "SELECT m.rolname, r.rolname, am.inherit_option, am.set_option, am.admin_option "
+            "FROM pg_catalog.pg_auth_members am "
+            "JOIN pg_catalog.pg_roles m ON m.oid = am.member "
+            "JOIN pg_catalog.pg_roles r ON r.oid = am.roleid "
+            "WHERE m.rolname = ANY(%s) ORDER BY 1, 2",
+            (list(_MTMF_MEMBERS),),
+        ).fetchall()
+    )
+    relation_owners = {
+        f"{row[1]}:{row[0]}": row[2]
+        for row in connection.execute(
+            "SELECT c.relname, c.relkind, pg_get_userbyid(c.relowner) "
+            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+            "  ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'mtmf' ORDER BY c.relkind, c.relname"
+        ).fetchall()
+    }
+    function_owners = {
+        row[0]: row[1]
+        for row in connection.execute(
+            "SELECT format('%%I.%%I(%%s)', n.nspname, p.proname, "
+            "              pg_get_function_identity_arguments(p.oid)), "
+            "       pg_get_userbyid(p.proowner) "
+            "FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n "
+            "  ON n.oid = p.pronamespace "
+            "WHERE n.nspname = 'mtmf' ORDER BY 1"
+        ).fetchall()
+    }
+    schema_owner = connection.execute(
+        "SELECT pg_get_userbyid(nspowner) FROM pg_catalog.pg_namespace WHERE nspname = 'mtmf'"
+    ).fetchone()[0]
+    database = connection.execute(
+        "SELECT has_database_privilege('mtmf_runtime', current_database(), 'CONNECT'), "
+        "       has_database_privilege('mtmf_runtime', current_database(), 'CREATE')"
+    ).fetchone()
+    schema = connection.execute(
+        "SELECT has_schema_privilege('mtmf_runtime', 'mtmf', 'USAGE'), "
+        "       has_schema_privilege('mtmf_runtime', 'mtmf', 'CREATE')"
+    ).fetchone()
+    table_privileges = sorted(
+        (row[0], row[1])
+        for row in connection.execute(
+            "SELECT format('%%I.%%I', n.nspname, c.relname), p.privilege "
+            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+            "  ON n.oid = c.relnamespace "
+            "CROSS JOIN unnest(ARRAY["
+            "'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'"
+            "]) AS p(privilege) "
+            "WHERE n.nspname = 'mtmf' AND c.relkind IN ('r', 'p', 'v', 'm') "
+            "AND has_table_privilege('mtmf_runtime', c.oid, p.privilege) "
+            "ORDER BY 1, 2"
+        ).fetchall()
+    )
+    sequence_privileges = sorted(
+        (row[0], row[1])
+        for row in connection.execute(
+            "SELECT format('%%I.%%I', n.nspname, c.relname), p.privilege "
+            "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n "
+            "  ON n.oid = c.relnamespace "
+            "CROSS JOIN unnest(ARRAY['USAGE', 'SELECT', 'UPDATE']) AS p(privilege) "
+            "WHERE n.nspname = 'mtmf' AND c.relkind = 'S' "
+            "AND has_sequence_privilege('mtmf_runtime', c.oid, p.privilege) "
+            "ORDER BY 1, 2"
+        ).fetchall()
+    )
+    executable = sorted(
+        row[0]
+        for row in connection.execute(
+            "SELECT format('%%I.%%I(%%s)', n.nspname, p.proname, "
+            "              pg_get_function_identity_arguments(p.oid)) "
+            "FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n "
+            "  ON n.oid = p.pronamespace "
+            "WHERE n.nspname = 'mtmf' "
+            "AND has_function_privilege('mtmf_runtime', p.oid, 'EXECUTE') "
+            "ORDER BY 1"
+        ).fetchall()
+    )
+    public_execute = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = 'mtmf' AND EXISTS ("
+        "  SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+        "  WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')"
+    ).fetchone()[0]
+    default_public_execute = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_default_acl d "
+        "JOIN pg_catalog.pg_roles r ON r.oid = d.defaclrole "
+        "CROSS JOIN LATERAL aclexplode(d.defaclacl) a "
+        "WHERE r.rolname = 'mtmf_owner' AND d.defaclobjtype = 'f' "
+        "AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'"
+    ).fetchone()[0]
+    return {
+        "roles": roles,
+        "memberships": memberships,
+        "schema_owner": schema_owner,
+        "relation_owners": dict(sorted(relation_owners.items())),
+        "function_owners": dict(sorted(function_owners.items())),
+        "runtime_database": (database[0], database[1]),
+        "runtime_schema": (schema[0], schema[1]),
+        "runtime_table_privileges": table_privileges,
+        "runtime_sequence_privileges": sequence_privileges,
+        "runtime_executable": executable,
+        "public_function_execute": public_execute,
+        "owner_default_public_execute": default_public_execute,
+    }

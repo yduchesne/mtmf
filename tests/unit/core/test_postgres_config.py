@@ -14,6 +14,7 @@ from mtmf_core.persistence.postgres.config import (
     DEFAULT_PORT,
     PostgresConfig,
     PostgresConfigError,
+    PostgresRole,
 )
 
 
@@ -138,3 +139,89 @@ def test_special_characters_survive_derived_urls(monkeypatch: pytest.MonkeyPatch
     assert "p%40s%20s%20w%3Aord%2Fwith%24ch%25ars" in config.sqlalchemy_url
     assert "mt%20mf" in config.sqlalchemy_url
     assert " " not in config.sqlalchemy_url  # everything is percent-encoded
+
+
+def test_default_role_is_administrator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("os.environ", _components())
+    assert PostgresConfig.from_env().role is PostgresRole.ADMIN
+
+
+def test_migrator_and_runtime_profiles_parse_independently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "os.environ",
+        {
+            "MTMF_MIGRATOR_POSTGRES_HOST": "db.example",
+            "MTMF_MIGRATOR_POSTGRES_PORT": "6001",
+            "MTMF_MIGRATOR_POSTGRES_DB": "mtmf",
+            "MTMF_MIGRATOR_POSTGRES_USER": "mtmf_migrator",
+            "MTMF_MIGRATOR_POSTGRES_PASSWORD": "migrator-pw",
+            "MTMF_RUNTIME_POSTGRES_HOST": "db.example",
+            "MTMF_RUNTIME_POSTGRES_PORT": "6001",
+            "MTMF_RUNTIME_POSTGRES_DB": "mtmf",
+            "MTMF_RUNTIME_POSTGRES_USER": "mtmf_runtime",
+            "MTMF_RUNTIME_POSTGRES_PASSWORD": "runtime-pw",
+        },
+    )
+    migrator = PostgresConfig.from_env(PostgresRole.MIGRATOR)
+    assert migrator.user == "mtmf_migrator"
+    assert migrator.password == "migrator-pw"
+    assert migrator.role is PostgresRole.MIGRATOR
+    runtime = PostgresConfig.from_env(PostgresRole.RUNTIME)
+    assert runtime.user == "mtmf_runtime"
+    assert runtime.password == "runtime-pw"
+    assert runtime.role is PostgresRole.RUNTIME
+
+
+def test_missing_role_configuration_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("os.environ", {})
+    for role in (PostgresRole.MIGRATOR, PostgresRole.RUNTIME):
+        with pytest.raises(PostgresConfigError):
+            PostgresConfig.from_env(role)
+
+
+def test_role_url_and_components_are_mutually_exclusive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "os.environ",
+        {
+            "MTMF_RUNTIME_DATABASE_URL": "postgresql+psycopg://u:p@h:1/db",
+            "MTMF_RUNTIME_POSTGRES_HOST": "h",
+        },
+    )
+    with pytest.raises(PostgresConfigError):
+        PostgresConfig.from_env(PostgresRole.RUNTIME)
+
+
+def test_role_url_form_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "os.environ",
+        {"MTMF_MIGRATOR_DATABASE_URL": "postgresql+psycopg://mig:pw@h:6001/mtmf"},
+    )
+    config = PostgresConfig.from_env(PostgresRole.MIGRATOR)
+    assert config.user == "mig"
+    assert config.password == "pw"
+    assert config.role is PostgresRole.MIGRATOR
+
+
+def test_runtime_only_environment_cannot_build_admin_or_migrator_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A production runtime process receives only MTMF_RUNTIME_* credentials.
+    monkeypatch.setattr(
+        "os.environ",
+        {
+            "MTMF_RUNTIME_POSTGRES_HOST": "127.0.0.1",
+            "MTMF_RUNTIME_POSTGRES_PORT": "25432",
+            "MTMF_RUNTIME_POSTGRES_DB": "mtmf",
+            "MTMF_RUNTIME_POSTGRES_USER": "mtmf_runtime",
+            "MTMF_RUNTIME_POSTGRES_PASSWORD": "runtime-pw",
+        },
+    )
+    assert PostgresConfig.from_env(PostgresRole.RUNTIME).user == "mtmf_runtime"
+    with pytest.raises(PostgresConfigError):
+        PostgresConfig.from_env(PostgresRole.ADMIN)
+    with pytest.raises(PostgresConfigError):
+        PostgresConfig.from_env(PostgresRole.MIGRATOR)

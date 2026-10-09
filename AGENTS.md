@@ -8,7 +8,7 @@ Before implementing a change, read the relevant authoritative project documents:
 - `docs/DOMAIN_MODEL.md` — domain objects, relationships, lifecycle, and aggregate semantics.
 - `docs/AUTHORIZATION.md` — authorization evaluation and Permission matching.
 - `docs/ARCHITECTURE.md` — package, connector, persistence, transport, and infrastructure boundaries.
-- `docs/DATABASE.md` — PostgreSQL design, proposed least-privilege runtime model, and database security verification.
+- `docs/DATABASE.md` — PostgreSQL design, implemented least-privilege runtime role model, and database security verification.
 - `docs/ROADMAP_V01.md` — current high-level implementation sequence.
 
 Major architecture and security decisions are already documented. Do not replace them with alternate designs without an explicit approved documentation change.
@@ -69,6 +69,7 @@ Canonical Python tooling:
 - Pytest is the unit-test runner; the canonical unit suite lives under `tests/unit`.
 - Unit-test coverage must remain at least **85%** for all production MTMF packages; the gate fails below that threshold.
 - `./build.sh --qa` is the canonical quality command and runs the full gate (Ruff format check, Ruff lint, strict Mypy, unit tests with the coverage gate).
+- `./build.sh --integration` runs the real-PostgreSQL suite against the explicitly configured MTMF database. Provision the administrator-owned `mtmf_owner`/`mtmf_migrator`/`mtmf_runtime` roles first with `scripts/mtmf-provision-roles.py` and export the role-scoped `MTMF_MIGRATOR_*`/`MTMF_RUNTIME_*` configuration (see `.env.example`). The privilege tests connect as the actual restricted runtime login and fail closed when role credentials are absent. Migrations require the authenticated `mtmf_migrator` identity on every connection (`PostgresMigrationManager` rejects administrator/runtime configs and verifies `session_user`); run `scripts/mtmf-provision-roles.py --verify` after migration to check the effective runtime privilege surface.
 
 Keep domain objects independent of transport, HTTP frameworks, PostgreSQL drivers, and persistence implementations.
 
@@ -87,6 +88,7 @@ Generated Python bytecode and local development artifacts must not be committed.
 - Repositories participating in one business operation share a UnitOfWork/transaction context.
 - The PostgreSQL provider performs application-level database operations and logic through stored functions.
 - Alembic is an internal migration mechanism; consumers interact through an MTMF-owned migration/database-management interface.
+- A successful `upgrade_to_head()` requires the mandatory post-upgrade effective runtime privilege verification to pass on a fresh authenticated migrator connection. Never bypass, skip, downgrade, or suppress that postflight, and never treat "Alembic reached head" as deployment success. A postflight failure does not roll back committed migrations; report it and require operator remediation.
 - Do not expose PostgreSQL connections, Alembic internals, or persistence implementation details through public contracts.
 - Do not hold a PostgreSQL transaction open while performing remote IdP calls.
 - Multi-object operations that establish documented invariants must be atomic where partial completion would create invalid domain state.

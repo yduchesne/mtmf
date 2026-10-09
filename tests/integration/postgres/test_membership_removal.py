@@ -52,7 +52,9 @@ def test_mig03_audit_schema_constraints_hold(db) -> None:
         assert columns[count_column] == "bigint"
 
 
-def test_mig02_populated_0001_upgrades_to_head_without_data_loss(db, mtmf_config, dsn: str) -> None:
+def test_mig02_populated_0001_upgrades_to_head_without_data_loss(
+    db, migrator_config, dsn: str
+) -> None:
     helpers.seed_full_membership_graph(db)
     before = {table: helpers.membership_count(db, table) for table in helpers.MEMBERSHIP_TABLES}
 
@@ -60,8 +62,8 @@ def test_mig02_populated_0001_upgrades_to_head_without_data_loss(db, mtmf_config
     # upgrade in place and confirm every membership fact survived.
     with psycopg.connect(dsn, autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS mtmf CASCADE")
-        connection.execute("CREATE SCHEMA mtmf")
-    helpers.upgrade_to_revision(mtmf_config, "0001")
+        connection.execute("CREATE SCHEMA mtmf AUTHORIZATION mtmf_owner")
+    helpers.upgrade_to_revision(migrator_config, "0001")
     with psycopg.connect(dsn, autocommit=True) as connection:
         helpers.seed_full_membership_graph(connection)
         seeded = {
@@ -69,7 +71,7 @@ def test_mig02_populated_0001_upgrades_to_head_without_data_loss(db, mtmf_config
             for table in helpers.MEMBERSHIP_TABLES
         }
     assert seeded == before
-    helpers.upgrade_to_revision(mtmf_config, "head")
+    helpers.upgrade_to_revision(migrator_config, "head")
     with psycopg.connect(dsn, autocommit=True) as connection:
         after = {
             table: helpers.membership_count(connection, table)
@@ -78,11 +80,13 @@ def test_mig02_populated_0001_upgrades_to_head_without_data_loss(db, mtmf_config
     assert after == before
 
 
-def test_mig02b_upgrade_fails_loudly_on_new_invariant_violation(db, mtmf_config, dsn: str) -> None:
+def test_mig02b_upgrade_fails_loudly_on_new_invariant_violation(
+    db, migrator_config, dsn: str
+) -> None:
     with psycopg.connect(dsn, autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS mtmf CASCADE")
-        connection.execute("CREATE SCHEMA mtmf")
-    helpers.upgrade_to_revision(mtmf_config, "0001")
+        connection.execute("CREATE SCHEMA mtmf AUTHORIZATION mtmf_owner")
+    helpers.upgrade_to_revision(migrator_config, "0001")
     with psycopg.connect(dsn, autocommit=True) as connection:
         helpers.seed_base_entities(connection)
         # v001 permitted an IdentityGroupMembership without the Group's
@@ -97,7 +101,7 @@ def test_mig02b_upgrade_fails_loudly_on_new_invariant_violation(db, mtmf_config,
         connection.commit()
 
     with pytest.raises(Exception) as excinfo:
-        helpers.upgrade_to_revision(mtmf_config, "head")
+        helpers.upgrade_to_revision(migrator_config, "head")
     assert "GroupTenantMembership" in str(excinfo.value)
 
     with psycopg.connect(dsn) as connection:

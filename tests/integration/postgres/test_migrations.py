@@ -73,28 +73,28 @@ _FORBIDDEN_TABLES = (
 # --- MIG: migration ownership -------------------------------------------------
 
 
-def test_mig01_empty_database_upgrades_to_head(db, mtmf_config: PostgresConfig) -> None:
-    manager = PostgresMigrationManager(mtmf_config)
+def test_mig01_empty_database_upgrades_to_head(db, migrator_config: PostgresConfig) -> None:
+    manager = PostgresMigrationManager(migrator_config)
     assert manager.current_revision() == manager.head_revision
 
 
-def test_mig02_second_upgrade_to_head_is_idempotent(db, mtmf_config: PostgresConfig) -> None:
-    manager = PostgresMigrationManager(mtmf_config)
+def test_mig02_second_upgrade_to_head_is_idempotent(db, migrator_config: PostgresConfig) -> None:
+    manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
     assert manager.current_revision() == manager.head_revision
 
 
 def test_mig03_current_revision_available_through_mtmf_interface(
-    db, mtmf_config: PostgresConfig
+    db, migrator_config: PostgresConfig
 ) -> None:
-    manager = PostgresMigrationManager(mtmf_config)
+    manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0002"
+    assert revision == "0003"
     assert revision == manager.head_revision
 
 
-def test_mig04_callers_need_no_alembic_objects(db, mtmf_config: PostgresConfig) -> None:
-    manager = PostgresMigrationManager(mtmf_config)
+def test_mig04_callers_need_no_alembic_objects(db, migrator_config: PostgresConfig) -> None:
+    manager = PostgresMigrationManager(migrator_config)
     for name in (
         "config_file",
         "script_location",
@@ -126,8 +126,11 @@ def test_mig07_packaged_resources_work_without_repository_cwd(
     mtmf_config: PostgresConfig,
 ) -> None:
     code = (
-        "from mtmf_core.persistence.postgres import PostgresConfig, PostgresMigrationManager;"
-        "PostgresMigrationManager(PostgresConfig.from_env()).upgrade_to_head()"
+        "from mtmf_core.persistence.postgres import "
+        "PostgresMigrationManager, PostgresRole, PostgresConfig;"
+        "PostgresMigrationManager("
+        "PostgresConfig.from_env(PostgresRole.MIGRATOR)"
+        ").upgrade_to_head()"
     )
     env = {key: value for key, value in os.environ.items() if key.startswith("MTMF_")}
     with tempfile.TemporaryDirectory() as tmp:
