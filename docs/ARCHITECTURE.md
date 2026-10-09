@@ -6,6 +6,8 @@ This document describes the technical architecture of the Multi-Tenant Managemen
 
 Security semantics are defined by [SECURITY_MODEL.md](SECURITY_MODEL.md). Authorization-engine behavior is described in [AUTHORIZATION.md](AUTHORIZATION.md). The structural domain model is defined in [DOMAIN_MODEL.md](DOMAIN_MODEL.md).
 
+PostgreSQL-specific architecture and the proposed restricted runtime privilege model are documented in [DATABASE.md](DATABASE.md). The model is a target for PR 7A, not a statement of currently deployed grants.
+
 ## 2. Technology Baseline
 
 MTMF uses the same general technology stack and layered engineering style as Agentic Threat Investigator (ATI):

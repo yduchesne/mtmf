@@ -8,6 +8,8 @@ It defines the normative security model that MTMF implementations MUST preserve.
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** are normative.
 
+The PostgreSQL implementation and proposed privilege architecture are specified in [DATABASE.md](DATABASE.md), subordinate to this security constitution.
+
 This document describes the security model, not persistence layout or API shape. A database schema, Python type, repository interface, or UI representation MUST NOT weaken these semantics.
 
 ---
