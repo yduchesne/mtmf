@@ -256,4 +256,6 @@ PR 7A is complete when privileged migration access and restricted runtime access
 
 **PR 10 design, not yet implemented:** structural root/stewardship invariants must be enforced by reviewed database constraints, guards and transaction-safe functions across existing and new mutation paths. Bootstrap and root recovery require separately controlled deployment authority. Stewardship operations require trusted acting-Identity authorization; merely granting EXECUTE to the shared runtime login is insufficient. The exact privileged orchestration mechanism must be reviewed before exposing any sensitive write function. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md).
 
+For the six PR 10 STOP gates, consult [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md). Its implementation contract requires an explicit LOCAL/FEDERATED Identity origin, non-authorizing Tenant provisioning/suspension, transaction-safe protection of existing mutation paths, and separate installation/verified-actor/database authority. The built-in Permission manifest and legacy-data classification must be reviewed before a data-changing migration; no privileged runtime grants are implied by the design record.
+
 Do not let a coding agent silently resolve these security architecture choices by convenience.
