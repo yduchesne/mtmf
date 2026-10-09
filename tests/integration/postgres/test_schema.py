@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "permission",
     "action",
     *helpers.MEMBERSHIP_TABLES,
+    helpers.AUDIT_TABLE,
 }
 
 

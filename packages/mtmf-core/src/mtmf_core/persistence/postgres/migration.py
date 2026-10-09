@@ -21,7 +21,7 @@ from alembic.config import Config
 from mtmf_core.persistence.postgres.config import PostgresConfig
 from mtmf_core.persistence.postgres.resources import migrations_script_directory
 
-HEAD_REVISION = "0001"
+HEAD_REVISION = "0002"
 
 
 class MigrationError(RuntimeError):

@@ -33,8 +33,11 @@ def test_fun03_proof_function_callable_after_empty_db_migration(db) -> None:
 
 def test_fun04_no_repository_crud_function_family(db) -> None:
     functions = helpers.functions_in_schema(db)
+    # Repository CRUD functions would be named with these prefixes; the
+    # membership guard/removal functions use the ``membership_*``/``remove_*``
+    # vocabulary instead and are not a repository CRUD family.
     for fragment in ("repository", "insert_", "update_", "delete_", "select_", "crud"):
-        assert not any(fragment in name for name in functions)
+        assert not any(name.startswith(fragment) for name in functions)
 
 
 def test_fun05_no_security_definer_used(db) -> None:

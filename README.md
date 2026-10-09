@@ -54,7 +54,7 @@ integration tests run against the explicitly configured MTMF database:
 
 ```bash
 cp .env.example .env        # MTMF_* development placeholders
-uv run python scripts/mtmf-postgres.py up      # starts the MTMF `mtmf` Compose project (Podman, port 55432)
+uv run python scripts/mtmf-postgres.py up      # starts the MTMF `mtmf` Compose project (Podman, port 25432)
 ./build.sh --integration    # real-PostgreSQL migration/schema/constraint tests
 uv run python scripts/mtmf-postgres.py down    # stops only MTMF resources
 ```
