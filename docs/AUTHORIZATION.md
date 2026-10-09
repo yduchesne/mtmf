@@ -369,6 +369,8 @@ Root and stewardship are not shortcuts around the existing authorization pipelin
 
 A supplied Principal ID, Identity ID, or membership record is not authentication. The shared PostgreSQL runtime credential cannot independently verify an end user. Until the trusted service identity boundary is implemented, sensitive transfer/recovery functions MUST NOT be broadly exposed as ordinary runtime capabilities. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md) and [Database Architecture](DATABASE.md).
 
+The PR 10 design explicitly separates installation authority, verified application actor context and database integrity enforcement. PROVISIONING/SUSPENDED Tenants are non-authorizing, and steward designation is not an independent grant of Permission. Until the trusted invocation boundary exists, privileged transfer/recovery entry points remain inaccessible to ordinary runtime callers. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
+
 ## 11. Open Design Items
 
 The following remain intentionally unresolved:
