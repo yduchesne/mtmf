@@ -1,6 +1,6 @@
 # Root administration and Tenant Stewardship
 
-**Status:** Normative security design for PR 10; implementation is not yet complete.
+**Status:** Normative security design for PR 10; implementation is not yet complete. The six implementation STOP gates and their proposed resolutions are explained in [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
 
 This guide explains how MTMF establishes its first administrator, how each customer Tenant keeps a responsible administrator, and how the system prevents accidental or unauthorized loss of administrative control. It complements the [Security Model](SECURITY_MODEL.md), [Domain Model](DOMAIN_MODEL.md), [Authorization](AUTHORIZATION.md), and [Database Architecture](DATABASE.md). If this explanation conflicts with the Security Model, the Security Model governs.
 
@@ -63,7 +63,7 @@ The exact schema is PR 10 implementation work; the registry must identify canoni
 
 ## Creating and administering an ordinary Tenant
 
-Creating an **active** ordinary Tenant and designating its first eligible steward must be atomic. If an installation workflow needs to stage incomplete Tenant data, the Tenant must remain **inactive and non-authorizing** until its first steward and acting Identity are valid; an active stewardless Tenant is forbidden.
+Creating an **active** ordinary Tenant and designating its first eligible steward must be atomic. If an installation workflow needs to stage incomplete Tenant data, the Tenant must remain **PROVISIONING and non-authorizing** until its first steward and acting Identity are valid; an active stewardless Tenant is forbidden.
 
 The initial steward must be an active Principal with the required Tenant membership, TENANT scope, explicit Tenant Administrator Role assignment, and an active designated acting Identity with valid Tenant membership and applicable administrative permissions.
 
