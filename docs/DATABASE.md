@@ -2,9 +2,9 @@
 
 ## 1. Status, authority, and scope
 
-**Status: implemented in PR 7A (Alembic revision `0003`), hardened by PR 7A-1; verified by real-role integration tests.**
+**Status: implemented in PR 7A (Alembic revision `0003`), hardened by PR 7A-1, extended by PR 7B (Alembic revision `0004`); verified by real-role integration tests.**
 
-This document is the authoritative PostgreSQL-specific design for MTMF's database roles, grants, stored-function execution boundary, migrations, connection handling, and privilege verification. Sections 3-10 describe implemented controls exercised by `tests/integration/postgres/test_runtime_privileges.py` (PRIV-01..PRIV-20), `tests/integration/postgres/test_role_topology_security.py` (A1-01..A1-22), the existing membership-removal regression suite, and the canonical `./build.sh --qa`, `--sec`, and `--integration` gates. PR 7A-1 adds transitive role-topology verification, effective privilege verification, an authenticated migrator contract, and fresh/legacy privilege-matrix parity.
+This document is the authoritative PostgreSQL-specific design for MTMF's database roles, grants, stored-function execution boundary, migrations, connection handling, and privilege verification. Sections 3-10 describe implemented controls exercised by `tests/integration/postgres/test_runtime_privileges.py` (PRIV-01..PRIV-20), `tests/integration/postgres/test_role_topology_security.py` (A1-01..A1-22), the existing membership-removal regression suite, and the canonical `./build.sh --qa`, `--sec`, and `--integration` gates. PR 7A-1 adds transitive role-topology verification, effective privilege verification, an authenticated migrator contract, and fresh/legacy privilege-matrix parity. PR 7B adds the production `PostgresMtmfSpi` provider, its real-transaction UnitOfWork, and the 44 reviewed repository stored functions; the runtime EXECUTE allowlist is now the 50 reviewed signatures (six membership-removal plus 44 repository read/write functions), exercised by `tests/integration/postgres/test_postgres_spi.py`, `test_postgres_role_aggregate.py`, `test_postgres_membership_repositories.py`, `test_postgres_runtime_security.py`, and `test_postgres_error_concurrency.py`.
 
 Normative security invariants remain in [SECURITY_MODEL.md](SECURITY_MODEL.md); domain semantics in [DOMAIN_MODEL.md](DOMAIN_MODEL.md); application authorization in [AUTHORIZATION.md](AUTHORIZATION.md); component boundaries in [ARCHITECTURE.md](ARCHITECTURE.md). If this document conflicts with the security constitution, **SECURITY_MODEL.md wins**.
 
@@ -18,7 +18,7 @@ PR 7A (revision `0003`) replaced it with a demonstrably restricted runtime login
 
 - `mtmf_owner` owns the `mtmf` schema and every MTMF object;
 - `mtmf_migrator` runs migrations by `SET ROLE mtmf_owner` (INHERIT FALSE);
-- `mtmf_runtime` has schema `USAGE` and `EXECUTE` on exactly the six approved removal signatures, with no direct table/sequence DML/SELECT, no schema CREATE, no audit write, no trigger or migration access, and no membership in owner/migrator;
+- `mtmf_runtime` has schema `USAGE` and `EXECUTE` on exactly the reviewed runtime signatures (six membership-removal plus 44 repository read/write functions), with no direct table/sequence DML/SELECT, no schema CREATE, no audit write, no trigger or migration access, and no membership in owner/migrator;
 - the six removal functions are owner-owned `SECURITY DEFINER` entry points with fixed `search_path = ''` and schema-qualified bodies;
 - the transaction-local marker remains only as defense in depth; the enforced boundary is the runtime role's inability to issue direct DML.
 
@@ -83,14 +83,14 @@ Runtime reads use reviewed read functions in future PRs, not broad table SELECT 
 
 - `REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA mtmf FROM PUBLIC` removes existing PUBLIC grants.
 - `ALTER DEFAULT PRIVILEGES FOR ROLE mtmf_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` sets owner-global default privileges so newly created functions are not automatically executable by `PUBLIC`. A schema-scoped `ALTER DEFAULT PRIVILEGES` cannot negate the built-in global PUBLIC default, so the global form is required; both global and schema-scoped revokes are applied.
-- Only the six public persistence entry-point signatures are granted `EXECUTE` to `mtmf_runtime`; internal functions are not granted merely because they live in `mtmf`.
+- Only the reviewed public persistence entry-point signatures (six membership-removal plus 44 repository read/write functions) are granted `EXECUTE` to `mtmf_runtime`; internal functions are not granted merely because they live in `mtmf`.
 - Runtime holds no schema CREATE, table DML, sequence write, or owner-role membership.
 - Function privileges are signature-specific; grants enumerate the exact `(uuid, uuid, uuid)` removal signatures, and default-argument invocations resolve to those signatures.
-- Revision `0003` asserts effective privileges (via `has_*_privilege` and `aclexplode`) inside the migration transaction and rolls back if the intended posture is not achieved.
+- Revisions `0003` and `0004` assert effective privileges (via `has_*_privilege` and `aclexplode`) inside the migration transaction and roll back if the intended posture is not achieved.
 
 ### 6.2 SECURITY DEFINER boundary
 
-The six membership-removal functions are converted to owner-owned `SECURITY DEFINER` entry points by revision `0003` (their bodies and `SET search_path = ''` are unchanged). Each:
+The six membership-removal functions are converted to owner-owned `SECURITY DEFINER` entry points by revision `0003` (their bodies and `SET search_path = ''` are unchanged). Revision `0004` installs the 44 repository read/write functions with the same owner-owned `SECURITY DEFINER`, fixed `search_path = ''`, PUBLIC-revoked, exact-runtime-grant posture. Each privileged entry point:
 
 - uses `SET search_path = ''` and schema-qualifies every referenced table, function, and type;
 - uses no dynamic SQL and no caller-controllable object names;
@@ -117,11 +117,11 @@ The migration/owner/admin roles are outside that adversarial guarantee; they req
 - the effective role topology is approved (see section 4);
 - runtime has database `CONNECT` and schema `USAGE`, and no database/schema `CREATE`;
 - runtime has no table/view/partition `SELECT`/`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER` and no sequence `USAGE`/`SELECT`/`UPDATE`;
-- runtime `EXECUTE` is exactly the six full removal signatures (compared by function identity, not count or a name pattern), with zero extra functions;
+- runtime `EXECUTE` is exactly the 50 reviewed full signatures (six membership-removal plus 44 repository read/write functions), compared by function identity and not count or a name pattern, with zero extra functions;
 - no `PUBLIC` `EXECUTE` remains on MTMF functions and owner default privileges grant none;
 - the Alembic migration table and the audit table are inaccessible.
 
-Diagnostics name objects, privileges, and role paths but never credentials. Revision `0003`'s in-transaction assertions remain defense in depth, not the only check. A deliberate third-party grant (for example, runtime membership in a role with `SELECT` on `mtmf.tenant` or `EXECUTE` on an MTMF function) is detected even though the direct ACL does not name runtime.
+Diagnostics name objects, privileges, and role paths but never credentials. The revision `0003`/`0004` in-transaction assertions remain defense in depth, not the only check. A deliberate third-party grant (for example, runtime membership in a role with `SELECT` on `mtmf.tenant` or `EXECUTE` on an MTMF function) is detected even though the direct ACL does not name runtime.
 
 `verify_runtime_privileges` is invoked **automatically** at the end of every successful `PostgresMigrationManager.upgrade_to_head()` (section 8), including already-head no-op upgrades. `scripts/mtmf-provision-roles.py --verify` is an additional read-only operator/CI diagnostic, not the only mandatory check.
 
@@ -135,8 +135,9 @@ Diagnostics name objects, privileges, and role paths but never credentials. Revi
 
 ## 8. Migration and default-privilege lifecycle
 
-- Versioned SQL resources under `mtmf_core/persistence/postgres/sql/vNNN/` are installed through packaged Alembic revisions. Shipped `v001`, `v002`, and revisions `0001`/`0002` are never rewritten.
+- Versioned SQL resources under `mtmf_core/persistence/postgres/sql/vNNN/` are installed through packaged Alembic revisions. Shipped `v001`, `v002`, `v003` and revisions `0001`/`0002`/`0003` are never rewritten.
 - Revision `0003` is additive: it normalizes ownership, revokes PUBLIC/runtime grants, sets default privileges, converts the six removal functions, grants runtime EXECUTE on exactly those signatures, and asserts the posture.
+- Revision `0004` is additive: it installs 44 reviewed repository stored functions (owner-owned `SECURITY DEFINER`, fixed `search_path = ''`, schema-qualified, no dynamic SQL), revokes PUBLIC EXECUTE, grants runtime EXECUTE on exactly those signatures, and asserts the resulting posture. The mandatory post-upgrade verifier now compares against the 50-signature allowlist.
 - Every migration creates objects under the owner role (via `SET ROLE`), revokes PUBLIC privileges, and applies explicit runtime grants.
 - `ALTER DEFAULT PRIVILEGES` is scoped to the object-creating role; because all DDL runs as `mtmf_owner`, owner-scoped defaults cover every future MTMF object. Future grant changes are explicit migration responsibilities.
 - Migration and runtime connection configurations are distinct. Application startup never silently migrates with privileged credentials.
@@ -151,10 +152,10 @@ Diagnostics name objects, privileges, and role paths but never credentials. Revi
 |---|---|---|---|
 | `provision_roles` (empty database) | Yes | n/a | **No** (schema/functions may not exist) |
 | `adopt_existing_schema` | Yes (documented caller contract: roles provisioned first) | Yes | **No** (pre-head privileges may legitimately differ) |
-| `upgrade_to_head` | Yes (migrator identity + legacy ownership preflight) | Yes (via `0003`) | **Yes, mandatory** |
+| `upgrade_to_head` | Yes (migrator identity + legacy ownership preflight) | Yes (via the head revision) | **Yes, mandatory** |
 | CLI `--verify` | Yes | n/a | Yes (read-only, optional; requires migrated schema) |
 
-Legacy adoption does not demand head-level runtime ACLs before the upgrade. Provisioning an empty database runs topology checks only and must not require the `mtmf` schema, revision `0003`, or the six functions to exist.
+Legacy adoption does not demand head-level runtime ACLs before the upgrade. Provisioning an empty database runs topology checks only and must not require the `mtmf` schema, revision `0003`, or the reviewed functions to exist.
 
 ## 9. Connection and deployment security
 
@@ -186,7 +187,7 @@ Legacy adoption does not demand head-level runtime ACLs before the upgrade. Prov
 | PRIV-13 | Runtime attempts table SELECT or sequence use without grants | Permission denied |
 | PRIV-14 | Runtime supplies a fabricated `actor_identity_id` | Audit records the unverified caller assertion; no authentication/authorization claim |
 | PRIV-15 | Introspect every owner, effective privilege, and `prosecdef` | Exactly the documented posture |
-| PRIV-16 | Populated re-run of `upgrade_to_head` | Data/audit preserved; revision `0003`; no permission drift |
+| PRIV-16 | Populated re-run of `upgrade_to_head` | Data/audit preserved; revision `0004`; no permission drift |
 | PRIV-17 | Runtime config supplied to migration manager | Rejected; no schema mutation |
 | PRIV-18 | New owner-created function after default-privilege setup | No PUBLIC EXECUTE without explicit grant |
 | PRIV-19 | Non-owner, non-runtime login attempts an approved function | Denied |
@@ -229,7 +230,7 @@ A test that merely inspects missing ACLs does not prove effective denial. Run th
 
 1. **Documentation (this document):** agree on roles, threat model, privilege matrix, function execution boundary, and testing contract.
 2. **PR 7A (implemented):** role provisioning, migration/SQL revision `0003`, restricted runtime connectivity, grants, and real-role security tests.
-3. **PR 7B:** implement production PostgreSQL repositories and UnitOfWork against that restricted runtime role.
+3. **PR 7B (implemented):** the production `PostgresMtmfSpi` provider, one-real-transaction UnitOfWork, all 13 typed repositories, the 44 reviewed repository stored functions in additive revision `0004`, error translation, and real-runtime provider integration slices V1-V6.
 4. **PR 10:** implement authoritative root/bootstrap and Tenant Stewardship protection and test it through the production write path.
 
 PR 7A is complete when privileged migration access and restricted runtime access are operationally distinct, direct DML and audit bypass are denied under the runtime role, approved persistence operations succeed, and the privilege posture remains correct after subsequent migrations. PR 7B cannot claim security conformance until these real-role acceptance gates pass.
@@ -240,7 +241,7 @@ PR 7A is complete when privileged migration access and restricted runtime access
 - **Actor provenance is unverified.** `actor_identity_id` is provenance input, never authentication or Tenant authorization.
 - **Administrators are trusted.** A superuser or another legitimate cluster administrator can always alter objects and triggers. The verification/`provision_roles` checks fail closed on an unsafe MTMF topology and refuse to silently rewrite unrelated roles, but they do not police arbitrary superuser accounts; that is an operational trust boundary.
 - **Provisioning is not all-or-nothing.** It runs with `autocommit`; the preflight topology check happens before credential mutation, but a later SQL failure leaves earlier role/attribute/password changes in place. Operators review and re-run provisioning after remediation. `PRIV-21`/`A1-21` record the preflight-failure behavior.
-- **Write entry points.** PR 7B must add reviewed read/write functions under the same default-deny model; the exact set and whether every entry point uses `SECURITY DEFINER` remains PR 7B scope.
+- **Write entry points.** PR 7B added the 44 reviewed repository read/write functions under the same default-deny model; all of them are owner-owned `SECURITY DEFINER` with fixed `search_path = ''` and an exact runtime `EXECUTE` grant verified by the mandatory postflight. The types of read/write functions and their grants remain an explicit reviewed allowlist; adding a function requires updating the v004 grants and the verifier manifest together.
 - **Credential rotation.** Deployment/rotation of role credentials without exposing privileged credentials to startup remains an operational concern.
 - **Defense in depth.** The membership-removal GUC marker remains but is not an authorization boundary.
 

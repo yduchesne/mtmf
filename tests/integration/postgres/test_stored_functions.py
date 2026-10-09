@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import helpers
 
+from mtmf_core.persistence.postgres import expected_runtime_signatures
+
 
 def test_fun01_proof_function_installed_from_versioned_sql(db) -> None:
     assert "mtf_schema_version" in helpers.functions_in_schema(db)
@@ -41,17 +43,22 @@ def test_fun04_no_repository_crud_function_family(db) -> None:
         assert not any(name.startswith(fragment) for name in functions)
 
 
-def test_fun05_only_approved_removal_functions_use_security_definer(db) -> None:
+def test_fun05_every_approved_function_uses_security_definer(db) -> None:
     rows = db.execute(
-        "SELECT p.proname, p.prosecdef, pg_get_userbyid(p.proowner) "
+        "SELECT format('mtmf.%%I(%%s)', p.proname, "
+        "              pg_get_function_identity_arguments(p.oid)) AS signature, "
+        "       p.prosecdef, pg_get_userbyid(p.proowner) "
         "FROM pg_catalog.pg_proc p "
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = %s AND p.prosecdef "
-        "ORDER BY p.proname",
+        "ORDER BY 1",
         (helpers.SCHEMA,),
     ).fetchall()
-    assert len(rows) == 6
-    assert all(name.startswith("remove_") and owner == "mtmf_owner" for name, _def, owner in rows)
+    signatures = {row[0] for row in rows}
+    assert signatures == set(expected_runtime_signatures())
+    assert all(owner == "mtmf_owner" for _signature, _def, owner in rows)
+    # The six membership-removal entry points remain present and elevated.
+    assert sum(1 for signature in signatures if signature.startswith("mtmf.remove_")) == 6
     # The infrastructure proof function is deliberately not elevated.
     assert not db.execute(
         "SELECT prosecdef FROM pg_catalog.pg_proc p "
@@ -62,9 +69,8 @@ def test_fun05_only_approved_removal_functions_use_security_definer(db) -> None:
 
 
 def test_fun06_privileges_are_explicit_default_deny(db) -> None:
-    # PR 7A makes function ACLs explicit: PUBLIC EXECUTE is revoked for
-    # every function, and only the six approved removal signatures are
-    # granted to the restricted runtime role.
+    # PR 7A/7B make function ACLs explicit: PUBLIC EXECUTE is revoked for
+    # every function, and only the reviewed runtime signatures are granted.
     public_executable = db.execute(
         "SELECT count(*) FROM pg_catalog.pg_proc p "
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
@@ -80,4 +86,4 @@ def test_fun06_privileges_are_explicit_default_deny(db) -> None:
         "WHERE n.nspname = %s AND has_function_privilege('mtmf_runtime', p.oid, 'EXECUTE')",
         (helpers.SCHEMA,),
     ).fetchone()[0]
-    assert runtime_executable == 6
+    assert runtime_executable == len(expected_runtime_signatures())

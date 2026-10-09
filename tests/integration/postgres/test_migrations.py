@@ -6,10 +6,10 @@ interface without Alembic objects; the MTMF migration graph lives inside
 the ``mtmf`` schema; and packaged resources resolve without the
 repository working directory.
 
-BND: no `PostgresMtmfSpi`, PostgreSQL repositories, UnitOfWork
-implementation, RoleAssignment, stewardship, TenantManagementGroup,
-bootstrap/root state, IdP state, public API DTOs, or new authorization
-semantics exist.
+BND: the PR 7B PostgreSQL provider, repositories, and UnitOfWork exist
+and satisfy the persistence SPI; RoleAssignment, stewardship,
+TenantManagementGroup, bootstrap/root state, IdP state, public API DTOs,
+and new authorization semantics still do not exist.
 """
 
 from __future__ import annotations
@@ -57,6 +57,51 @@ EXPECTED_FUNCTION_NAMES = {
     "remove_identity_group_membership",
     "remove_identity_org_membership",
     "remove_group_org_membership",
+    "role_insert_children",
+    "tenant_add",
+    "tenant_get",
+    "tenant_save",
+    "organization_add",
+    "organization_get",
+    "organization_save",
+    "principal_add",
+    "principal_get",
+    "principal_save",
+    "identity_add",
+    "identity_get",
+    "identity_save",
+    "group_add",
+    "group_get",
+    "group_save",
+    "action_add",
+    "action_get",
+    "role_add",
+    "role_get",
+    "role_save",
+    "principal_tenant_membership_add",
+    "principal_tenant_membership_get",
+    "principal_tenant_membership_find_by_principal",
+    "principal_tenant_membership_find_by_tenant",
+    "identity_tenant_membership_add",
+    "identity_tenant_membership_get",
+    "identity_tenant_membership_find_by_identity",
+    "identity_tenant_membership_find_by_tenant",
+    "group_tenant_membership_add",
+    "group_tenant_membership_get",
+    "group_tenant_membership_find_by_group",
+    "group_tenant_membership_find_by_tenant",
+    "identity_group_membership_add",
+    "identity_group_membership_get",
+    "identity_group_membership_find_by_identity",
+    "identity_group_membership_find_by_group",
+    "identity_org_membership_add",
+    "identity_org_membership_get",
+    "identity_org_membership_find_by_identity",
+    "identity_org_membership_find_by_organization",
+    "group_org_membership_add",
+    "group_org_membership_get",
+    "group_org_membership_find_by_group",
+    "group_org_membership_find_by_organization",
 }
 
 _FORBIDDEN_TABLES = (
@@ -89,7 +134,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0003"
+    assert revision == "0004"
     assert revision == manager.head_revision
 
 
@@ -147,15 +192,17 @@ def test_mig07_packaged_resources_work_without_repository_cwd(
 # --- BND: PR boundary ---------------------------------------------------------
 
 
-def test_bnd01_and_bnd03_no_functioning_postgres_spi_or_uow() -> None:
+def test_bnd01_and_bnd03_postgres_provider_implements_the_existing_spi() -> None:
     import mtmf_core.persistence as persistence
     from mtmf_core.persistence import postgres  # type: ignore[attr-defined]
 
+    # PR 7B implements the existing SPI; it does not add a second,
+    # competing provider surface under ``mtmf_core.persistence``.
     assert not hasattr(persistence, "PostgresMtmfSpi")
-    assert not hasattr(postgres, "PostgresMtmfSpi")
-    assert not hasattr(postgres, "PostgresUnitOfWork")
+    assert hasattr(postgres, "PostgresMtmfSpi")
+    assert hasattr(postgres, "PostgresUnitOfWork")
     assert not hasattr(postgres, "UnitOfWork")
-    # The SPI surface is unchanged from PR 5.
+    # The SPI surface itself is unchanged from PR 5.
     assert hasattr(persistence, "MtmfSpi")
 
 
@@ -206,6 +253,11 @@ def test_bnd10_postgres_infrastructure_imports_no_authorization() -> None:
         "mtmf_core.persistence.postgres.config",
         "mtmf_core.persistence.postgres.resources",
         "mtmf_core.persistence.postgres.migration",
+        "mtmf_core.persistence.postgres.mapping",
+        "mtmf_core.persistence.postgres.error_translation",
+        "mtmf_core.persistence.postgres.repositories",
+        "mtmf_core.persistence.postgres.spi",
+        "mtmf_core.persistence.postgres.unit_of_work",
     ):
         module = importlib.import_module(module_name)
         for attribute in vars(module).values():
