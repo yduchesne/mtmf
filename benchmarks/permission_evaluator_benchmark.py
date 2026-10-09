@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Reproducible Python-vs-Rust permission-evaluator benchmark.
 
-The primary comparison is the domain-facing evaluator seam that the
-:class:`~mtmf_core.authorization.authorizer.Authorizer` uses today:
+The primary comparison is the retained linear evaluator seam (since
+PR 8H the production :class:`~mtmf_core.authorization.authorizer.Authorizer`
+path is the pure-Python indexed ``CompiledPolicy`` through
+``DefaultAuthorizationPolicyResolver``, not this seam):
 
     PermissionEvaluator.evaluate(action, roles)          # Python semantic reference
-    RustPermissionEvaluator.evaluate(action, roles)      # active/default
+    RustPermissionEvaluator.evaluate(action, roles)      # experimental, non-default
 
 with identical pre-built domain inputs. That intentionally measures the
 whole meaningful path: Role/PermissionSet traversal, domain-to-primitive

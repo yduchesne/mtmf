@@ -10,7 +10,7 @@ The PR 8G amendment adds the missing experimental control and measures
 FOUR paths for the SAME deterministic scenarios:
 
     P   Python linear evaluator (``PermissionEvaluator``)
-    R   Rust linear evaluator (``RustPermissionEvaluator``, production default)
+    R   Rust linear evaluator (``RustPermissionEvaluator``, experimental, non-default)
     PC  production Python CompiledPolicy (``CompiledPolicy.compile`` once,
         pure-Python indexed evaluation; no FFI)
     RC  Rust CompiledPolicy (``CompiledPolicyEvaluator.compile`` once,

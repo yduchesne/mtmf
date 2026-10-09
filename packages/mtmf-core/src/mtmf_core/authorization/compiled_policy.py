@@ -1,8 +1,8 @@
 """Production pure-Python indexed :class:`CompiledPolicy` (PR 8H).
 
 PR 8H productionizes the proven pure-Python compiled-policy semantics
-first measured as the PR 8G ``PC`` benchmark control
-(``benchmarks/python_compiled_policy.py``). That control demonstrated
+first measured as the PR 8G ``PC`` benchmark control (removed as a
+benchmark-only duplicate in PR 8H). That control demonstrated
 that compiling/indexing already-applicable policy is the principal
 per-evaluation optimization and that, for the measured single-Action
 workload, the pure-Python compiled implementation outperformed the Rust
