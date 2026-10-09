@@ -677,7 +677,7 @@ Roles compose the atomic Permissions required for a persona.
 
 ## 16. Built-In Roles
 
-The initial MTMF built-in Role catalog consists of the following eleven roles.
+The initial MTMF built-in Role catalog consists of the following eleven roles. The approved human-readable allocation, contributor exclusions, exact-action seeding policy, and installation assumptions are described in [Built-in Access Policy and Installation](PR10_BUILTIN_ACCESS_AND_INSTALLATION.md).
 
 | Role | Intended purpose |
 | --- | --- |
@@ -696,6 +696,8 @@ The initial MTMF built-in Role catalog consists of the following eleven roles.
 These built-in Roles are SYSTEM-defined Role definitions. Their names do not imply that the Role definition itself carries TENANT or ORGANIZATION security scope.
 
 Potential future roles such as User Administrator or Auditor roles are not part of the initial catalog unless added explicitly to this constitution.
+
+Built-in policy uses exact Action grants without wildcard Permission matchers in the initial seed. SYSTEM-owned Role definitions cannot be edited through ordinary administrative operations; Tenant-owned Role definitions may be managed within their defining Tenant subject to authorization. Contributor Roles do not administer Tenant/Organization containers or their lifecycle. A Tenant Administrator may manage IAM and assign administrative Roles only subject to scope, dominance, and anti-escalation; assignment never grants stewardship.
 
 ### 16.1 No stewardship role
 

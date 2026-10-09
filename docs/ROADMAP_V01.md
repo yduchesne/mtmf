@@ -179,3 +179,7 @@ Rust/PyO3 permission-engine work is owned by the PR 8 series above and is not de
 This roadmap should evolve with implementation.
 
 When a planned PR is split, merged, reordered, or materially re-scoped, update this document rather than preserving obsolete numbering. When a PR item is fully implemented and validated, mark it `[DONE]` in this roadmap in the implementing PR.
+
+## PR 10 approved policy baseline
+
+The human-readable built-in Role/Permission allocation and the **empty-database v0.1 installation baseline** are recorded in [Built-in Access Policy and Installation](PR10_BUILTIN_ACCESS_AND_INSTALLATION.md). PR 10 must retain versioned migration 0006 but need not convert historical development data. This documentation decision does not mark PR 10 implemented, approve an unreviewed exact Permission seed, or expose privileged functions through the shared runtime credential.
