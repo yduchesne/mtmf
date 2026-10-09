@@ -16,6 +16,14 @@ connection) executes under the MTMF owner role by ``SET ROLE``, so
 objects are owned deterministically regardless of which login
 authenticated. The restricted runtime configuration is rejected: a
 runtime credential may never manage migrations.
+
+A successful :meth:`PostgresMigrationManager.upgrade_to_head` means both
+that Alembic reached head **and** that the post-upgrade effective runtime
+privilege contract passed. The mandatory verifier runs on a fresh
+authenticated migrator connection after Alembic completes, including for
+already-head no-op upgrades. If it fails, the method raises
+:class:`MigrationError` and never implies that already-committed Alembic
+DDL was rolled back.
 """
 
 from __future__ import annotations
@@ -29,7 +37,9 @@ from mtmf_core.persistence.postgres.config import PostgresConfig, PostgresRole
 from mtmf_core.persistence.postgres.resources import migrations_script_directory
 from mtmf_core.persistence.postgres.roles import (
     RoleProvisioningError,
+    find_non_owner_objects,
     verify_migrator_connection,
+    verify_runtime_privileges,
 )
 
 HEAD_REVISION = "0003"
@@ -45,32 +55,7 @@ class MigrationError(RuntimeError):
 
 def _legacy_ownership(connection: psycopg.Connection) -> str | None:
     """Return a summary of ``mtmf`` objects not owned by the owner role, if any."""
-    # ``%%s`` is psycopg's escape for a literal ``%s`` (the SQL ``format()``
-    # placeholder); the three ``%s`` tokens are the bound owner-role values.
-    row = connection.execute(
-        """
-        SELECT string_agg(obj, ', ')
-          FROM (
-                SELECT format('schema mtmf (%%s)', pg_get_userbyid(nspowner)) AS obj
-                  FROM pg_catalog.pg_namespace
-                 WHERE nspname = 'mtmf' AND pg_get_userbyid(nspowner) <> %s
-                UNION ALL
-                SELECT format('%%s (%%s)', c.relname, pg_get_userbyid(c.relowner))
-                  FROM pg_catalog.pg_class c
-                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                 WHERE n.nspname = 'mtmf' AND pg_get_userbyid(c.relowner) <> %s
-                UNION ALL
-                SELECT format('function %%s (%%s)', p.proname, pg_get_userbyid(p.proowner))
-                  FROM pg_catalog.pg_proc p
-                  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-                 WHERE n.nspname = 'mtmf' AND pg_get_userbyid(p.proowner) <> %s
-               ) AS offenders
-        """,
-        (OWNER_ROLE, OWNER_ROLE, OWNER_ROLE),
-    ).fetchone()
-    if row is None or row[0] is None:
-        return None
-    return str(row[0])
+    return find_non_owner_objects(connection)
 
 
 def _set_role_statement() -> sql.Composed:
@@ -115,6 +100,38 @@ class PostgresMigrationManager:
         cfg.attributes["mtmf_owner_role"] = OWNER_ROLE
         return cfg
 
+    def _verify_post_upgrade_privileges(self) -> None:
+        """Run the mandatory effective-privilege verifier on a fresh migrator session.
+
+        Uses a new connection authenticated as ``mtmf_migrator``, verifies the
+        authenticated identity, then assumes ``mtmf_owner`` only for the
+        read-only verification. No administrator credentials are required and
+        no schema/grant/password state is mutated.
+
+        :raises MigrationError: when verification fails, with an explicit
+            statement that Alembic may already have committed.
+        """
+        try:
+            with psycopg.connect(self._config.psycopg_dsn) as connection:
+                verify_migrator_connection(connection)
+                connection.execute(_set_role_statement())
+                verify_runtime_privileges(connection)
+        except RoleProvisioningError as exc:
+            raise MigrationError(
+                "MTMF migration reached the Alembic upgrade stage, but mandatory "
+                "post-upgrade runtime privilege verification failed: "
+                f"{exc}. Migrations may already be committed. Stop deployment, "
+                "correct the privilege discrepancy, then rerun upgrade_to_head(); "
+                "do not attempt an automatic downgrade."
+            ) from exc
+        except psycopg.Error as exc:
+            raise MigrationError(
+                "MTMF migration reached the Alembic upgrade stage, but the mandatory "
+                "post-upgrade runtime privilege verification connection could not "
+                "complete. Migrations may already be committed; stop deployment and "
+                "investigate before rerunning upgrade_to_head()."
+            ) from exc
+
     def upgrade_to_head(self) -> None:
         """Migrate an empty or partially migrated MTMF database to head.
 
@@ -126,8 +143,15 @@ class PostgresMigrationManager:
         rejected with the administrator ownership-handoff instruction
         rather than silently reassigning ownership.
 
-        :raises MigrationError: if the migration fails or legacy ownership
-            requires the administrator handoff.
+        After Alembic completes, the mandatory effective runtime privilege
+        verifier runs on a fresh authenticated migrator connection. A
+        successful return therefore means Alembic reached head **and** the
+        security postflight passed; a failure raises :class:`MigrationError`
+        even though the migration may already have committed.
+
+        :raises MigrationError: if the migration fails, legacy ownership
+            requires the administrator handoff, or the post-upgrade
+            privilege verification fails.
         """
         try:
             with psycopg.connect(self._config.psycopg_dsn, autocommit=True) as connection:
@@ -143,6 +167,7 @@ class PostgresMigrationManager:
                 connection.execute(_set_role_statement())
                 connection.execute("CREATE SCHEMA IF NOT EXISTS mtmf")
             command.upgrade(self._alembic_configuration(), "head")
+            self._verify_post_upgrade_privileges()
         except MigrationError:
             raise
         except RoleProvisioningError as exc:

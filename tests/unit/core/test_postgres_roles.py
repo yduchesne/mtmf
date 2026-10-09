@@ -59,8 +59,11 @@ class _ScriptedConnection:
         return rendered
 
 
-def _healthy_catalog(connection: _ScriptedConnection) -> _ScriptedConnection:
+def _healthy_catalog(
+    connection: _ScriptedConnection, *, non_owner_rows: list[tuple[Any, ...]] | None = None
+) -> _ScriptedConnection:
     """Register the catalog rows produced by a correctly provisioned cluster."""
+    offender_rows = [(None,)] if non_owner_rows is None else non_owner_rows
     return (
         connection.on(
             "SELECT rolname, rolsuper",
@@ -68,6 +71,7 @@ def _healthy_catalog(connection: _ScriptedConnection) -> _ScriptedConnection:
         )
         .on("FROM pg_catalog.pg_auth_members", [_SAFE_MEMBERSHIP])
         .on("pg_has_role", [_SAFE_REACHABILITY])
+        .on("SELECT string_agg(obj", offender_rows)
     )
 
 
@@ -408,14 +412,62 @@ def test_adopt_existing_schema_is_a_noop_without_the_schema() -> None:
 
 
 def test_adopt_existing_schema_transfers_only_mtmf_objects() -> None:
-    connection = (
-        _ScriptedConnection()
-        .on("FROM pg_catalog.pg_namespace WHERE nspname = %s", [(1,)])
-        .on("FROM pg_catalog.pg_class c", [("tenant", "r")])
-        .on("FROM pg_catalog.pg_proc p", [("remove_x(uuid)",)])
-    )
+    connection = _healthy_catalog(_ScriptedConnection())
+    connection.on("FROM pg_catalog.pg_namespace WHERE nspname = %s", [(1,)])
+    connection.on("FROM pg_catalog.pg_class c", [("tenant", "r")])
+    connection.on("FROM pg_catalog.pg_proc p", [("remove_x(uuid)",)])
     roles.adopt_existing_schema(connection)  # type: ignore[arg-type]
     statements = connection.statements()
     assert 'ALTER SCHEMA "mtmf" OWNER TO "mtmf_owner"' in statements
     assert 'ALTER TABLE "mtmf"."tenant" OWNER TO "mtmf_owner"' in statements
     assert 'ALTER FUNCTION remove_x(uuid) OWNER TO "mtmf_owner"' in statements
+
+
+def test_adopt_existing_schema_fails_when_owner_transfer_is_incomplete() -> None:
+    connection = _healthy_catalog(_ScriptedConnection(), non_owner_rows=[("tenant (mtmf)",)])
+    connection.on("FROM pg_catalog.pg_namespace WHERE nspname = %s", [(1,)])
+    connection.on("FROM pg_catalog.pg_class c", [("tenant", "r")])
+    connection.on("FROM pg_catalog.pg_proc p", [("remove_x(uuid)",)])
+    with pytest.raises(roles.RoleProvisioningError) as excinfo:
+        roles.adopt_existing_schema(connection)  # type: ignore[arg-type]
+    assert "tenant (mtmf)" in str(excinfo.value)
+
+
+def test_find_non_owner_objects_reports_offenders() -> None:
+    connection = _ScriptedConnection().on("SELECT string_agg(obj", [("tenant (mtmf)",)])
+    assert roles.find_non_owner_objects(connection) == "tenant (mtmf)"  # type: ignore[arg-type]
+
+
+def test_find_non_owner_objects_returns_none_when_owner_owned() -> None:
+    connection = _ScriptedConnection().on("SELECT string_agg(obj", [(None,)])
+    assert roles.find_non_owner_objects(connection) is None  # type: ignore[arg-type]
+
+
+# --- U09/U10: lifecycle phases do not demand head-level privileges ----------
+
+
+def test_u09_provisioning_does_not_run_head_privilege_queries() -> None:
+    connection = _healthy_catalog(_ScriptedConnection())
+    connection.on("FROM pg_catalog.pg_roles WHERE rolname = %s", [(1,)])
+    connection.on("SELECT current_database()", [("mtmf",)])
+    roles.provision_roles(
+        connection,  # type: ignore[arg-type]
+        migrator_password="a",
+        runtime_password="b",
+    )
+    joined = "\n".join(connection.statements())
+    assert "has_table_privilege" not in joined
+    assert "has_function_privilege" not in joined
+    assert "pg_default_acl" not in joined
+
+
+def test_u10_adoption_checks_ownership_and_topology_only() -> None:
+    connection = _healthy_catalog(_ScriptedConnection())
+    connection.on("FROM pg_catalog.pg_namespace WHERE nspname = %s", [(1,)])
+    connection.on("FROM pg_catalog.pg_class c", [("tenant", "r")])
+    connection.on("FROM pg_catalog.pg_proc p", [("remove_x(uuid)",)])
+    roles.adopt_existing_schema(connection)  # type: ignore[arg-type]
+    joined = "\n".join(connection.statements())
+    assert "has_table_privilege" not in joined
+    assert "has_function_privilege" not in joined
+    assert "SELECT rolname, rolsuper" in joined  # topology verifier ran

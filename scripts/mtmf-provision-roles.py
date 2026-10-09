@@ -24,8 +24,13 @@ created by an older trusted login. It only touches objects inside the
 ``--verify`` runs the read-only effective-privilege verification after
 migration to head (role topology, database/schema/table/sequence/function
 privileges, the exact runtime EXECUTE allowlist, PUBLIC function EXECUTE,
-and owner default privileges). It may be combined with
-``--adopt-existing-schema``.
+and owner default privileges). It requires a migrated schema and fails
+closed when head-level object privileges are absent; it never provisions
+or migrates. It may be combined with ``--adopt-existing-schema`` only when
+the schema already satisfies the head privilege contract. A successful
+``PostgresMigrationManager.upgrade_to_head()`` already performs this
+verification automatically, so ``--verify`` is an additional operator/CI
+diagnostic.
 """
 
 from __future__ import annotations

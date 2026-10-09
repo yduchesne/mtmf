@@ -620,13 +620,70 @@ def _role_exists(connection: psycopg.Connection, role: str) -> bool:
     return row is not None
 
 
+def find_non_owner_objects(connection: psycopg.Connection) -> str | None:
+    """Return a summary of ``mtmf`` schema/objects/functions not owned by the owner.
+
+    Catalog-only and read-only; returns ``None`` when every supported MTMF
+    object (plus the schema and functions) is owned by ``mtmf_owner``.
+    Indexes follow their table's ownership, so transferring tables transfers
+    the indexes that belong to them.
+    """
+    # ``%%s`` is psycopg's escape for a literal ``%s`` (the SQL ``format()``
+    # placeholder); the six ``%s`` tokens are the bound schema/owner values.
+    row = connection.execute(
+        """
+        SELECT string_agg(obj, ', ')
+          FROM (
+                SELECT format('schema mtmf (%%s)', pg_get_userbyid(nspowner)) AS obj
+                  FROM pg_catalog.pg_namespace
+                 WHERE nspname = %s AND pg_get_userbyid(nspowner) <> %s
+                UNION ALL
+                SELECT format('%%s (%%s)', c.relname, pg_get_userbyid(c.relowner))
+                  FROM pg_catalog.pg_class c
+                  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = %s AND pg_get_userbyid(c.relowner) <> %s
+                UNION ALL
+                SELECT format('function %%s (%%s)', p.proname, pg_get_userbyid(p.proowner))
+                  FROM pg_catalog.pg_proc p
+                  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname = %s AND pg_get_userbyid(p.proowner) <> %s
+               ) AS offenders
+        """,
+        (SCHEMA, OWNER_ROLE, SCHEMA, OWNER_ROLE, SCHEMA, OWNER_ROLE),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return str(row[0])
+
+
+def _verify_schema_ownership(connection: psycopg.Connection) -> None:
+    """Fail closed when any MTMF object is still not owned by ``mtmf_owner``."""
+    offenders = find_non_owner_objects(connection)
+    if offenders is not None:
+        raise RoleProvisioningError(
+            f"ownership adoption did not transfer these {SCHEMA} objects to "
+            f"{OWNER_ROLE}: {offenders}. Earlier autocommit ownership changes are "
+            "not rolled back; review the objects and retry."
+        )
+
+
 def adopt_existing_schema(connection: psycopg.Connection) -> None:
     """Administrator-only ownership handoff for a pre-existing ``mtmf`` schema.
 
-    Transfers the ``mtmf`` schema, its tables/views/sequences, and its
-    functions to ``mtmf_owner``. Only objects inside the ``mtmf`` schema
-    are touched; no other schema, role, or database is modified. Running
-    this when objects already belong to the owner is a harmless no-op.
+        Transfers the ``mtmf`` schema, its tables/views/sequences, and its
+        functions to ``mtmf_owner``. Only objects inside the ``mtmf`` schema
+        are touched; no other schema, role, or database is modified.
+
+        The documented caller contract is that the three MTMF roles have
+    already been provisioned (the CLI provisions first). After adoption this
+        function asserts that every supported MTMF object is owner-owned and
+        re-runs the role-topology verifier. It deliberately does **not** run the
+        full runtime privilege verifier: a pre-head schema may legitimately
+        differ from the head privilege contract.
+
+        When the ``mtmf`` schema does not exist, this is a no-op and no
+        topology check runs. On ownership-postcondition failure the earlier
+        autocommit ownership changes are **not** rolled back.
     """
     schema_exists = connection.execute(
         "SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = %s", (SCHEMA,)
@@ -652,3 +709,5 @@ def adopt_existing_schema(connection: psycopg.Connection) -> None:
     for (signature,) in functions:
         function = _adopt_function_statement(str(signature))
         connection.execute(function)
+    _verify_schema_ownership(connection)
+    verify_role_topology(connection)

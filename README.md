@@ -71,11 +71,15 @@ provisions roles, performs the ownership handoff, and runs verification.
 Migrations run as `mtmf_migrator` (`MTMF_MIGRATOR_*`); the manager verifies
 the authenticated login is a non-elevated `mtmf_migrator` on every
 migration connection before assuming `SET ROLE mtmf_owner`, and rejects an
-administrator- or runtime-labelled configuration. The privilege tests
-connect as the restricted `mtmf_runtime` (`MTMF_RUNTIME_*`).
+administrator- or runtime-labelled configuration. A successful
+`upgrade_to_head()` means Alembic reached head **and** the mandatory
+effective runtime privilege verifier passed on a fresh migrator session;
+a postflight failure raises `MigrationError` (migrations may already be
+committed) and must stop the deployment. The privilege tests connect as the
+restricted `mtmf_runtime` (`MTMF_RUNTIME_*`).
 `scripts/mtmf-provision-roles.py --adopt-existing-schema` is the one-time
 administrator handoff for a database whose `mtmf` objects predate PR 7A;
-`--verify` runs the read-only effective-privilege verification after
+`--verify` is an additional read-only diagnostic for later audits/CI after
 migration. In production, a runtime process receives **only**
 `MTMF_RUNTIME_*`. See [DATABASE.md](docs/DATABASE.md) for the privilege model.
 

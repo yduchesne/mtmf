@@ -88,6 +88,7 @@ Generated Python bytecode and local development artifacts must not be committed.
 - Repositories participating in one business operation share a UnitOfWork/transaction context.
 - The PostgreSQL provider performs application-level database operations and logic through stored functions.
 - Alembic is an internal migration mechanism; consumers interact through an MTMF-owned migration/database-management interface.
+- A successful `upgrade_to_head()` requires the mandatory post-upgrade effective runtime privilege verification to pass on a fresh authenticated migrator connection. Never bypass, skip, downgrade, or suppress that postflight, and never treat "Alembic reached head" as deployment success. A postflight failure does not roll back committed migrations; report it and require operator remediation.
 - Do not expose PostgreSQL connections, Alembic internals, or persistence implementation details through public contracts.
 - Do not hold a PostgreSQL transaction open while performing remote IdP calls.
 - Multi-object operations that establish documented invariants must be atomic where partial completion would create invalid domain state.

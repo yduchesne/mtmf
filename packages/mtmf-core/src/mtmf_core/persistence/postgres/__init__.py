@@ -32,6 +32,7 @@ from mtmf_core.persistence.postgres.roles import (
     MigrationIdentityError,
     PrivilegeVerificationError,
     RoleProvisioningError,
+    find_non_owner_objects,
     verify_role_topology,
     verify_runtime_privileges,
 )
@@ -48,6 +49,7 @@ __all__ = [
     "PostgresRole",
     "PrivilegeVerificationError",
     "RoleProvisioningError",
+    "find_non_owner_objects",
     "migrations_script_directory",
     "sql_version_files",
     "verify_role_topology",

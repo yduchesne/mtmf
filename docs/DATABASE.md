@@ -123,6 +123,8 @@ The migration/owner/admin roles are outside that adversarial guarantee; they req
 
 Diagnostics name objects, privileges, and role paths but never credentials. Revision `0003`'s in-transaction assertions remain defense in depth, not the only check. A deliberate third-party grant (for example, runtime membership in a role with `SELECT` on `mtmf.tenant` or `EXECUTE` on an MTMF function) is detected even though the direct ACL does not name runtime.
 
+`verify_runtime_privileges` is invoked **automatically** at the end of every successful `PostgresMigrationManager.upgrade_to_head()` (section 8), including already-head no-op upgrades. `scripts/mtmf-provision-roles.py --verify` is an additional read-only operator/CI diagnostic, not the only mandatory check.
+
 ## 7. Tenant isolation and authorization boundaries
 
 - Domain authorization uses the acting Identity and active `(Tenant, Principal, Identity)` session; it is enforced by MTMF's authoritative Authorizer.
@@ -140,6 +142,19 @@ Diagnostics name objects, privileges, and role paths but never credentials. Revi
 - Migration and runtime connection configurations are distinct. Application startup never silently migrates with privileged credentials.
 - No migration discards authoritative Tenant, Principal, Identity, Group, Organization, membership, or audit data; upgrade-to-head is idempotent and preserves data.
 - PostgreSQL DDL is transactional; the migration assertions roll back the whole revision on failure. Role provisioning is a separate, idempotent, non-Alembic administrator step.
+- **Mandatory post-upgrade verification:** every successful `PostgresMigrationManager.upgrade_to_head()` opens a fresh connection authenticated as `mtmf_migrator`, verifies the identity, assumes `mtmf_owner` only through the authorized `SET ROLE`, and runs `verify_runtime_privileges` before returning. This runs for fresh installs, populated upgrades, and already-head no-op upgrades; it is not conditional on an Alembic revision change. No administrator credentials are required in the migration process.
+- **Post-commit failure semantics:** if the postflight fails, `upgrade_to_head()` raises `MigrationError` explaining that the migration reached the Alembic stage and the mandatory post-upgrade runtime privilege verification failed, that migrations may already be committed, and that the operator must correct the discrepancy and rerun `upgrade_to_head()`. It never claims or attempts an automatic rollback/downgrade and never repairs grants automatically.
+
+### 8.1 Lifecycle verification phases
+
+| Phase | Topology preflight/postflight | Ownership postcondition | Full runtime privilege verifier |
+|---|---|---|---|
+| `provision_roles` (empty database) | Yes | n/a | **No** (schema/functions may not exist) |
+| `adopt_existing_schema` | Yes (documented caller contract: roles provisioned first) | Yes | **No** (pre-head privileges may legitimately differ) |
+| `upgrade_to_head` | Yes (migrator identity + legacy ownership preflight) | Yes (via `0003`) | **Yes, mandatory** |
+| CLI `--verify` | Yes | n/a | Yes (read-only, optional; requires migrated schema) |
+
+Legacy adoption does not demand head-level runtime ACLs before the upgrade. Provisioning an empty database runs topology checks only and must not require the `mtmf` schema, revision `0003`, or the six functions to exist.
 
 ## 9. Connection and deployment security
 
@@ -180,6 +195,8 @@ Diagnostics name objects, privileges, and role paths but never credentials. Revi
 A test that merely inspects missing ACLs does not prove effective denial. Run the normal QA and PostgreSQL integration gates without weakening thresholds.
 
 ### 10.1 PR 7A-1 role-topology and credential-boundary verification
+
+`tests/integration/postgres/test_migration_privilege_lifecycle.py` implements I01..I14: the mandatory postflight runs on fresh and already-head upgrades; a contaminated table grant, unauthorized function `EXECUTE`, or hostile runtime membership makes an already-head no-op migration fail and recover after remediation; legacy adoption reaches the verified head posture without losing data/audit; the ownership postcondition names non-owner objects; and the CLI `--verify` is read-only and fails before head without auto-provisioning or migrating.
 
 `tests/integration/postgres/test_role_topology_security.py` implements A1-01..A1-22 against real PostgreSQL 18 logins. It injects hostile direct and transitive memberships and third-party grants into uniquely named, disposable test roles, asserts fail-closed diagnostics (naming role paths, never credentials), and restores every grant/membership in a `finally` block. It also compares a normalized effective-privilege snapshot between a clean fresh `0001->0002->0003` install and a legacy `0002` ownership handoff, requiring equivalent security semantics (role attributes, direct memberships, ownership, runtime database/schema/table/sequence/function privileges, the EXECUTE allowlist, PUBLIC function ACLs, and owner default ACLs). No OIDs or generated identifiers are compared.
 
