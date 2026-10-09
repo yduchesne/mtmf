@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Administrator-invoked MTMF PostgreSQL role provisioning.
+"""Administrator-invoked MTMF PostgreSQL role provisioning and verification.
 
 Usage (from the repository root)::
 
     uv run python scripts/mtmf-provision-roles.py
     uv run python scripts/mtmf-provision-roles.py --adopt-existing-schema
+    uv run python scripts/mtmf-provision-roles.py --verify
 
 This is the only supported way to create the cluster-wide MTMF roles. It is
 idempotent and safe to re-run. It connects with the administrator identity
@@ -19,6 +20,12 @@ password.
 administrator ownership handoff for a database whose ``mtmf`` objects were
 created by an older trusted login. It only touches objects inside the
 ``mtmf`` schema.
+
+``--verify`` runs the read-only effective-privilege verification after
+migration to head (role topology, database/schema/table/sequence/function
+privileges, the exact runtime EXECUTE allowlist, PUBLIC function EXECUTE,
+and owner default privileges). It may be combined with
+``--adopt-existing-schema``.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from mtmf_core.persistence.postgres.roles import (
     RUNTIME_ROLE,
     adopt_existing_schema,
     provision_roles,
+    verify_runtime_privileges,
 )
 
 _MIGRATOR_PASSWORD_ENV = "MTMF_MIGRATOR_POSTGRES_PASSWORD"
@@ -40,10 +48,18 @@ _RUNTIME_PASSWORD_ENV = "MTMF_RUNTIME_POSTGRES_PASSWORD"
 
 
 def main() -> None:
-    adopt = "--adopt-existing-schema" in sys.argv[1:]
-    unknown = [arg for arg in sys.argv[1:] if arg != "--adopt-existing-schema"]
+    arguments = sys.argv[1:]
+    unknown = [
+        argument
+        for argument in arguments
+        if argument not in {"--adopt-existing-schema", "--verify"}
+    ]
     if unknown:
-        raise SystemExit("usage: mtmf-provision-roles.py [--adopt-existing-schema]")
+        raise SystemExit("usage: mtmf-provision-roles.py [--adopt-existing-schema] [--verify]")
+    adopt = "--adopt-existing-schema" in arguments
+    verify = "--verify" in arguments
+    # Provisioning is the default action; --verify alone is verification only.
+    do_provision = not verify or adopt
 
     try:
         admin = PostgresConfig.from_env()
@@ -53,25 +69,40 @@ def main() -> None:
             "export MTMF_POSTGRES_* / MTMF_DATABASE_URL (see .env.example)"
         ) from exc
 
-    migrator_password = os.environ.get(_MIGRATOR_PASSWORD_ENV, "").strip()
-    runtime_password = os.environ.get(_RUNTIME_PASSWORD_ENV, "").strip()
-    if not migrator_password or not runtime_password:
-        raise SystemExit(
-            f"{_MIGRATOR_PASSWORD_ENV} and {_RUNTIME_PASSWORD_ENV} must be set; "
-            "provide deployment secrets through the environment, never in code"
-        )
+    migrator_password = ""
+    runtime_password = ""
+    if do_provision:
+        migrator_password = os.environ.get(_MIGRATOR_PASSWORD_ENV, "").strip()
+        runtime_password = os.environ.get(_RUNTIME_PASSWORD_ENV, "").strip()
+        if not migrator_password or not runtime_password:
+            raise SystemExit(
+                f"{_MIGRATOR_PASSWORD_ENV} and {_RUNTIME_PASSWORD_ENV} must be set; "
+                "provide deployment secrets through the environment, never in code"
+            )
 
     with psycopg.connect(admin.psycopg_dsn, autocommit=True) as connection:
-        provision_roles(
-            connection,
-            migrator_password=migrator_password,
-            runtime_password=runtime_password,
-        )
+        if do_provision:
+            provision_roles(
+                connection,
+                migrator_password=migrator_password,
+                runtime_password=runtime_password,
+            )
         if adopt:
             adopt_existing_schema(connection)
+        if verify:
+            verify_runtime_privileges(connection)
 
-    action = "provisioned MTMF roles" + (" and adopted existing mtmf objects" if adopt else "")
-    print(f"{action} on {admin.host}:{admin.port}/{admin.database}; {RUNTIME_ROLE} is restricted")
+    actions: list[str] = []
+    if do_provision:
+        actions.append("provisioned MTMF roles")
+    if adopt:
+        actions.append("adopted existing mtmf objects")
+    if verify:
+        actions.append("verified runtime privileges")
+    print(
+        f"{' and '.join(actions)} on "
+        f"{admin.host}:{admin.port}/{admin.database}; {RUNTIME_ROLE} is restricted"
+    )
 
 
 if __name__ == "__main__":

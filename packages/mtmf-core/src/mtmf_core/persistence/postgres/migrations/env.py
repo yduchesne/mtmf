@@ -18,6 +18,8 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import create_engine, pool
 
+from mtmf_core.persistence.postgres.roles import verify_migrator_connection
+
 _MIGRATION_SCHEMA = "mtmf"
 _OWNER_ROLE_ATTRIBUTE = "mtmf_owner_role"
 _DEFAULT_OWNER_ROLE = "mtmf_owner"
@@ -41,6 +43,15 @@ def run_migrations_online() -> None:
     # performs no schema bootstrap.
     engine = create_engine(url, poolclass=pool.NullPool)
     with engine.connect() as connection:
+        # The migration login must be the migrator and must not be elevated
+        # before we assume the owner; check the raw DBAPI connection.
+        proxy = connection.connection
+        if proxy is None:
+            raise RuntimeError("the Alembic migration connection is not available")
+        driver = proxy.driver_connection
+        if driver is None:
+            raise RuntimeError("the Alembic migration driver connection is not available")
+        verify_migrator_connection(driver)
         # ``SET ROLE`` is transaction-scoped: commit it so it survives
         # into the migration transaction below. The role move happens
         # before Alembic starts its own transaction, since Alembic would

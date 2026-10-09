@@ -586,7 +586,9 @@ def test_priv16_populated_upgrade_rerun_preserves_data_and_acls(
     )
 
 
-def test_priv16b_legacy_ownership_fails_loudly_then_adopts(mtmf_config: object, dsn: str) -> None:
+def test_priv16b_legacy_ownership_fails_loudly_then_adopts(
+    migrator_config: object, dsn: str
+) -> None:
     # A database whose mtmf schema/objects predate PR 7A are owned by the old
     # login. Revision 0003 must fail with the administrator handoff
     # instruction instead of silently reassigning ownership or producing a
@@ -594,19 +596,19 @@ def test_priv16b_legacy_ownership_fails_loudly_then_adopts(mtmf_config: object, 
     with psycopg.connect(dsn, autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS mtmf CASCADE")
         connection.execute("CREATE SCHEMA mtmf AUTHORIZATION mtmf_owner")
-    helpers.upgrade_to_revision(mtmf_config, "0002")
+    helpers.upgrade_to_revision(migrator_config, "0002")
     with psycopg.connect(dsn, autocommit=True) as connection:
         # Simulate legacy ownership: the schema and one object belong to the
         # old trusted login rather than mtmf_owner.
         connection.execute("ALTER SCHEMA mtmf OWNER TO mtmf")
         connection.execute("ALTER TABLE mtmf.tenant OWNER TO mtmf")
     with pytest.raises(MigrationError) as excinfo:
-        PostgresMigrationManager(mtmf_config).upgrade_to_head()  # type: ignore[arg-type]
+        PostgresMigrationManager(migrator_config).upgrade_to_head()  # type: ignore[arg-type]
     assert "ownership handoff" in str(excinfo.value)
 
     with psycopg.connect(dsn, autocommit=True) as connection:
         adopt_existing_schema(connection)
-    PostgresMigrationManager(mtmf_config).upgrade_to_head()  # type: ignore[arg-type]
+    PostgresMigrationManager(migrator_config).upgrade_to_head()  # type: ignore[arg-type]
     with psycopg.connect(dsn) as connection:
         revision = connection.execute("SELECT version_num FROM mtmf.alembic_version").fetchone()[0]
         non_owner_objects = connection.execute(

@@ -62,16 +62,22 @@ set -a && . ./.env && set +a
 uv run python scripts/mtmf-postgres.py up      # starts the MTMF `mtmf` Compose project (Podman, port 25432)
 uv run python scripts/mtmf-provision-roles.py  # idempotent owner/migrator/runtime roles (admin credentials)
 ./build.sh --integration    # real-PostgreSQL migration/schema/constraint/privilege tests
+uv run python scripts/mtmf-provision-roles.py --verify  # post-migration effective-privilege verification
 uv run python scripts/mtmf-postgres.py down    # stops only MTMF resources
 ```
 
 The administrator identity (`MTMF_POSTGRES_*` / `MTMF_DATABASE_URL`) only
-provisions roles and inspects/seed data. Migrations run as `mtmf_migrator`
-(`MTMF_MIGRATOR_*`) under a controlled `SET ROLE mtmf_owner`, and the
-privilege tests connect as the restricted `mtmf_runtime`
-(`MTMF_RUNTIME_*`). `scripts/mtmf-provision-roles.py --adopt-existing-schema`
-is the one-time administrator handoff for a database whose `mtmf` objects
-predate PR 7A. See [DATABASE.md](docs/DATABASE.md) for the privilege model.
+provisions roles, performs the ownership handoff, and runs verification.
+Migrations run as `mtmf_migrator` (`MTMF_MIGRATOR_*`); the manager verifies
+the authenticated login is a non-elevated `mtmf_migrator` on every
+migration connection before assuming `SET ROLE mtmf_owner`, and rejects an
+administrator- or runtime-labelled configuration. The privilege tests
+connect as the restricted `mtmf_runtime` (`MTMF_RUNTIME_*`).
+`scripts/mtmf-provision-roles.py --adopt-existing-schema` is the one-time
+administrator handoff for a database whose `mtmf` objects predate PR 7A;
+`--verify` runs the read-only effective-privilege verification after
+migration. In production, a runtime process receives **only**
+`MTMF_RUNTIME_*`. See [DATABASE.md](docs/DATABASE.md) for the privilege model.
 
 All MTMF Podman/Compose operations are scoped to the canonical `mtmf`
 project and never touch ATI or any other PostgreSQL running on the same

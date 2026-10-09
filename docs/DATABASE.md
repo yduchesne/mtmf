@@ -2,9 +2,9 @@
 
 ## 1. Status, authority, and scope
 
-**Status: implemented in PR 7A (Alembic revision `0003`); verified by real-role integration tests.**
+**Status: implemented in PR 7A (Alembic revision `0003`), hardened by PR 7A-1; verified by real-role integration tests.**
 
-This document is the authoritative PostgreSQL-specific design for MTMF's database roles, grants, stored-function execution boundary, migrations, connection handling, and privilege verification. Sections 3-10 describe implemented controls exercised by `tests/integration/postgres/test_runtime_privileges.py` (PRIV-01..PRIV-20), the existing membership-removal regression suite, and the canonical `./build.sh --qa`, `--sec`, and `--integration` gates.
+This document is the authoritative PostgreSQL-specific design for MTMF's database roles, grants, stored-function execution boundary, migrations, connection handling, and privilege verification. Sections 3-10 describe implemented controls exercised by `tests/integration/postgres/test_runtime_privileges.py` (PRIV-01..PRIV-20), `tests/integration/postgres/test_role_topology_security.py` (A1-01..A1-22), the existing membership-removal regression suite, and the canonical `./build.sh --qa`, `--sec`, and `--integration` gates. PR 7A-1 adds transitive role-topology verification, effective privilege verification, an authenticated migrator contract, and fresh/legacy privilege-matrix parity.
 
 Normative security invariants remain in [SECURITY_MODEL.md](SECURITY_MODEL.md); domain semantics in [DOMAIN_MODEL.md](DOMAIN_MODEL.md); application authorization in [AUTHORIZATION.md](AUTHORIZATION.md); component boundaries in [ARCHITECTURE.md](ARCHITECTURE.md). If this document conflicts with the security constitution, **SECURITY_MODEL.md wins**.
 
@@ -54,7 +54,11 @@ uv run python scripts/mtmf-provision-roles.py --adopt-existing-schema  # legacy 
 
 `--adopt-existing-schema` is the one-time administrator-approved ownership handoff for a database whose `mtmf` objects predate this model; it only touches objects inside the `mtmf` schema. Without it, `PostgresMigrationManager.upgrade_to_head` fails loudly before Alembic runs with an actionable message listing the non-owner objects (revision `0003` repeats the assertion as defense in depth), rather than silently reassigning ownership.
 
-Migration ownership is deterministic: every migration connection (the plain-psycopg schema bootstrap and the SQLAlchemy Alembic connection) executes under `SET ROLE mtmf_owner`, so objects never default to the authenticating migrator login. `PostgresMigrationManager` rejects a configuration carrying the runtime role.
+Migration ownership is deterministic: every migration connection (the plain-psycopg schema bootstrap/read and the SQLAlchemy Alembic connection) executes under `SET ROLE mtmf_owner`, so objects never default to the authenticating migrator login.
+
+Provisioning validates the **effective** membership graph before and after mutation. A runtime login with **any** role membership (direct or transitive), or a migrator with any membership other than the intended `INHERIT FALSE, SET TRUE` owner grant, fails closed with the offending role path; provisioning never silently rewrites another role's memberships. `verify_role_topology` uses `pg_has_role` for effective `SET`/`USAGE`/`MEMBER` reachability as well as the direct `pg_auth_members` graph, because PostgreSQL role privileges are additive and a third-party grant can confer MTMF privileges even when no direct MTMF ACL row names runtime.
+
+Authenticated migrator contract: `PostgresMigrationManager` accepts **only** `PostgresRole.MIGRATOR`. On every migration connection it verifies that `session_user` and `current_user` are `mtmf_migrator`, that the login is not superuser/`CREATEROLE`/`CREATEDB`/`BYPASSRLS`, and that it can `SET ROLE mtmf_owner` without inheriting (`USAGE`) owner privileges, **before** any `SET ROLE` or DDL. A configuration labelled `MIGRATOR` that authenticates as the administrator or runtime login is rejected. The administrator identity is reserved for provisioning and the ownership handoff.
 
 ## 5. Privilege matrix
 
@@ -106,6 +110,19 @@ The transaction-local marker remains as **defense in depth**. The enforced bound
 
 The migration/owner/admin roles are outside that adversarial guarantee; they require separate operational controls and audit.
 
+### 6.4 Effective privilege verification
+
+`mtmf_core.persistence.postgres.roles.verify_runtime_privileges` is a read-only, administrator-invoked check (also exposed as `scripts/mtmf-provision-roles.py --verify`) that runs after migration to head, for both fresh and legacy-handoff databases. It fails closed unless:
+
+- the effective role topology is approved (see section 4);
+- runtime has database `CONNECT` and schema `USAGE`, and no database/schema `CREATE`;
+- runtime has no table/view/partition `SELECT`/`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER` and no sequence `USAGE`/`SELECT`/`UPDATE`;
+- runtime `EXECUTE` is exactly the six full removal signatures (compared by function identity, not count or a name pattern), with zero extra functions;
+- no `PUBLIC` `EXECUTE` remains on MTMF functions and owner default privileges grant none;
+- the Alembic migration table and the audit table are inaccessible.
+
+Diagnostics name objects, privileges, and role paths but never credentials. Revision `0003`'s in-transaction assertions remain defense in depth, not the only check. A deliberate third-party grant (for example, runtime membership in a role with `SELECT` on `mtmf.tenant` or `EXECUTE` on an MTMF function) is detected even though the direct ACL does not name runtime.
+
 ## 7. Tenant isolation and authorization boundaries
 
 - Domain authorization uses the acting Identity and active `(Tenant, Principal, Identity)` session; it is enforced by MTMF's authoritative Authorizer.
@@ -129,6 +146,7 @@ The migration/owner/admin roles are outside that adversarial guarantee; they req
 - Migration and runtime credentials are supplied through separate secrets (`MTMF_MIGRATOR_*`, `MTMF_RUNTIME_*`); the administrator security context uses `MTMF_POSTGRES_*` / `MTMF_DATABASE_URL`. Privileged credentials are never in application environment defaults and never committed.
 - `PostgresConfig.from_env(PostgresRole)` reads explicitly role-scoped variables and fails closed on missing, malformed, or ambiguous configuration; it never falls back to another PostgreSQL instance.
 - Runtime connection setup cannot escalate via role switching (`SET ROLE` is denied), untrusted `search_path`, unsafe extension installation, or object creation.
+- In production, a runtime process receives **only** `MTMF_RUNTIME_*` credentials; `MTMF_POSTGRES_*` (administrator) and `MTMF_MIGRATOR_*` belong to provisioning/deployment contexts and must not be present in the application runtime environment. The integration CI job necessarily carries all three identities to create fixtures; that is a test-harness exception and does not establish production secret isolation.
 - Integration CI provisions temporary privileged roles to set up the database, but **the privilege-test subject connects as `mtmf_runtime`** and the fixture fails setup if the identity is elevated or a superuser.
 - Local Compose/Podman setup retains MTMF resource isolation and the configured host-port prefix-2 convention.
 
@@ -161,6 +179,35 @@ The migration/owner/admin roles are outside that adversarial guarantee; they req
 
 A test that merely inspects missing ACLs does not prove effective denial. Run the normal QA and PostgreSQL integration gates without weakening thresholds.
 
+### 10.1 PR 7A-1 role-topology and credential-boundary verification
+
+`tests/integration/postgres/test_role_topology_security.py` implements A1-01..A1-22 against real PostgreSQL 18 logins. It injects hostile direct and transitive memberships and third-party grants into uniquely named, disposable test roles, asserts fail-closed diagnostics (naming role paths, never credentials), and restores every grant/membership in a `finally` block. It also compares a normalized effective-privilege snapshot between a clean fresh `0001->0002->0003` install and a legacy `0002` ownership handoff, requiring equivalent security semantics (role attributes, direct memberships, ownership, runtime database/schema/table/sequence/function privileges, the EXECUTE allowlist, PUBLIC function ACLs, and owner default ACLs). No OIDs or generated identifiers are compared.
+
+| ID | Scenario | Required outcome |
+|---|---|---|
+| A1-01 | Fresh provisioning repeated twice | Exact roles/attributes/membership; idempotent |
+| A1-02 | Runtime direct membership in owner | Provisioning rejects before credential mutation |
+| A1-03 | Runtime -> intermediate -> owner with `SET TRUE` | Fail closed; path identified |
+| A1-04 | Runtime -> intermediate -> owner with `INHERIT TRUE` | Fail closed; effective owner rights rejected |
+| A1-05 | Runtime -> unrelated role (no MTMF grants) | Fail closed per strict topology contract |
+| A1-06 | Runtime -> unrelated role with MTMF `SELECT` grant | Fail closed; effective `SELECT` detected |
+| A1-07 | Runtime -> unrelated role with MTMF function `EXECUTE` | Fail closed; extra signature detected |
+| A1-08 | Migrator belongs to another role | Fail closed |
+| A1-09 | Migrator -> owner incorrectly inherits | Normalized; `USAGE` false, `SET` true |
+| A1-10 | Runtime `SET ROLE` owner/migrator | Both rejected by PostgreSQL |
+| A1-11 | Migrator authenticated before `SET ROLE` | Identity matches; not elevated |
+| A1-12 | `MIGRATOR`-labelled config with administrator credentials | Rejected before any DDL |
+| A1-13 | `MIGRATOR`-labelled config with runtime credentials | Rejected before any DDL |
+| A1-14 | `ADMIN`-labelled config attempts migration | Rejected; provisioning still supported |
+| A1-15 | Alembic connection authenticates as wrong user | Rejected before migration DDL |
+| A1-16 | Runtime effective privilege inventory | Exactly approved schema/function access |
+| A1-17 | New owner-created function | Not PUBLIC/runtime executable by default |
+| A1-18 | Clean fresh vs legacy handoff | Equivalent normalized privilege snapshots |
+| A1-19 | Runtime removal/audit and rollback regression | Existing PR 7A tests still pass |
+| A1-20 | Verification/provisioning error | Actionable, secret-free diagnostic |
+| A1-21 | Contaminated topology with autocommit provisioning | Preflight failure leaves passwords unchanged; partial-effect limitation documented |
+| A1-22 | Runtime-only deployment environment | Runtime config works alone; migration/provisioning cannot fall back |
+
 ## 11. Delivery sequence and acceptance
 
 1. **Documentation (this document):** agree on roles, threat model, privilege matrix, function execution boundary, and testing contract.
@@ -174,6 +221,8 @@ PR 7A is complete when privileged migration access and restricted runtime access
 
 - **Shared runtime login.** One runtime login is used for all Tenants. A compromised holder can invoke any granted function for any Tenant; per-Tenant isolation is not enforced at the database level. A trusted-identity/authentication design that binds authenticated acting-Identity context to stored-function calls without trusting caller-supplied IDs remains an explicit open decision.
 - **Actor provenance is unverified.** `actor_identity_id` is provenance input, never authentication or Tenant authorization.
+- **Administrators are trusted.** A superuser or another legitimate cluster administrator can always alter objects and triggers. The verification/`provision_roles` checks fail closed on an unsafe MTMF topology and refuse to silently rewrite unrelated roles, but they do not police arbitrary superuser accounts; that is an operational trust boundary.
+- **Provisioning is not all-or-nothing.** It runs with `autocommit`; the preflight topology check happens before credential mutation, but a later SQL failure leaves earlier role/attribute/password changes in place. Operators review and re-run provisioning after remediation. `PRIV-21`/`A1-21` record the preflight-failure behavior.
 - **Write entry points.** PR 7B must add reviewed read/write functions under the same default-deny model; the exact set and whether every entry point uses `SECURITY DEFINER` remains PR 7B scope.
 - **Credential rotation.** Deployment/rotation of role credentials without exposing privileged credentials to startup remains an operational concern.
 - **Defense in depth.** The membership-removal GUC marker remains but is not an authorization boundary.

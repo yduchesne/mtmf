@@ -27,6 +27,10 @@ from psycopg import sql
 
 from mtmf_core.persistence.postgres.config import PostgresConfig, PostgresRole
 from mtmf_core.persistence.postgres.resources import migrations_script_directory
+from mtmf_core.persistence.postgres.roles import (
+    RoleProvisioningError,
+    verify_migrator_connection,
+)
 
 HEAD_REVISION = "0003"
 
@@ -89,10 +93,11 @@ class PostgresMigrationManager:
     head_revision = HEAD_REVISION
 
     def __init__(self, config: PostgresConfig) -> None:
-        if config.role is PostgresRole.RUNTIME:
+        if config.role is not PostgresRole.MIGRATOR:
             raise MigrationError(
-                "the restricted MTMF runtime role cannot manage migrations; "
-                "use the administrator or migrator role"
+                "MTMF migrations must use the migrator identity; the administrator "
+                "identity is reserved for role provisioning/ownership handoff and the "
+                "restricted runtime identity may never migrate"
             )
         self._config = config
 
@@ -126,6 +131,7 @@ class PostgresMigrationManager:
         """
         try:
             with psycopg.connect(self._config.psycopg_dsn, autocommit=True) as connection:
+                verify_migrator_connection(connection)
                 offenders = _legacy_ownership(connection)
                 if offenders is not None:
                     raise MigrationError(
@@ -139,6 +145,10 @@ class PostgresMigrationManager:
             command.upgrade(self._alembic_configuration(), "head")
         except MigrationError:
             raise
+        except RoleProvisioningError as exc:
+            # Preserve the actionable identity/topology diagnostic inside the
+            # manager's documented error type; never include credentials.
+            raise MigrationError(str(exc)) from exc
         except Exception as exc:
             raise MigrationError(
                 f"MTMF migration upgrade-to-head failed against {self._config.host}"
@@ -153,6 +163,7 @@ class PostgresMigrationManager:
         owner table privileges.
         """
         with psycopg.connect(self._config.psycopg_dsn) as connection:
+            verify_migrator_connection(connection)
             connection.execute(_set_role_statement())
             row = connection.execute("SELECT version_num FROM mtmf.alembic_version").fetchone()
             return row[0] if row is not None else None

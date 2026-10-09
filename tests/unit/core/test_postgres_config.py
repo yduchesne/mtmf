@@ -204,3 +204,24 @@ def test_role_url_form_parses(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.user == "mig"
     assert config.password == "pw"
     assert config.role is PostgresRole.MIGRATOR
+
+
+def test_runtime_only_environment_cannot_build_admin_or_migrator_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A production runtime process receives only MTMF_RUNTIME_* credentials.
+    monkeypatch.setattr(
+        "os.environ",
+        {
+            "MTMF_RUNTIME_POSTGRES_HOST": "127.0.0.1",
+            "MTMF_RUNTIME_POSTGRES_PORT": "25432",
+            "MTMF_RUNTIME_POSTGRES_DB": "mtmf",
+            "MTMF_RUNTIME_POSTGRES_USER": "mtmf_runtime",
+            "MTMF_RUNTIME_POSTGRES_PASSWORD": "runtime-pw",
+        },
+    )
+    assert PostgresConfig.from_env(PostgresRole.RUNTIME).user == "mtmf_runtime"
+    with pytest.raises(PostgresConfigError):
+        PostgresConfig.from_env(PostgresRole.ADMIN)
+    with pytest.raises(PostgresConfigError):
+        PostgresConfig.from_env(PostgresRole.MIGRATOR)

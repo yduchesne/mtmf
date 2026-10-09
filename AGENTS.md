@@ -69,7 +69,7 @@ Canonical Python tooling:
 - Pytest is the unit-test runner; the canonical unit suite lives under `tests/unit`.
 - Unit-test coverage must remain at least **85%** for all production MTMF packages; the gate fails below that threshold.
 - `./build.sh --qa` is the canonical quality command and runs the full gate (Ruff format check, Ruff lint, strict Mypy, unit tests with the coverage gate).
-- `./build.sh --integration` runs the real-PostgreSQL suite against the explicitly configured MTMF database. Provision the administrator-owned `mtmf_owner`/`mtmf_migrator`/`mtmf_runtime` roles first with `scripts/mtmf-provision-roles.py` and export the role-scoped `MTMF_MIGRATOR_*`/`MTMF_RUNTIME_*` configuration (see `.env.example`). The privilege tests connect as the actual restricted runtime login and fail closed when role credentials are absent.
+- `./build.sh --integration` runs the real-PostgreSQL suite against the explicitly configured MTMF database. Provision the administrator-owned `mtmf_owner`/`mtmf_migrator`/`mtmf_runtime` roles first with `scripts/mtmf-provision-roles.py` and export the role-scoped `MTMF_MIGRATOR_*`/`MTMF_RUNTIME_*` configuration (see `.env.example`). The privilege tests connect as the actual restricted runtime login and fail closed when role credentials are absent. Migrations require the authenticated `mtmf_migrator` identity on every connection (`PostgresMigrationManager` rejects administrator/runtime configs and verifies `session_user`); run `scripts/mtmf-provision-roles.py --verify` after migration to check the effective runtime privilege surface.
 
 Keep domain objects independent of transport, HTTP frameworks, PostgreSQL drivers, and persistence implementations.
 

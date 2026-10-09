@@ -28,16 +28,28 @@ from mtmf_core.persistence.postgres.resources import (
     migrations_script_directory,
     sql_version_files,
 )
+from mtmf_core.persistence.postgres.roles import (
+    MigrationIdentityError,
+    PrivilegeVerificationError,
+    RoleProvisioningError,
+    verify_role_topology,
+    verify_runtime_privileges,
+)
 
 __all__ = [
     "HEAD_REVISION",
     "OWNER_ROLE",
     "MigrationError",
+    "MigrationIdentityError",
     "MigrationResourceError",
     "PostgresConfig",
     "PostgresConfigError",
     "PostgresMigrationManager",
     "PostgresRole",
+    "PrivilegeVerificationError",
+    "RoleProvisioningError",
     "migrations_script_directory",
     "sql_version_files",
+    "verify_role_topology",
+    "verify_runtime_privileges",
 ]

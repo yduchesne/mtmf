@@ -36,10 +36,16 @@ def test_runtime_role_is_rejected_by_the_migration_manager() -> None:
         PostgresMigrationManager(_config(PostgresRole.RUNTIME))
 
 
-def test_admin_and_migrator_roles_are_accepted() -> None:
-    for role in (PostgresRole.ADMIN, PostgresRole.MIGRATOR):
-        manager = PostgresMigrationManager(_config(role))
-        assert manager.config.role is role
+def test_admin_role_is_rejected_by_the_migration_manager() -> None:
+    # The administrator identity is reserved for provisioning and ownership
+    # handoff, never normal migrations.
+    with pytest.raises(MigrationError):
+        PostgresMigrationManager(_config(PostgresRole.ADMIN))
+
+
+def test_migrator_role_is_accepted() -> None:
+    manager = PostgresMigrationManager(_config(PostgresRole.MIGRATOR))
+    assert manager.config.role is PostgresRole.MIGRATOR
 
 
 def test_head_revision_and_owner_role_are_the_pr7a_values() -> None:
