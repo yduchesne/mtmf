@@ -80,6 +80,78 @@ _REMOVAL_FUNCTION_ARGUMENTS = {
     ),
 }
 
+#: Exact approved runtime EXECUTE signatures introduced by revision 0004.
+_REPOSITORY_FUNCTION_ARGUMENTS = {
+    "tenant_add": (
+        "id_value uuid, name_value text, scope_value smallint, "
+        "owner_identity_id_value uuid, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "tenant_get": ("id_value uuid"),
+    "tenant_save": (
+        "id_value uuid, name_value text, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "organization_add": (
+        "id_value uuid, tenant_id_value uuid, name_value text, "
+        "owner_identity_id_value uuid, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "organization_get": ("id_value uuid"),
+    "organization_save": (
+        "id_value uuid, name_value text, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "principal_add": (
+        "id_value uuid, name_value text, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "principal_get": ("id_value uuid"),
+    "principal_save": (
+        "id_value uuid, name_value text, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "identity_add": (
+        "id_value uuid, principal_id_value uuid, name_value text, "
+        "deletion_status_value smallint, extension_value jsonb"
+    ),
+    "identity_get": ("id_value uuid"),
+    "identity_save": (
+        "id_value uuid, name_value text, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "group_add": (
+        "id_value uuid, tenant_id_value uuid, name_value text, "
+        "deletion_status_value smallint, extension_value jsonb"
+    ),
+    "group_get": ("id_value uuid"),
+    "group_save": (
+        "id_value uuid, name_value text, deletion_status_value smallint, extension_value jsonb"
+    ),
+    "action_add": ("urn_value text"),
+    "action_get": ("urn_value text"),
+    "role_add": ("payload_value jsonb"),
+    "role_get": ("urn_value text"),
+    "role_save": ("payload_value jsonb"),
+    "principal_tenant_membership_add": ("principal_id_value uuid, tenant_id_value uuid"),
+    "principal_tenant_membership_get": ("principal_id_value uuid, tenant_id_value uuid"),
+    "principal_tenant_membership_find_by_principal": ("principal_id_value uuid"),
+    "principal_tenant_membership_find_by_tenant": ("tenant_id_value uuid"),
+    "identity_tenant_membership_add": ("identity_id_value uuid, tenant_id_value uuid"),
+    "identity_tenant_membership_get": ("identity_id_value uuid, tenant_id_value uuid"),
+    "identity_tenant_membership_find_by_identity": ("identity_id_value uuid"),
+    "identity_tenant_membership_find_by_tenant": ("tenant_id_value uuid"),
+    "group_tenant_membership_add": ("group_id_value uuid, tenant_id_value uuid"),
+    "group_tenant_membership_get": ("group_id_value uuid, tenant_id_value uuid"),
+    "group_tenant_membership_find_by_group": ("group_id_value uuid"),
+    "group_tenant_membership_find_by_tenant": ("tenant_id_value uuid"),
+    "identity_group_membership_add": ("identity_id_value uuid, group_id_value uuid"),
+    "identity_group_membership_get": ("identity_id_value uuid, group_id_value uuid"),
+    "identity_group_membership_find_by_identity": ("identity_id_value uuid"),
+    "identity_group_membership_find_by_group": ("group_id_value uuid"),
+    "identity_org_membership_add": ("identity_id_value uuid, organization_id_value uuid"),
+    "identity_org_membership_get": ("identity_id_value uuid, organization_id_value uuid"),
+    "identity_org_membership_find_by_identity": ("identity_id_value uuid"),
+    "identity_org_membership_find_by_organization": ("organization_id_value uuid"),
+    "group_org_membership_add": ("group_id_value uuid, organization_id_value uuid"),
+    "group_org_membership_get": ("group_id_value uuid, organization_id_value uuid"),
+    "group_org_membership_find_by_group": ("group_id_value uuid"),
+    "group_org_membership_find_by_organization": ("organization_id_value uuid"),
+}
+
 
 class RoleProvisioningError(RuntimeError):
     """The MTMF role topology or effective privileges are unsafe."""
@@ -94,9 +166,24 @@ class PrivilegeVerificationError(RoleProvisioningError):
 
 
 def expected_removal_signatures() -> frozenset[str]:
-    """Return the full ``schema.name(args)`` identities of the approved entry points."""
+    """Return the full ``schema.name(args)`` identities of the approved removal entry points."""
     return frozenset(
         f"{SCHEMA}.{name}({arguments})" for name, arguments in _REMOVAL_FUNCTION_ARGUMENTS.items()
+    )
+
+
+def expected_runtime_signatures() -> frozenset[str]:
+    """Return the reviewed runtime EXECUTE allowlist through revision 0004.
+
+    This is the six membership-removal entry points plus the 44
+    repository read/write functions. The mandatory post-upgrade verifier
+    compares the runtime's effective EXECUTE set against exactly this
+    manifest, so a function is only approved when both the v004 grants and
+    this manifest are updated in the same migration.
+    """
+    arguments = {**_REMOVAL_FUNCTION_ARGUMENTS, **_REPOSITORY_FUNCTION_ARGUMENTS}
+    return frozenset(
+        f"{SCHEMA}.{name}({arguments_text})" for name, arguments_text in arguments.items()
     )
 
 
@@ -324,7 +411,7 @@ def _privilege_problems(
         problems.append(f"{RUNTIME_ROLE} has {privilege} on table/view {relation}")
     for relation, privilege in sequence_offenders:
         problems.append(f"{RUNTIME_ROLE} has {privilege} on sequence {relation}")
-    expected = expected_removal_signatures()
+    expected = expected_runtime_signatures()
     extra = executable_signatures - expected
     missing = expected - executable_signatures
     for signature in sorted(extra):

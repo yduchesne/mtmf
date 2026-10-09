@@ -106,9 +106,9 @@ def test_migrator_role_is_accepted() -> None:
     assert manager.config.role is PostgresRole.MIGRATOR
 
 
-def test_head_revision_and_owner_role_are_the_pr7a_values() -> None:
-    assert HEAD_REVISION == "0003"
-    assert PostgresMigrationManager.head_revision == "0003"
+def test_head_revision_and_owner_role_are_the_pr7b_values() -> None:
+    assert HEAD_REVISION == "0004"
+    assert PostgresMigrationManager.head_revision == "0004"
     assert OWNER_ROLE == "mtmf_owner"
 
 

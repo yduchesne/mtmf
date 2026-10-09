@@ -37,6 +37,7 @@ import pytest
 from mtmf_core.persistence.postgres import (
     PostgresConfig,
     PostgresConfigError,
+    PostgresMtmfSpi,
     PostgresRole,
 )
 from mtmf_core.persistence.postgres.roles import (
@@ -180,3 +181,14 @@ def runtime_connection(
 def dsn(mtmf_config: PostgresConfig) -> str:
     """A psycopg DSN for the explicitly configured MTMF database."""
     return mtmf_config.psycopg_dsn
+
+
+@pytest.fixture
+def postgres_spi(runtime_config: PostgresConfig, db: psycopg.Connection) -> PostgresMtmfSpi:
+    """The production PostgreSQL SPI bound to the restricted runtime login.
+
+    Depends on :func:`db` so every test starts from a freshly migrated
+    empty ``mtmf`` schema. No connection is opened until a UnitOfWork is
+    entered.
+    """
+    return PostgresMtmfSpi(runtime_config)

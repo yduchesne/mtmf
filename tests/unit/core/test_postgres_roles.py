@@ -84,7 +84,7 @@ def _healthy_privileges(connection: _ScriptedConnection) -> _ScriptedConnection:
         .on("has_sequence_privilege", [])
         .on(
             "has_function_privilege",
-            [(signature,) for signature in sorted(roles.expected_removal_signatures())],
+            [(signature,) for signature in sorted(roles.expected_runtime_signatures())],
         )
         .on("aclexplode(coalesce(p.proacl", [(0,)])
         .on("FROM pg_catalog.pg_default_acl", [(0,)])
@@ -252,7 +252,7 @@ def _safe_privilege_problems() -> list[str]:
         schema_privileges=(True, False),
         table_offenders=[],
         sequence_offenders=[],
-        executable_signatures=set(roles.expected_removal_signatures()),
+        executable_signatures=set(roles.expected_runtime_signatures()),
         public_execute_count=0,
         default_public_execute_count=0,
     )
@@ -283,7 +283,7 @@ def test_privilege_problems_detects_database_and_schema_grants() -> None:
         schema_privileges=(False, True),
         table_offenders=[],
         sequence_offenders=[],
-        executable_signatures=set(roles.expected_removal_signatures()),
+        executable_signatures=set(roles.expected_runtime_signatures()),
         public_execute_count=0,
         default_public_execute_count=0,
     )
@@ -301,7 +301,7 @@ def test_privilege_problems_detects_object_and_function_violations() -> None:
         table_offenders=[("mtmf.tenant", "SELECT")],
         sequence_offenders=[("mtmf.some_seq", "USAGE")],
         executable_signatures={
-            *roles.expected_removal_signatures(),
+            *roles.expected_runtime_signatures(),
             "mtmf.mtf_schema_version()",
         },
         public_execute_count=1,
@@ -315,7 +315,7 @@ def test_privilege_problems_detects_object_and_function_violations() -> None:
 
 
 def test_privilege_problems_detects_missing_approved_function() -> None:
-    signatures = set(roles.expected_removal_signatures())
+    signatures = set(roles.expected_runtime_signatures())
     signatures.discard(
         "mtmf.remove_group_org_membership(group_id_value uuid, "
         "organization_id_value uuid, actor_identity_id_value uuid)"
@@ -337,6 +337,16 @@ def test_expected_removal_signatures_are_exactly_six() -> None:
     signatures = roles.expected_removal_signatures()
     assert len(signatures) == 6
     assert all(signature.startswith("mtmf.remove_") for signature in signatures)
+
+
+def test_expected_runtime_signatures_add_the_44_repository_functions() -> None:
+    removal = roles.expected_removal_signatures()
+    runtime = roles.expected_runtime_signatures()
+    assert len(runtime) == 50
+    assert removal <= runtime
+    assert len(runtime - removal) == 44
+    for name in ("mtmf.tenant_add", "mtmf.role_add", "mtmf.action_get"):
+        assert any(signature.startswith(name + "(") for signature in runtime)
 
 
 def test_verify_runtime_privileges_passes_on_healthy_catalog() -> None:

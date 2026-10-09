@@ -6,7 +6,7 @@ This document describes the technical architecture of the Multi-Tenant Managemen
 
 Security semantics are defined by [SECURITY_MODEL.md](SECURITY_MODEL.md). Authorization-engine behavior is described in [AUTHORIZATION.md](AUTHORIZATION.md). The structural domain model is defined in [DOMAIN_MODEL.md](DOMAIN_MODEL.md).
 
-PostgreSQL-specific architecture and the implemented restricted runtime privilege model are documented in [DATABASE.md](DATABASE.md). PR 7A (revision `0003`) implements the owner/migrator/runtime role separation, default-deny grants, and the six reviewed `SECURITY DEFINER` membership-removal entry points described there.
+PostgreSQL-specific architecture and the implemented restricted runtime privilege model are documented in [DATABASE.md](DATABASE.md). PR 7A (revision `0003`) implements the owner/migrator/runtime role separation, default-deny grants, and the six reviewed `SECURITY DEFINER` membership-removal entry points described there. PR 7B (revision `0004`) implements the production `PostgresMtmfSpi` provider, its real-transaction UnitOfWork, all 13 typed repositories, and the 44 reviewed repository stored-function entry points.
 
 ## 2. Technology Baseline
 
@@ -265,9 +265,9 @@ The UnitOfWork represents transaction semantics without leaking a PostgreSQL/dri
 
 ## 10. PostgreSQL Provider
 
-The first persistence provider is PostgreSQL-backed, tentatively `PostgresMtmfSpi`.
+The first persistence provider is PostgreSQL-backed: `PostgresMtmfSpi` (implemented by PR 7B). It is constructed from an explicit restricted-runtime `PostgresConfig`, rejects administrator/migrator configurations at construction, and opens exactly one real PostgreSQL transaction per `UnitOfWork`. Repository factories reject a `UnitOfWork` owned by another provider instance.
 
-Application-level database operations and logic go through PostgreSQL stored functions.
+Application-level database operations and logic go through PostgreSQL stored functions. A repository never issues table DML or a raw table `SELECT` from the runtime login; it calls exactly one reviewed, schema-qualified, owner-owned `SECURITY DEFINER` function and maps its detached JSON/scalar result to a domain object. Corrupt or shape-invalid payloads fail closed instead of yielding a partial aggregate.
 
 ### 10.1 Physical schema
 
@@ -285,7 +285,7 @@ A deliberate PR 6 decision: PostgreSQL does not ship the deferred-constraint mec
 
 ### 10.2 Stored-function convention
 
-Substantial SQL functions ship as immutable, versioned, packaged resources under `mtmf_core/persistence/postgres/sql/vNNN/<function>.sql` and are installed by Alembic revisions in sorted filename order. Functions are schema-qualified, do not rely on caller `search_path` (`SET search_path = ''`), and avoid dynamic SQL. PR 6 installs a single infrastructure proof function (`mtmf.mtf_schema_version()`); PR 6B installs the typed-membership precondition replacements, guards, and removal functions described below. PR 7A (revision `0003`) converts only the six reviewed membership-removal entry points to owner-owned `SECURITY DEFINER` and grants the restricted runtime role `EXECUTE` on exactly those signatures; every other function remains non-elevated with PUBLIC EXECUTE revoked. Repository CRUD functions are owned by PR 7B.
+Substantial SQL functions ship as immutable, versioned, packaged resources under `mtmf_core/persistence/postgres/sql/vNNN/<function>.sql` and are installed by Alembic revisions in sorted filename order. Functions are schema-qualified, do not rely on caller `search_path` (`SET search_path = ''`), and avoid dynamic SQL. PR 6 installs a single infrastructure proof function (`mtmf.mtf_schema_version()`); PR 6B installs the typed-membership precondition replacements, guards, and removal functions described below. PR 7A (revision `0003`) converts only the six reviewed membership-removal entry points to owner-owned `SECURITY DEFINER` and grants the restricted runtime role `EXECUTE` on exactly those signatures. PR 7B (revision `0004`) adds 44 reviewed repository read/write functions with the same owner-owned `SECURITY DEFINER`, fixed `search_path = ''`, PUBLIC-EXECUTE-revoked, exact-runtime-grant posture; the mandatory post-upgrade verifier compares the runtime's effective `EXECUTE` set against the full 50-signature allowlist. Non-entry-point helpers are not runtime-executable.
 
 Security-critical invariants are enforced at trusted persistence/write boundaries in addition to higher layers where appropriate.
 

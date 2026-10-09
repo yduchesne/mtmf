@@ -19,6 +19,8 @@ import psycopg.errors
 import psycopg.sql
 import pytest
 
+from mtmf_core.persistence.postgres import expected_runtime_signatures
+
 
 def _table_statement(verb: str, table: str) -> psycopg.sql.SQL:
     """Compose a schema-qualified statement for a fixed membership table."""
@@ -87,7 +89,7 @@ def test_sec04_privilege_model_separates_runtime_from_owner(db) -> None:
         "WHERE n.nspname = %s AND has_function_privilege('mtmf_runtime', p.oid, 'EXECUTE')",
         (helpers.SCHEMA,),
     ).fetchone()[0]
-    assert runtime_functions == 6
+    assert runtime_functions == len(expected_runtime_signatures())
     definer_functions = db.execute(
         "SELECT count(*) FROM pg_catalog.pg_proc p "
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
