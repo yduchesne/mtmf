@@ -208,15 +208,17 @@ Groups are exclusive to exactly one Tenant and use GroupTenantMembership. An ord
 
 ### 7.1 Mandatory cascading removal of typed memberships
 
-Removing a prerequisite Tenant membership MUST atomically remove its dependent membership relationships, using MTMF soft-deletion semantics:
+Removing a prerequisite Tenant membership MUST atomically **hard-delete** its dependent typed membership rows. Membership relationships are current-state facts and have no soft-deletion or activation state:
 
 - Removal of `PrincipalTenantMembership(P, T)` MUST remove every `IdentityTenantMembership(I, T)` for Identities owned by `P`, including the downstream memberships described below.
 - Removal of `IdentityTenantMembership(I, T)` MUST remove `IdentityOrgMembership(I, O)` for every Organization `O` of `T` and `IdentityGroupMembership(I, G)` for every Group `G` belonging to `T`.
 - Removal of `GroupTenantMembership(G, T)` MUST remove `GroupOrgMembership(G, O)` for every Organization `O` of `T` and all `IdentityGroupMembership(I, G)` relationships for `G`.
 
-These are mandatory trusted-write-boundary invariants, not optional application cleanup. No active dependent membership may survive removal of its prerequisite; the entire removal/cascade MUST commit or roll back together. Other Tenants' memberships MUST remain unaffected. Removing a Group's Tenant membership does not itself remove the member Identities' Tenant memberships.
+These are mandatory trusted-write-boundary invariants, not optional application cleanup. No dependent membership row may survive removal of its prerequisite; the entire removal/cascade MUST commit or roll back together. Other Tenants' memberships MUST remain unaffected. Removing a Group's Tenant membership does not itself remove the member Identities' Tenant memberships.
 
-The root Principal's immutable root-Tenant membership and other protected bootstrap/stewardship invariants remain authoritative; cascade semantics MUST NOT be used to bypass restrictions on whether a removal is permitted. Deactivation is distinct from removal; these rules do not authorize implicit restoration of soft-deleted memberships.
+The root Principal's immutable root-Tenant membership and other protected bootstrap/stewardship invariants remain authoritative; cascade semantics MUST NOT be used to bypass restrictions on whether a removal is permitted. Entity deactivation is distinct from membership removal. Rejoining requires a new explicit membership and MUST NOT restore previously removed dependent memberships.
+
+Every initiating membership removal MUST atomically persist exactly one compact operation-level audit record, identifying the initiating membership type and participants, Tenant context, timestamp, actor Identity when available, and actual affected-row counts by typed membership table. This record MUST NOT contain an enumeration of affected members or emit one record per dependent removal. It documents the initiating operation and aggregate impact, **not** a reconstructable per-membership history. Failed/rolled-back operations leave no committed audit record. Protected bootstrap/root and stewardship invariants MUST be validated before mutation; audit is not a substitute for authorization. No audit record or deleted relationship grants current membership.
 
 MTMF uses typed membership relationships rather than a polymorphic member-type/member-id membership abstraction.
 
@@ -600,7 +602,7 @@ Where applicable, MTMF-managed objects including Tenants, Organizations, Princip
 <resource>:delete-object
 ```
 
-Deletion is soft deletion. An object's immutable identifier and security/audit provenance MUST survive logical deletion.
+Deletion of domain entities is soft deletion. An entity's immutable identifier and security/audit provenance MUST survive logical deletion. Typed membership relationships are the explicit exception: their removal is physical deletion with a compact operation-level audit record (Section 7.1).
 
 Security-sensitive operations with distinct semantics MUST use distinct Actions rather than being silently implied by `update-object` or another broad CRUD Action.
 
@@ -736,7 +738,7 @@ Name lookup MUST NOT be assumed to return a unique object.
 
 Roles use immutable, unique URNs as stable authorization identity. Actions use immutable, globally unique exact URNs. Permissions use immutable UUID object identity; their Permission URNs describe matching semantics and need not be unique.
 
-Soft deletion MUST preserve stable identity and security/audit references.
+Entity soft deletion MUST preserve stable identity and security/audit references. Typed membership hard deletion follows Section 7.1.
 
 ---
 
@@ -900,7 +902,7 @@ The MTMF security model rests on these non-negotiable principles:
 - the most-specific matching Permission rule wins and equal-specificity DENY overrides ALLOW;
 - Action verbs are never wildcardable;
 - stable identifiers, not mutable names, establish resource identity;
-- deletion is soft deletion;
+- domain-entity deletion is soft deletion, while typed membership removal is hard deletion with atomic operation-level audit;
 - TenantManagementGroups provide explicitly bounded cross-Tenant delegated administration;
 - application extension data is opaque to MTMF and extension mutation requires same-Tenant application-defined authorization;
 - Role definition ownership is distinct from security Scope and assignment context;
