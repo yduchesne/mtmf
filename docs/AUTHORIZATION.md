@@ -363,7 +363,13 @@ The internal authorization result should contain enough information to support t
 
 The exact decision type and disclosure policy remain to be specified. External error responses MUST NOT reveal security-sensitive information merely because richer reasoning exists internally.
 
-## 10. Open Design Items
+## 10. Root and stewardship authorization (PR 10 design)
+
+Root and stewardship are not shortcuts around the existing authorization pipeline. A verified authenticated acting Identity, valid session membership, applicable effective Role Permission, and relevant Tenant/target/dominance rules remain necessary. The current steward's **explicitly designated acting Identity** is the only Identity eligible for the narrowly defined stewardship dominance exception; other Identities of that Principal do not inherit it. Root uses a protected designated local acting Identity and separate privileged recovery.
+
+A supplied Principal ID, Identity ID, or membership record is not authentication. The shared PostgreSQL runtime credential cannot independently verify an end user. Until the trusted service identity boundary is implemented, sensitive transfer/recovery functions MUST NOT be broadly exposed as ordinary runtime capabilities. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md) and [Database Architecture](DATABASE.md).
+
+## 11. Open Design Items
 
 The following remain intentionally unresolved:
 
