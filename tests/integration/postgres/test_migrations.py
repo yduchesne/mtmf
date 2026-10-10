@@ -80,6 +80,27 @@ EXPECTED_FUNCTION_NAMES = {
     "role_add",
     "role_get",
     "role_save",
+    "install_builtin_policy",
+    "stewardship_is_eligible",
+    "bootstrap_root",
+    "designate_steward",
+    "activate_tenant",
+    "suspend_tenant",
+    "recover_root_identity",
+    "guard_stewardship_designation",
+    "guard_root_registry",
+    "guard_root_registry_delete",
+    "guard_root_tenant",
+    "guard_root_principal",
+    "guard_root_identity",
+    "guard_steward_principal",
+    "guard_steward_identity",
+    "guard_root_steward_membership_delete",
+    "guard_tenant_activation",
+    "guard_stewardship_audit",
+    "guard_steward_role_assignment",
+    "guard_steward_group_membership",
+    "guard_steward_group",
     "principal_tenant_membership_add",
     "principal_tenant_membership_get",
     "principal_tenant_membership_find_by_principal",
@@ -147,7 +168,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0005"
+    assert revision == "0008"
     assert revision == manager.head_revision
 
 

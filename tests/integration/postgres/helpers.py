@@ -103,23 +103,46 @@ def seed_role(
 
 
 def seed_base_entities(connection: psycopg.Connection) -> None:
-    """Insert the canonical entity graph (no membership rows)."""
+    """Insert the canonical entity graph (no membership rows).
+
+    Revision-aware: before revision ``0007`` the Identity ``origin`` and Tenant
+    ``lifecycle`` columns do not exist, so they are omitted there and the
+    upgrading migration applies its conservative backfill values.
+    """
+    has_origin = "origin" in columns_of(connection, "identity")
+    has_lifecycle = "lifecycle" in columns_of(connection, "tenant")
     connection.execute(
         "INSERT INTO mtmf.principal (id, name, deletion_status) VALUES (%s, 'P', 2)",
         (PRINCIPAL,),
     )
     for identity_id, name in ((IDENTITY_A, "I1"), (IDENTITY_B, "I2")):
-        connection.execute(
-            "INSERT INTO mtmf.identity (id, principal_id, name, deletion_status) "
-            "VALUES (%s, %s, %s, 2)",
-            (identity_id, PRINCIPAL, name),
-        )
+        if has_origin:
+            connection.execute(
+                "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+                "VALUES (%s, %s, %s, 1, 2)",
+                (identity_id, PRINCIPAL, name),
+            )
+        else:
+            connection.execute(
+                "INSERT INTO mtmf.identity (id, principal_id, name, deletion_status) "
+                "VALUES (%s, %s, %s, 2)",
+                (identity_id, PRINCIPAL, name),
+            )
     for tenant_id, name in ((TENANT_A, "Tenant A"), (TENANT_B, "Tenant B")):
-        connection.execute(
-            "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, deletion_status) "
-            "VALUES (%s, %s, 2, %s, 2)",
-            (tenant_id, name, IDENTITY_A),
-        )
+        if has_lifecycle:
+            connection.execute(
+                "INSERT INTO mtmf.tenant "
+                "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+                "VALUES (%s, %s, 2, %s, 1, 2)",
+                (tenant_id, name, IDENTITY_A),
+            )
+        else:
+            connection.execute(
+                "INSERT INTO mtmf.tenant "
+                "(id, name, scope, owner_identity_id, deletion_status) "
+                "VALUES (%s, %s, 2, %s, 2)",
+                (tenant_id, name, IDENTITY_A),
+            )
     for org_id, tenant_id, name in (
         (ORG_A, TENANT_A, "Org A"),
         (ORG_B, TENANT_B, "Org B"),

@@ -14,8 +14,10 @@ from helpers import make_identity, make_role, make_tenant
 from mtmf_core import (
     ActionUrn,
     DomainId,
+    IdentityOrigin,
     RoleUrn,
     SecurityScope,
+    TenantLifecycle,
 )
 from mtmf_core.persistence.errors import PersistenceDataError, PersistenceIntegrityError
 from mtmf_core.persistence.postgres.mapping import (
@@ -37,6 +39,7 @@ def _tenant_payload(**overrides: object) -> dict[str, object]:
         "name": "Tenant",
         "scope": 2,
         "owner_identity_id": "22222222-2222-4222-8222-222222222222",
+        "lifecycle": 1,
         "deletion_status": 2,
         "extension": {"k": [1, None]},
     }
@@ -48,6 +51,7 @@ def test_tenant_round_trip() -> None:
     tenant = tenant_from_payload(_tenant_payload())
     assert tenant.id == DomainId.from_str("11111111-1111-4111-8111-111111111111")
     assert tenant.scope is SecurityScope.TENANT
+    assert tenant.lifecycle is TenantLifecycle.ACTIVE
     assert tenant.extension == {"k": [1, None]}
 
 
@@ -75,11 +79,13 @@ def test_principal_identity_group_round_trip() -> None:
             "id": str(make_identity().id),
             "principal_id": "33333333-3333-4333-8333-333333333333",
             "name": "I",
+            "origin": 1,
             "deletion_status": 2,
             "extension": {},
         }
     )
     assert identity.principal_id == DomainId.from_str("33333333-3333-4333-8333-333333333333")
+    assert identity.origin is IdentityOrigin.LOCAL
     group = group_from_payload(
         {
             "id": str(make_tenant().id),
@@ -147,6 +153,22 @@ def test_missing_and_wrong_typed_fields_fail() -> None:
         tenant_from_payload(_tenant_payload(extension=[1, 2]))
     with pytest.raises(PersistenceDataError):
         tenant_from_payload(_tenant_payload(scope=True))
+    with pytest.raises(PersistenceDataError):
+        tenant_from_payload(_tenant_payload(lifecycle=9))
+
+
+def test_identity_invalid_origin_fails() -> None:
+    with pytest.raises(PersistenceDataError):
+        identity_from_payload(
+            {
+                "id": "11111111-1111-4111-8111-111111111111",
+                "principal_id": "22222222-2222-4222-8222-222222222222",
+                "name": "I",
+                "origin": 0,
+                "deletion_status": 2,
+                "extension": {},
+            }
+        )
 
 
 def test_role_malformed_child_payloads_fail() -> None:

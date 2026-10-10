@@ -1,6 +1,6 @@
 # Root administration and Tenant Stewardship
 
-**Status:** Normative security design for PR 10; implementation is not yet complete. The six implementation STOP gates and their proposed resolutions are explained in [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
+**Status:** Normative security design for PR 10. The structural foundation is implemented in additive revisions `0006`-`0008`: the approved built-in seed, immutable Identity origin, explicit Tenant lifecycle, the canonical root registry and protected bootstrap, ordinary-Tenant stewardship designation and append-only audit, and database guards across the existing mutation paths. Privileged bootstrap/designation/activation/recovery functions are installation-only (`SECURITY INVOKER`, never granted to `mtmf_runtime`); trusted end-user transfer/recovery exposure and the full concurrency matrix remain deferred. See [PR10 implementation decisions](PR10_IMPLEMENTATION_DECISIONS.md) and [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
 
 This guide explains how MTMF establishes its first administrator, how each customer Tenant keeps a responsible administrator, and how the system prevents accidental or unauthorized loss of administrative control. It complements the [Security Model](SECURITY_MODEL.md), [Domain Model](DOMAIN_MODEL.md), [Authorization](AUTHORIZATION.md), and [Database Architecture](DATABASE.md). If this explanation conflicts with the Security Model, the Security Model governs.
 

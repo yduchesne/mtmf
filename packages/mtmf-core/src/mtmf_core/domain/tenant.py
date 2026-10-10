@@ -14,7 +14,7 @@ from typing import ClassVar
 from mtmf_core.domain.errors import DomainInvariantError
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.json_types import JsonObject, new_extension
-from mtmf_core.domain.lifecycle import DeletionStatus
+from mtmf_core.domain.lifecycle import DeletionStatus, TenantLifecycle
 from mtmf_core.domain.mixins import ImmutableFieldGuard, SoftDeletableMixin
 from mtmf_core.domain.scope import SecurityScope
 
@@ -29,6 +29,10 @@ class Tenant(ImmutableFieldGuard, SoftDeletableMixin):
 
     :param scope: :attr:`SecurityScope.ROOT` for the single root Tenant
         or :attr:`SecurityScope.TENANT` for every ordinary Tenant.
+    :param lifecycle: the explicit PR 10 provisioning lifecycle. A new
+        ordinary Tenant defaults to :attr:`TenantLifecycle.PROVISIONING`
+        (non-authorizing). The root Tenant must be
+        :attr:`TenantLifecycle.ACTIVE`.
     """
 
     _immutable_fields: ClassVar[frozenset[str]] = frozenset({"id", "owner_identity_id"})
@@ -37,6 +41,7 @@ class Tenant(ImmutableFieldGuard, SoftDeletableMixin):
     name: str
     scope: SecurityScope
     owner_identity_id: DomainId
+    lifecycle: TenantLifecycle = TenantLifecycle.PROVISIONING
     deletion_status: DeletionStatus = DeletionStatus.NOT_DELETED
     extension: JsonObject = field(default_factory=new_extension)
 
@@ -46,3 +51,5 @@ class Tenant(ImmutableFieldGuard, SoftDeletableMixin):
                 "Tenant scope must be ROOT or TENANT: the unique root Tenant is ROOT "
                 "and every ordinary Tenant is TENANT"
             )
+        if self.scope is SecurityScope.ROOT and self.lifecycle is not TenantLifecycle.ACTIVE:
+            raise DomainInvariantError("the root Tenant must be ACTIVE")

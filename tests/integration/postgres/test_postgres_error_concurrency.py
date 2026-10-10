@@ -19,6 +19,7 @@ from mtmf_core import (
     GroupTenantMembership,
     Identity,
     IdentityGroupMembership,
+    IdentityOrigin,
     IdentityTenantMembership,
     Principal,
     PrincipalTenantMembership,
@@ -34,7 +35,7 @@ from mtmf_core.persistence.spi import MtmfSpi
 
 def test_v6_failed_statement_marks_the_unit_of_work_failed(postgres_spi: MtmfSpi) -> None:
     sibling = Principal(DomainId.generate(), "Sibling")
-    orphan = Identity(DomainId.generate(), DomainId.generate(), "Orphan")
+    orphan = Identity(DomainId.generate(), DomainId.generate(), "Orphan", IdentityOrigin.LOCAL)
     with postgres_spi.create_unit_of_work() as uow:
         postgres_spi.create_principal_repository(uow).add(sibling)
         identity_repository = postgres_spi.create_identity_repository(uow)

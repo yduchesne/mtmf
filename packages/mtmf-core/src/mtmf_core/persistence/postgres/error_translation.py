@@ -48,6 +48,31 @@ CUSTOM_MISSING_PREREQUISITE = "MT002"
 CUSTOM_INVALID_PAYLOAD = "MT003"
 CUSTOM_ASSIGNMENT_CONTEXT = "MT004"
 
+#: PR 10 structural-invariant SQLSTATEs (built-in policy protection, root
+#: bootstrap/continuity, and Tenant-stewardship eligibility). They are all
+#: deterministic structural failures and map to
+#: :class:`~mtmf_core.persistence.errors.PersistenceIntegrityError`.
+_PR10_INTEGRITY_CODES = frozenset(
+    {
+        "MT010",  # protected built-in policy / stale built-in definition
+        "MT012",  # stale stewardship designation version
+        "MT013",  # ineligible steward Principal/acting Identity
+        "MT014",  # Tenant lifecycle (ordinary ACTIVE requires designation)
+        "MT020",  # root bootstrap registry conflict
+        "MT021",  # partial pre-existing root state
+        "MT022",  # invalid stewardship operation kind
+        "MT023",  # missing target Tenant
+        "MT024",  # not an ordinary Tenant / not suspendable
+        "MT025",  # root recovery without bootstrap
+        "MT026",  # invalid root replacement Identity
+        "MT027",  # non-LOCAL root replacement Identity
+        "MT030",  # root object protection
+        "MT031",  # root membership removal
+        "MT032",  # steward lifecycle/membership protection
+        "MT033",  # append-only audit
+    }
+)
+
 _UNIQUE_VIOLATION = "23505"
 _FOREIGN_KEY_VIOLATION = "23503"
 _CHECK_VIOLATION = "23514"
@@ -56,13 +81,16 @@ _SERIALIZATION_FAILURE = "40001"
 _DEADLOCK_DETECTED = "40P01"
 
 _REFERENCE_CODES = frozenset({_FOREIGN_KEY_VIOLATION, CUSTOM_MISSING_PREREQUISITE})
-_INTEGRITY_CODES = frozenset(
-    {
-        _CHECK_VIOLATION,
-        CUSTOM_AGGREGATE_INTEGRITY,
-        CUSTOM_INVALID_PAYLOAD,
-        CUSTOM_ASSIGNMENT_CONTEXT,
-    }
+_INTEGRITY_CODES = (
+    frozenset(
+        {
+            _CHECK_VIOLATION,
+            CUSTOM_AGGREGATE_INTEGRITY,
+            CUSTOM_INVALID_PAYLOAD,
+            CUSTOM_ASSIGNMENT_CONTEXT,
+        }
+    )
+    | _PR10_INTEGRITY_CODES
 )
 
 

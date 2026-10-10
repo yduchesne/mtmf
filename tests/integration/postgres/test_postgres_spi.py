@@ -12,7 +12,7 @@ import psycopg
 import pytest
 from provider_helpers import seed_entity_graph
 
-from mtmf_core import Action, ActionUrn, DomainId, Identity, JsonObject, Principal
+from mtmf_core import Action, ActionUrn, DomainId, Identity, IdentityOrigin, JsonObject, Principal
 from mtmf_core.persistence.errors import (
     DuplicatePersistenceIdentityError,
     ForeignUnitOfWorkError,
@@ -195,7 +195,7 @@ def test_v2_runtime_identity_is_the_restricted_login(
 def test_entity_mutation_after_get_does_not_persist_without_save(
     postgres_spi: MtmfSpi,
 ) -> None:
-    identity = Identity(DomainId.generate(), DomainId.generate(), "I")
+    identity = Identity(DomainId.generate(), DomainId.generate(), "I", IdentityOrigin.LOCAL)
     # An Identity referencing an absent Principal fails as a reference error.
     from mtmf_core.persistence.errors import PersistenceReferenceError
 

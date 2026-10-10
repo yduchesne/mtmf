@@ -298,8 +298,8 @@ def test_cas05_principal_removal_does_not_touch_sibling_principal(
         (sibling_principal,),
     )
     db.execute(
-        "INSERT INTO mtmf.identity (id, principal_id, name, deletion_status) "
-        "VALUES (%s, %s, 'I3', 2)",
+        "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+        "VALUES (%s, %s, 'I3', 1, 2)",
         (sibling_identity, sibling_principal),
     )
     helpers.insert_memberships(

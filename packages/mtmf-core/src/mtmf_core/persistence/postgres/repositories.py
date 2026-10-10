@@ -121,12 +121,13 @@ class PostgresTenantRepository(_Repository):
     def add(self, tenant: Tenant) -> None:
         """Stage a new Tenant, rejecting an existing immutable identity."""
         added = self._bool(
-            "SELECT mtmf.tenant_add(%s, %s, %s, %s, %s, %s)",
+            "SELECT mtmf.tenant_add(%s, %s, %s, %s, %s, %s, %s)",
             (
                 tenant.id.value,
                 tenant.name,
                 int(tenant.scope),
                 tenant.owner_identity_id.value,
+                int(tenant.lifecycle),
                 int(tenant.deletion_status),
                 _extension_param(tenant.extension),
             ),
@@ -144,10 +145,11 @@ class PostgresTenantRepository(_Repository):
     def save(self, tenant: Tenant) -> None:
         """Stage an update to an existing Tenant identity."""
         updated = self._bool(
-            "SELECT mtmf.tenant_save(%s, %s, %s, %s)",
+            "SELECT mtmf.tenant_save(%s, %s, %s, %s, %s)",
             (
                 tenant.id.value,
                 tenant.name,
+                int(tenant.lifecycle),
                 int(tenant.deletion_status),
                 _extension_param(tenant.extension),
             ),
@@ -251,11 +253,12 @@ class PostgresIdentityRepository(_Repository):
     def add(self, identity: Identity) -> None:
         """Stage a new Identity, rejecting an existing immutable identity."""
         added = self._bool(
-            "SELECT mtmf.identity_add(%s, %s, %s, %s, %s)",
+            "SELECT mtmf.identity_add(%s, %s, %s, %s, %s, %s)",
             (
                 identity.id.value,
                 identity.principal_id.value,
                 identity.name,
+                int(identity.origin),
                 int(identity.deletion_status),
                 _extension_param(identity.extension),
             ),

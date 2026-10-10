@@ -3,7 +3,12 @@
 import pytest
 from helpers import make_id, make_identity, make_principal
 
-from mtmf_core import DeletionStatus, DomainInvariantError, ImmutabilityError
+from mtmf_core import (
+    DeletionStatus,
+    DomainInvariantError,
+    IdentityOrigin,
+    ImmutabilityError,
+)
 
 
 def test_identity_references_exactly_one_principal() -> None:
@@ -12,6 +17,13 @@ def test_identity_references_exactly_one_principal() -> None:
     assert identity.principal_id == principal.id
     # A single structural principal_id is exposed, never a collection.
     assert not hasattr(identity, "principal_ids")
+
+
+def test_identity_origin_is_explicit_and_immutable() -> None:
+    identity = make_identity(origin=IdentityOrigin.FEDERATED)
+    assert identity.origin is IdentityOrigin.FEDERATED
+    with pytest.raises(ImmutabilityError):
+        identity.origin = IdentityOrigin.LOCAL  # type: ignore[misc]
 
 
 def test_identity_has_no_owning_tenant() -> None:

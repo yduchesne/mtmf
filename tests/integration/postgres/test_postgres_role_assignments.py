@@ -506,11 +506,20 @@ def test_pa17_in_place_0004_to_0005_upgrade_preserves_data(
 
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0005"
+    assert manager.current_revision() == "0008"
     with psycopg.connect(mtmf_config.psycopg_dsn, autocommit=True) as connection:
         # Existing entity/membership state is preserved across the upgrade.
         assert helpers.membership_count(connection, "identity_tenant_membership") == 4
-        assert connection.execute("SELECT count(*) FROM mtmf.role").fetchone()[0] == 2
+        # The pre-existing tenant and SYSTEM roles are preserved (revision
+        # 0006 additively installs the 11 approved built-in Roles, so a
+        # global count is no longer a stable assertion).
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM mtmf.role WHERE urn IN (%s, %s)",
+                (helpers.ROLE_URN, helpers.TENANT_A_ROLE_URN),
+            ).fetchone()[0]
+            == 2
+        )
         # The new typed assignment tables are empty and usable.
         assert helpers.membership_count(connection, "identity_role_assignment") == 0
         inserted = connection.execute(

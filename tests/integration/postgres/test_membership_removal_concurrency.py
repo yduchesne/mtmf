@@ -264,8 +264,8 @@ def test_txn06_identity_tenant_insert_loses_to_principal_tenant_delete(db, dsn: 
     helpers.seed_full_membership_graph(db)
     new_identity = helpers.new_id()
     db.execute(
-        "INSERT INTO mtmf.identity (id, principal_id, name, deletion_status) "
-        "VALUES (%s, %s, 'I9', 2)",
+        "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+        "VALUES (%s, %s, 'I9', 1, 2)",
         (new_identity, helpers.PRINCIPAL),
     )
     db.commit()

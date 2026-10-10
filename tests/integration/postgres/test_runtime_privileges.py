@@ -577,7 +577,7 @@ def test_priv16_populated_upgrade_rerun_preserves_data_and_acls(
     assert manager.current_revision() == manager.head_revision
     manager.upgrade_to_head()
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0005"
+    assert manager.current_revision() == "0008"
     assert _membership_snapshot(db) == before_memberships
     assert helpers.audit_rows(db) == before_audit
     assert db.execute(
@@ -618,7 +618,7 @@ def test_priv16b_legacy_ownership_fails_loudly_then_adopts(
             "WHERE n.nspname = 'mtmf' "
             "AND pg_get_userbyid(c.relowner) <> 'mtmf_owner'"
         ).fetchone()[0]
-    assert revision == "0005"
+    assert revision == "0008"
     assert non_owner_objects == 0
 
 

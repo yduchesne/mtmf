@@ -47,7 +47,7 @@ def test_v5_in_place_0003_to_0005_upgrade(
     assert PostgresMigrationManager(migrator_config).current_revision() == "0003"
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0005"
+    assert manager.current_revision() == "0008"
     with psycopg.connect(mtmf_config.psycopg_dsn, autocommit=True) as connection:
         assert _runtime_signatures(connection) == set(expected_runtime_signatures())
 
@@ -98,7 +98,7 @@ def test_v5_unapproved_grant_fails_postflight_then_recovers(
     finally:
         db.execute("REVOKE EXECUTE ON FUNCTION mtmf.mtf_schema_version() FROM mtmf_runtime")
     PostgresMigrationManager(migrator_config).upgrade_to_head()
-    assert PostgresMigrationManager(migrator_config).current_revision() == "0005"
+    assert PostgresMigrationManager(migrator_config).current_revision() == "0008"
 
 
 def test_v5_runtime_roles_cannot_manage_migrations(runtime_config: PostgresConfig) -> None:
@@ -123,4 +123,4 @@ def test_v5_head_revision_is_the_migrated_revision(
     db: psycopg.Connection, migrator_config: PostgresConfig
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
-    assert manager.current_revision() == manager.head_revision == "0005"
+    assert manager.current_revision() == manager.head_revision == "0008"

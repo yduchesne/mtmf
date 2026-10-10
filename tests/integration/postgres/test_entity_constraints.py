@@ -32,8 +32,9 @@ def _row_builder(table: str) -> psycopg.sql.SQL:
     identifier = psycopg.sql.Identifier(table)
     if table == "tenant":
         return psycopg.sql.SQL(
-            "INSERT INTO mtmf.{} (id, name, scope, owner_identity_id, deletion_status) "
-            "VALUES (%s, 'T', 2, {}, %s)"
+            "INSERT INTO mtmf.{} "
+            "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+            "VALUES (%s, 'T', 2, {}, 1, %s)"
         ).format(identifier, psycopg.sql.Literal(helpers.IDENTITY_A))
     if table == "organization":
         return psycopg.sql.SQL(
@@ -51,7 +52,8 @@ def _row_builder(table: str) -> psycopg.sql.SQL:
         ).format(identifier)
     if table == "identity":
         return psycopg.sql.SQL(
-            "INSERT INTO mtmf.{} (id, principal_id, name, deletion_status) VALUES (%s, {}, 'I', %s)"
+            "INSERT INTO mtmf.{} "
+            "(id, principal_id, name, origin, deletion_status) VALUES (%s, {}, 'I', 1, %s)"
         ).format(identifier, psycopg.sql.Literal(helpers.PRINCIPAL))
     return psycopg.sql.SQL(
         "INSERT INTO mtmf.{} (id, tenant_id, name, deletion_status) VALUES (%s, {}, 'G', %s)"
@@ -218,8 +220,9 @@ def test_ten01_and_ten02_tenant_legal_scopes_accepted(db, dsn: str, scope: int) 
     try:
         with connection.transaction():
             connection.execute(
-                "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, deletion_status) "
-                "VALUES (%s, 'T', %s, %s, 2)",
+                "INSERT INTO mtmf.tenant "
+                "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+                "VALUES (%s, 'T', %s, %s, 1, 2)",
                 (helpers.new_id(), scope, helpers.IDENTITY_A),
             )
     finally:
@@ -233,8 +236,9 @@ def test_ten03_system_and_organization_tenant_scopes_rejected(db, dsn: str, scop
     try:
         with pytest.raises(psycopg.errors.CheckViolation), connection.transaction():
             connection.execute(
-                "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, deletion_status) "
-                "VALUES (%s, 'T', %s, %s, 2)",
+                "INSERT INTO mtmf.tenant "
+                "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+                "VALUES (%s, 'T', %s, %s, 1, 2)",
                 (helpers.new_id(), scope, helpers.IDENTITY_A),
             )
     finally:
@@ -262,8 +266,8 @@ def test_ten05_identity_requires_principal(db, dsn: str) -> None:
     try:
         with pytest.raises(psycopg.errors.ForeignKeyViolation), connection.transaction():
             connection.execute(
-                "INSERT INTO mtmf.identity (id, principal_id, name, deletion_status) "
-                "VALUES (%s, %s, 'I', 2)",
+                "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+                "VALUES (%s, %s, 'I', 1, 2)",
                 (helpers.new_id(), helpers.new_id()),
             )
     finally:
@@ -290,8 +294,9 @@ def test_ten07_owner_identity_fks_enforced(db, dsn: str) -> None:
     try:
         with pytest.raises(psycopg.errors.ForeignKeyViolation), connection.transaction():
             connection.execute(
-                "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, deletion_status) "
-                "VALUES (%s, 'T', 2, %s, 2)",
+                "INSERT INTO mtmf.tenant "
+                "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+                "VALUES (%s, 'T', 2, %s, 1, 2)",
                 (helpers.new_id(), helpers.new_id()),
             )
     finally:
@@ -316,13 +321,15 @@ def test_ten09_duplicate_display_names_allowed(db, dsn: str) -> None:
     try:
         with connection.transaction():
             connection.execute(
-                "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, deletion_status) "
-                "VALUES (%s, 'Tenant A', 2, %s, 2)",
+                "INSERT INTO mtmf.tenant "
+                "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+                "VALUES (%s, 'Tenant A', 2, %s, 1, 2)",
                 (helpers.new_id(), helpers.IDENTITY_A),
             )
             connection.execute(
-                "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, deletion_status) "
-                "VALUES (%s, 'Tenant A', 2, %s, 2)",
+                "INSERT INTO mtmf.tenant "
+                "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+                "VALUES (%s, 'Tenant A', 2, %s, 1, 2)",
                 (helpers.new_id(), helpers.IDENTITY_A),
             )
     finally:
