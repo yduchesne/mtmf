@@ -372,6 +372,34 @@ implements the rejection; the test ID is a future conformance case.
 | A17 | Shared runtime DB credential treated as verified user | trust boundary | reject (not an end-user auth path) | 14/17 | F19 |
 | A18 | Snapshot supplied by end user or another service | snapshot integrity | reject at PEP helper | 18/20 | F20 |
 
+## 12A. Production root authentication and operator-controlled recovery (PLANNED)
+
+**Status: proposed production architecture; documentation only, not an operational recovery mechanism.** PR 10 already implements the installation/operator-only `recover_root_identity` database primitive and root structural invariants. It does **not** deliver an authenticated recovery CLI, independent operator approval and credential custody, IdP binding repair, or end-to-end recovery workflow. Do not describe root recovery as operationally available.
+
+### Normal root authentication (PR 14 design gate)
+
+The canonical root Principal, root Tenant, and protected designated `LOCAL` root Identity are MTMF-owned; MTMF does not maintain a password for that Identity. Proposed normal interactive root authentication uses a **dedicated privileged account at a configured external OIDC IdP**, preferably with phishing-resistant MFA. The IdP owns and validates the credentials. A privileged installation process establishes an immutable/protected binding of the verified `(issuer, subject)` to the designated root Identity; PR 14 validates token issuer, signature/JWKS, audience, lifetime, subject and appropriate authentication assurance before resolving the binding. A username, email, caller-supplied UUID, service credential or ordinary Tenant membership never proves root identity. Root identity binding creation, replacement and revocation are not ordinary self-service API operations. An external authentication binding to an immutable `LOCAL` Identity is an **explicit unresolved semantic/design gate**: reconcile with PR 10 IdentityOrigin invariants and approve the mapping model before implementation. Do not silently reclassify the root Identity as FEDERATED.
+
+Routine SYSTEM administrators may separately use verified federated Identities with **explicitly scoped** administrative Permissions; this is not impersonation of the root Identity and cannot confer canonical root status. The SYSTEM/root Tenant remains prohibited for consuming Application subscriptions and authorization requests.
+
+### Emergency recovery authority and isolation (separate production recovery deliverable)
+
+Emergency recovery is **not an interactive root login** and must not mint a fictitious root session. A real infrastructure operator authenticates using an independent deployment/PAM trust boundary (for example hardware-backed operator identity/SSH certificate) and obtains explicit, recorded recovery approval, preferably dual control. A dedicated one-shot recovery CLI/container, unavailable to the normal HTTP service and consuming Applications, invokes narrowly scoped privileged database recovery operations using a separate protected installation/recovery database role. `mtmf_runtime`, ordinary Application tokens, and public HTTP routes have no recovery grants. Database credentials are provided through a deployment secret manager, never source code, container images, logs, or consuming Application environment variables.
+
+**Recovery workflow (future):**
+1. Record incident, reason, verified operator identity, approvals, and authorized scope in an independent durable audit channel.
+2. Authenticate and authorize the operator at the deployment boundary; issue short-lived, least-privileged recovery access and start the one-shot utility.
+3. Validate canonical root registry, Tenant/Principal, designated active LOCAL Identity, membership, and PR 10 invariants. Unexpected corruption fails closed; no implicit recreation, promotion or ownership transfer.
+4. Re-establish or replace the **authentication binding** only after independently verifying the new external IdP issuer/subject. If the designated root Identity itself must change, invoke the existing privileged atomic root-Identity recovery primitive while preserving canonical root Tenant/Principal, ROOT membership, and immutable ownership.
+5. Commit authorized changes atomically where within one database transaction, revoke superseded bindings/sessions where supported, rotate affected secrets, and emit independent success/failure audit events. Do not imply cross-system IdP and PostgreSQL updates are atomic: use explicit reconciliation and fail-closed partial-failure handling.
+6. Once the IdP is available, require fresh normal IdP authentication and verify resolution to the expected protected root Identity; perform incident review and close temporary recovery access.
+
+**IdP outage:** without an operational IdP, normal root OIDC login is unavailable. The isolated operator recovery path may repair trusted issuer configuration and bindings using its separately authenticated authority; it does not issue root tokens, bypass PDP for arbitrary application data, or supply a fallback HTTP password endpoint. Interactive root login during an IdP outage would require a separately approved emergency authentication provider and is **not** promised here.
+
+**Audit and control:** immutable or externally retained audit evidence must cover approvals, invocation, operator identity, target identifiers, before/after binding fingerprints, outcomes, and failures. A failed PostgreSQL transaction cannot be relied on to retain its own audit row. Require credential custody, expiry/rotation, least privilege, break-glass testing, and a production runbook. An infrastructure operator is not thereby an MTMF root acting Identity.
+
+**Ownership and release gate:** PR 14 owns normal root OIDC verification and protected binding design; PR 17 owns development-only root IdP fixture provisioning (not production recovery); a **separately planned production recovery PR** owns the operator-authenticated CLI, restricted grants, approvals, audit, IdP repair/reconciliation and runbook; PR 20 covers integration and negative trust-boundary tests once available. **Production readiness is blocked until the recovery mechanism is implemented, security-reviewed and successfully exercised.**
+
 ## 13. Illustrative examples (NON-NORMATIVE)
 
 These examples are conceptual and are **not** final JSON, endpoints, or
