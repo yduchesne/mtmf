@@ -431,3 +431,15 @@ The following are intentionally not settled here:
 - caching and authorization-state invalidation (deferred; when designed, caching belongs behind `AuthorizationPolicyResolver` decorator implementations, never inside the Authorizer or the policy implementations);
 - Rust optimization details (the Rust evaluators are experimental and non-default since PR 8H; the production default is the pure-Python indexed `CompiledPolicy`).
 - HTTP API shape and versioning strategy.
+
+## Planned HTTP-only integration and package responsibilities (PRs 12–20; NOT IMPLEMENTED)
+
+The v0.1 target integration architecture is an independently deployed MTMF HTTPS **PDP** with external consuming applications as **PEPs**. The earlier in-process/LocalConnector and location-transparent architecture statements in this document describe historical planning, not the newly agreed external integration target. Existing internal Python APIs remain implementation details. The planned public boundary is versioned HTTP only.
+
+- `mtmf-core`: authoritative authorization policy resolution and eventual native batch evaluator (PR 16).
+- `mtmf-api`: detached HTTP DTOs, errors and contracts (PR 15).
+- `mtmf-service`: authenticated service and end-user trust boundary (PR 14), batch endpoint orchestration (PR 17).
+- `mtmf-client`: HTTP-only client and scoped snapshot/PEP helper, never an embedded PDP (PR 18).
+- External applications: enforce MTMF decisions and their own resource/Tenant data isolation (ATI reference PR 20).
+
+Application registry/subscriptions (PR 13) gate eligibility before ALLOW. This architecture and its batch endpoint are **not implemented**. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md) and [ROADMAP_V01.md](ROADMAP_V01.md).
