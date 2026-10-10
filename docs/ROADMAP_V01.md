@@ -142,6 +142,8 @@ Implement ROOT and SYSTEM TenantManagementGroup behavior, implicit universal ROO
 
 Manager-side actor eligibility must be explicitly settled before enabling delegated authority.
 
+**Status: NOT DONE — Gate D approved; blocked on the management Role catalog.** The Gate D security semantics (explicit Identity-level eligibility, single management Role, ROOT-only root Identity, lifecycle, SYSTEM-only management Roles, delegation boundaries, restricted Actions, revocation, trusted acting Identity) are approved in [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md). The typed structural `TenantManagementGroup`/`TenantManagementGroupMembership` domain values, their pure structural validators, and a fail-closed contextual resolver (`resolve_management_scope`, which returns a non-elevating candidate and always reports `actor_eligible=False`) are implemented with unit coverage. Schema, stored functions, ROOT bootstrap, SPI/UoW repositories, Authorizer integration, delegated ALLOW, lifecycle, revocation, and trusted-actor work are blocked because the approved built-in Role catalog contains no cross-Tenant management Role and no management Permission allocation; inventing one is not authorized. PR 11 MUST NOT be marked `[DONE]` on structural tests alone.
+
 ### PR 12 — Public API contract and detached DTOs
 
 Implement `mtmf-api` service interfaces, detached Pydantic DTOs, stable transport-independent errors, Connector contract, and mappings that preserve remote-service semantics.

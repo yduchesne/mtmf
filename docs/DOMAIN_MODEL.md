@@ -483,7 +483,9 @@ Contextual management scope does not mutate the intrinsic scope of the manager T
 
 The exact persistence representation of TenantManagementGroup and its explicit managed-Tenant memberships remains **UNRESOLVED**.
 
-The rule identifying which Identities or Groups in the manager Tenant may exercise the management Role remains **UNRESOLVED** and must fail closed until specified.
+Manager-side eligibility is settled: an explicit Identity-level eligibility designation associated with the TenantManagementGroup is required, and ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership never confers eligibility. The concrete canonical management Role URNs and their management Permission allocation remain an open implementation decision recorded in [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
+
+PR 11 currently implements only the structural domain values (`TenantManagementGroup`, `TenantManagementGroupMembership`), their pure structural validators, and a fail-closed contextual resolver that returns a non-elevating candidate. No persistence representation is settled and no delegated authorization is enabled.
 
 ---
 
@@ -590,7 +592,7 @@ Additional aggregate boundaries will be identified during detailed implementatio
 
 The following remain intentionally unsettled:
 
-5. which manager-Tenant Identities or Groups exercise TenantManagementGroup authority;
+5. the concrete canonical management Role URNs and their management Permission allocation for TenantManagementGroups (eligibility itself is settled as an explicit Identity-level designation; see [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md));
 6. exact TenantManagementGroup persistence representation;
 7. nested Group support;
 8. Principal Organization membership;

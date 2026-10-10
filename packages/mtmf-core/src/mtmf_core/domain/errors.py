@@ -55,3 +55,13 @@ class TenantLifecycleError(DomainInvariantError):
     Raised by the pure lifecycle validators. This is structural validation
     only; it does not authenticate an operator or authorize an activation.
     """
+
+
+class ManagementGroupInvariantError(DomainInvariantError):
+    """A structural TenantManagementGroup invariant is violated (PR 11).
+
+    Raised only by the pure structural TenantManagementGroup validators.
+    Possessing or passing a management group confers no Role, Permission,
+    scope elevation, or authority; delegated manager-side actor eligibility
+    remains unresolved until the PR 11 decision gate is approved.
+    """

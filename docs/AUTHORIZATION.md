@@ -144,7 +144,9 @@ SYSTEM TenantManagementGroups manage only explicitly associated Tenants and may 
 
 The management group's Role still constrains which Actions may be authorized. Management-group membership never means unrestricted administration.
 
-Manager-side actor eligibility remains unresolved and MUST fail closed until specified.
+Manager-side actor eligibility is settled: delegated authority requires an explicit Identity-level eligibility designation associated with the management group and scoped to its manager Tenant, evaluated only against a verified acting Identity. Ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership never confers eligibility, and only the canonical root Identity may exercise the ROOT group.
+
+PR 11 currently provides only the fail-closed structural contextual resolver (`resolve_management_scope`): it returns a structural coverage *candidate* and always reports `actor_eligible=False`, so it never elevates authorization. The Authorizer/policy path is intentionally not integrated and delegated ALLOW remains disabled pending the concrete canonical management Role URNs and management Permission allocation recorded as an open decision in [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
 
 ## 8. Implementation Boundary
 

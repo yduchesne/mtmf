@@ -17,11 +17,19 @@ from mtmf_core.application.effective_roles import (
     ResolvedAuthorizationState,
     build_authorization_context,
 )
+from mtmf_core.application.management_scope import (
+    ManagementScopeCandidate,
+    ManagementScopeResolution,
+    resolve_management_scope,
+)
 
 __all__ = [
     "EffectiveRoleIntegrityError",
     "EffectiveRoleResolutionError",
     "EffectiveRoleResolver",
+    "ManagementScopeCandidate",
+    "ManagementScopeResolution",
     "ResolvedAuthorizationState",
     "build_authorization_context",
+    "resolve_management_scope",
 ]
