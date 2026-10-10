@@ -1,113 +1,94 @@
 # PR 10 implementation decisions, STOP record, and reconciliation
 
-**Status:** Branch reconciled onto current `main`. The six original STOP gates are
-**design-resolved** (PR #35/#36). **Gate M is now policy-approved by PR #38 and
-its exact minimum seed is implemented** in additive Alembic revision `0006`,
-with database-enforced protection of the built-in SYSTEM Role definitions.
+**Status:** The six original STOP gates are design-resolved (PR #35/#36). Gate M
+is approved (PR #38) and its exact minimum seed is installed (revision `0006`).
+The explicit Identity `origin` / Tenant `lifecycle` persistence (`0007`) and the
+protected root bootstrap + ordinary-Tenant stewardship designation, audit, and
+legacy-write guards (`0008`) are implemented and verified on real PostgreSQL.
 
-The remaining PR 10 structural foundation is **not implemented**: explicit
-`IdentityOrigin`/`TenantLifecycle` entity persistence, the canonical root
-registry and bootstrap, ordinary-Tenant stewardship designation/activation, and
-DB guards across the legacy mutation paths. Trusted end-user (HTTP/service)
-identity and any runtime-callable privileged operation remain deliberately
-deferred.
+**Not complete:** the full Amendment #2 concurrency matrix is only partially
+covered, and trusted end-user (HTTP/service) identity — and therefore any
+runtime-callable transfer/recovery — remains deliberately deferred. PR 10 is
+**not** `[DONE]`.
 
 ## Refs and baseline
 
 - Branch: `dev/pr10-bootstrap`
-- Current base: `origin/main` `35b770a951fc455c8152e25bf90172b8fb36e13a`
-  (merge of PR #38)
-- Prior bases: `26468b0` (PR #36), `73f965c` (PR #34)
-- Working tree clean after the reconciliation rebase
+- Base: `origin/main` `35b770a` (PR #38)
+- Delivered additive revisions: `0006` (built-in seed), `0007`
+  (origin/lifecycle), `0008` (root/stewardship)
 
 ## Historical STOP record (preserved)
 
-The original PR 10 execution plan defined six STOP gates and instructed a STOP
-rather than a permissive guess. On the original base none had an approved
-decision: STOP-01 trusted identity boundary, STOP-02 built-in Role catalog,
-STOP-03 local Identity representation, STOP-04 Tenant activation, STOP-05
-transactional trusted boundary, STOP-06 root recovery.
+The original plan defined six STOP gates (trusted identity, built-in catalog,
+local Identity, Tenant activation, transactional trusted boundary, recovery).
+The PR #35/#36/#38 decision documents resolved them: separate
+installation/actor/database trust boundaries; explicit SYSTEM-owned built-in
+Roles with exact-action grants; immutable `IdentityOrigin`; explicit
+`TenantLifecycle`; a deterministic lock order; and operator-only root recovery.
 
-## Reconciliation with PRs #35–#38
+## Delivered
 
-- **PR #35** (`PR10_ARCHITECTURE_DECISIONS.md`) design-resolved all six STOP
-  gates: separate installation/actor/database trust boundaries; explicit
-  SYSTEM-owned built-in Roles with narrow exact-action grants; immutable
-  `IdentityOrigin` (`LOCAL`/`FEDERATED`); ordinary Tenant lifecycle
-  (`PROVISIONING`/`ACTIVE`/`SUSPENDED`); DB guards across all write paths under
-  a deterministic lock order; SYSTEM recovery for ordinary Tenants plus
-  operator-only root recovery.
-- **PR #36** (`PR10_BUILTIN_ACCESS_AND_INSTALLATION.md`) fixed the
-  human-readable built-in Role allocation and the fresh empty-database v0.1
-  baseline.
-- **PR #37** (`PR10_EXACT_PERMISSION_MANIFEST.md`) enumerated a 34-Action
-  candidate catalog. It remains **PROPOSED / candidate-only and unseeded**.
-- **PR #38** (`PR10_GATE_M_SEED_POLICY.md`) approved the exact minimum seed:
-  **11 SYSTEM Roles / 11 ALLOW PermissionSets / 11 exact Permissions / 3 Action
-  definitions / 22 fixed UUIDs**. This is the only authorized seed.
+### Revision `0006` — approved Gate M built-in policy
+Exactly 11 SYSTEM Roles / 11 ALLOW PermissionSets / 11 exact Permissions / 3
+Actions / 22 fixed UUIDs, installed idempotently; conflicting definitions fail
+closed; SYSTEM Role definitions are protected from ordinary `role_save`; the
+installer is not runtime- or PUBLIC-executable.
 
-## Gate M — resolved and implemented
+### Revision `0007` — Identity origin and Tenant lifecycle
+- Immutable `identity.origin` (`LOCAL=1`/`FEDERATED=2`), with conservative
+  backfill (`FEDERATED`) for any pre-existing row and an immutability guard.
+- `tenant.lifecycle` (`PROVISIONING=0`/`ACTIVE=1`/`SUSPENDED=2`), independent
+  of soft deletion, with a root-must-be-ACTIVE check and a conservative
+  `PROVISIONING` backfill.
+- Updated entity read/write functions and the exact 58-signature runtime
+  `EXECUTE` allowlist.
+- `EffectiveRoleResolver` fails closed for PROVISIONING/SUSPENDED Tenants
+  before Role evaluation.
 
-The approved PR #38 seed is installed by additive Alembic revision `0006`
-(no shipped revision or `v001`–`v005` resource is modified):
+### Revision `0008` — protected root and Tenant stewardship
+- `root_registry` singleton (canonical root Tenant/Principal + designated LOCAL
+  root Identity), `stewardship_designation` (`PK(tenant_id)`), and append-only
+  `stewardship_audit`.
+- Installation-only `SECURITY INVOKER` primitives, **never** runtime-granted:
+  `bootstrap_root` (serialized, idempotent, fail-closed), `designate_steward`
+  (version CAS + eligibility + audit), `activate_tenant`/`suspend_tenant`,
+  `recover_root_identity`.
+- Structural eligibility predicate `stewardship_is_eligible` (ordinary active
+  Tenant, active Principal/Identity, explicit memberships, direct or
+  group-derived Tenant Administrator Role).
+- Database guards: root Tenant/Principal/Identity cannot be deleted,
+  suspended, deactivated, reclassified, or reassigned; root and current-steward
+  prerequisite memberships cannot be removed; the steward's final Tenant
+  Administrator assignment cannot be revoked; an ordinary Tenant cannot become
+  ACTIVE without a designation; runtime `tenant_add` must create ordinary
+  Tenants PROVISIONING.
+- All privileged functions are owner-owned `SECURITY INVOKER`, PUBLIC-revoked,
+  and absent from the runtime allowlist; the mandatory post-upgrade verifier
+  remains the exact 58-signature contract.
 
-- `sql/v006/01_builtin_seed_schema.sql` — the `mtmf.builtin_role` protection
-  registry (FK to `mtmf.role`).
-- `sql/v006/02_builtin_seed_function.sql` — `mtmf.install_builtin_policy()`
-  (owner-owned, `SECURITY INVOKER`, fixed `search_path = ''`) installing the
-  literal URNs and 22 UUIDs; identical replay is a no-op and any conflicting
-  existing definition raises `MT010` (no silent overwrite/repair).
-- `sql/v006/03_builtin_role_protection.sql` — replaces `role_save` so an
-  ordinary runtime caller cannot rewrite a registered built-in definition
-  (`MT010`); the unchanged signature keeps its reviewed runtime grant and
-  `role_add`'s `ON CONFLICT DO NOTHING` cannot replace an existing Role. The
-  installer is explicitly **not** granted to `mtmf_runtime`.
-- `sql/v006/04_builtin_privilege_assertions.sql` — in-transaction assertions
-  (11 Roles / 3 Actions / 11 sets / 11 Permissions / no wildcard / installer not
-  runtime- or PUBLIC-executable).
-- `migrations/versions/0006_pr10_builtin_policy.py`; `HEAD_REVISION = "0006"`.
+## Not implemented / deferred
 
-Runtime privilege posture is unchanged: the mandatory post-upgrade verifier
-still requires the exact 58-signature runtime `EXECUTE` allowlist, no `PUBLIC`
-EXECUTE, and no direct table access. The installer is `SECURITY INVOKER` and
-absent from the SECURITY DEFINER entry-point inventory.
+- The Amendment #2 concurrency matrix is partially covered: deterministic
+  two-connection bootstrap and designation races exist, but the full
+  minimum-10-cycle protocol across every race (transfer vs deactivation,
+  activation vs setup, root recovery vs deletion) is not complete.
+- Trusted end-user/service identity propagation; user-facing
+  transfer/recovery endpoints. Privileged operations remain inaccessible to
+  ordinary runtime callers by design.
 
-## Implemented before (approved, non-gated domain vocabulary)
+## Evidence
 
-`IdentityOrigin` (`LOCAL=1`,`FEDERATED=2`), `TenantLifecycle`
-(`PROVISIONING=0`,`ACTIVE=1`,`SUSPENDED=2`), `TenantLifecycleError`,
-`validate_tenant_lifecycle_transition`, and the root/stewardship structural
-validators that accept origin/lifecycle, plus tests.
-
-## Not implemented (remaining PR 10 structural work)
-
-- `Identity.origin` / `Tenant.lifecycle` entity, mapper, repository and SQL
-  round-trip; lifecycle enforcement in the effective-Role/session path.
-- Canonical root registry, bootstrap completion marker, protected bootstrap.
-- Ordinary-Tenant stewardship designation persistence, activation/suspension
-  primitives, and append-only stewardship audit.
-- DB guards across the legacy mutation paths (`tenant_save`, `identity_save`,
-  membership-removal functions, Role-assignment removal) for root/steward
-  invariants.
-- Runtime privilege-manifest changes for those new functions (they must remain
-  non-runtime-granted) and the corresponding concurrency tests.
-- Trusted end-user/service identity propagation and any user-facing
-  transfer/recovery endpoint (explicitly out of scope).
-
-## Evidence (this session)
-
-- `./build.sh --qa` — PASS (Ruff format/lint, strict Mypy, 1192 unit tests,
+- `./build.sh --qa` — PASS (Ruff format/lint, strict Mypy, 1196 unit tests,
   coverage ≥ 85%).
+- `./build.sh --sec` — PASS (Bandit Medium/High 0; Semgrep 0 findings).
 - `./build.sh --integration` (real PostgreSQL, configured `MTMF_*`) — PASS,
-  443 tests including the new `test_postgres_builtin_policy.py` (exact seed,
-  UUIDv5 cross-check, idempotent replay, conflicting-definition fail-closed,
-  runtime Role-save denial, installer/PUBLIC denial, registry denial).
-- Seed UUIDs independently matched their documented UUIDv5 derivation.
+  471 tests, including `test_postgres_origin_lifecycle.py`,
+  `test_postgres_root_stewardship.py`, and `test_postgres_builtin_policy.py`.
 
 ## Merge recommendation
 
-The domain vocabulary and the approved Gate M seed + protection are safe to
-review and are covered by QA/integration evidence. **PR 10 as a whole is not
-complete**: the root/steward structural foundation and the origin/lifecycle
-persistence remain unimplemented, and no privileged capability is
-runtime-exposed. The roadmap must not mark PR 10 `[DONE]`.
+The seed, origin/lifecycle persistence, and protected root/stewardship
+foundation are implemented and verified. PR 10 Amendment #2 is **not complete**
+(full concurrency matrix and deferred trusted-user exposure), so the roadmap
+must not mark PR 10 `[DONE]`.

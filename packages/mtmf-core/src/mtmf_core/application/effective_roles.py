@@ -40,6 +40,7 @@ from mtmf_core.domain.errors import SessionContextError, TenantBoundaryError
 from mtmf_core.domain.iam_urn import RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
+from mtmf_core.domain.lifecycle import TenantLifecycle
 from mtmf_core.domain.memberships import (
     IdentityTenantMembership,
     PrincipalTenantMembership,
@@ -173,6 +174,11 @@ class EffectiveRoleResolver:
         if tenant.deleted or principal.deleted or identity.deleted:
             raise SessionContextError(
                 "effective-Role resolution requires active session lifecycle state"
+            )
+        if tenant.lifecycle is not TenantLifecycle.ACTIVE:
+            raise SessionContextError(
+                "effective-Role resolution requires an ACTIVE Tenant lifecycle; "
+                "PROVISIONING and SUSPENDED Tenants are non-authorizing"
             )
 
         principal_tenant_membership = self._spi.create_principal_tenant_membership_repository(

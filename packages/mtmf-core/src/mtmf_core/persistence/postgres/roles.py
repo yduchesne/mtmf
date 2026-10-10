@@ -84,11 +84,13 @@ _REMOVAL_FUNCTION_ARGUMENTS = {
 _REPOSITORY_FUNCTION_ARGUMENTS = {
     "tenant_add": (
         "id_value uuid, name_value text, scope_value smallint, "
-        "owner_identity_id_value uuid, deletion_status_value smallint, extension_value jsonb"
+        "owner_identity_id_value uuid, lifecycle_value smallint, "
+        "deletion_status_value smallint, extension_value jsonb"
     ),
     "tenant_get": ("id_value uuid"),
     "tenant_save": (
-        "id_value uuid, name_value text, deletion_status_value smallint, extension_value jsonb"
+        "id_value uuid, name_value text, lifecycle_value smallint, "
+        "deletion_status_value smallint, extension_value jsonb"
     ),
     "organization_add": (
         "id_value uuid, tenant_id_value uuid, name_value text, "
@@ -107,7 +109,7 @@ _REPOSITORY_FUNCTION_ARGUMENTS = {
     ),
     "identity_add": (
         "id_value uuid, principal_id_value uuid, name_value text, "
-        "deletion_status_value smallint, extension_value jsonb"
+        "origin_value smallint, deletion_status_value smallint, extension_value jsonb"
     ),
     "identity_get": ("id_value uuid"),
     "identity_save": (

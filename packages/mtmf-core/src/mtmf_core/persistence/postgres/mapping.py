@@ -25,7 +25,7 @@ from mtmf_core.domain.iam_urn import ActionUrn, PermissionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
 from mtmf_core.domain.json_types import JsonObject
-from mtmf_core.domain.lifecycle import DeletionStatus
+from mtmf_core.domain.lifecycle import DeletionStatus, IdentityOrigin, TenantLifecycle
 from mtmf_core.domain.organization import Organization
 from mtmf_core.domain.permission import Permission
 from mtmf_core.domain.permission_set import PermissionSet
@@ -122,6 +122,24 @@ def _require_deletion_status(source: dict[str, Any]) -> DeletionStatus:
         raise PersistenceDataError(f"stored deletion_status {raw!r} is not a legal value") from exc
 
 
+def _require_tenant_lifecycle(source: dict[str, Any]) -> TenantLifecycle:
+    """Return the required Tenant lifecycle value or fail closed."""
+    raw = _require_int(source, "lifecycle")
+    try:
+        return TenantLifecycle(raw)
+    except ValueError as exc:
+        raise PersistenceDataError(f"stored Tenant lifecycle {raw!r} is not a legal value") from exc
+
+
+def _require_identity_origin(source: dict[str, Any]) -> IdentityOrigin:
+    """Return the required immutable Identity origin or fail closed."""
+    raw = _require_int(source, "origin")
+    try:
+        return IdentityOrigin(raw)
+    except ValueError as exc:
+        raise PersistenceDataError(f"stored Identity origin {raw!r} is not a legal value") from exc
+
+
 def tenant_from_payload(payload: object) -> Tenant:
     """Reconstruct a :class:`Tenant` from a detached stored payload."""
     source = _require_object(payload, "Tenant")
@@ -137,6 +155,7 @@ def tenant_from_payload(payload: object) -> Tenant:
         name=_require_str(source, "name"),
         scope=scope,
         owner_identity_id=_require_uuid(source, "owner_identity_id"),
+        lifecycle=_require_tenant_lifecycle(source),
         deletion_status=_require_deletion_status(source),
         extension=_require_extension(source),
     )
@@ -173,6 +192,7 @@ def identity_from_payload(payload: object) -> Identity:
         id=_require_uuid(source, "id"),
         principal_id=_require_uuid(source, "principal_id"),
         name=_require_str(source, "name"),
+        origin=_require_identity_origin(source),
         deletion_status=_require_deletion_status(source),
         extension=_require_extension(source),
     )

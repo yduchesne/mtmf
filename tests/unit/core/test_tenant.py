@@ -9,6 +9,7 @@ from mtmf_core import (
     ImmutabilityError,
     SecurityScope,
     Tenant,
+    TenantLifecycle,
 )
 
 
@@ -124,7 +125,7 @@ def test_ordinary_tenant_scope_is_tenanted_only() -> None:
 def test_root_scope_is_representable_without_bootstrap_mechanics() -> None:
     # PR 10 owns bootstrap/root uniqueness; PR 2 only permits the settled
     # legal scope values on a Tenant.
-    tenant = Tenant(make_id(), "Root", SecurityScope.ROOT, make_id())
+    tenant = Tenant(make_id(), "Root", SecurityScope.ROOT, make_id(), TenantLifecycle.ACTIVE)
     assert tenant.scope is SecurityScope.ROOT
 
 
@@ -132,6 +133,16 @@ def test_root_scope_is_representable_without_bootstrap_mechanics() -> None:
 def test_invalid_tenant_scope_rejected(invalid_scope: SecurityScope) -> None:
     with pytest.raises(DomainInvariantError):
         Tenant(make_id(), "Bad", invalid_scope, make_id())
+
+
+def test_ordinary_tenant_defaults_to_provisioning() -> None:
+    tenant = Tenant(make_id(), "T", SecurityScope.TENANT, make_id())
+    assert tenant.lifecycle is TenantLifecycle.PROVISIONING
+
+
+def test_root_tenant_requires_active_lifecycle() -> None:
+    with pytest.raises(DomainInvariantError):
+        Tenant(make_id(), "Root", SecurityScope.ROOT, make_id(), TenantLifecycle.PROVISIONING)
 
 
 def test_tenant_has_no_embedded_containers() -> None:

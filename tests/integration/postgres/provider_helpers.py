@@ -14,10 +14,12 @@ from mtmf_core import (
     DomainId,
     Group,
     Identity,
+    IdentityOrigin,
     Organization,
     Principal,
     SecurityScope,
     Tenant,
+    TenantLifecycle,
 )
 from mtmf_core.persistence.spi import MtmfSpi
 
@@ -36,8 +38,16 @@ class DomainGraph:
 def seed_entity_graph(spi: MtmfSpi) -> DomainGraph:
     """Create and commit one canonical entity graph through the repositories."""
     principal = Principal(DomainId.generate(), "Principal")
-    identity = Identity(DomainId.generate(), principal.id, "Identity")
-    tenant = Tenant(DomainId.generate(), "Tenant", SecurityScope.TENANT, identity.id)
+    identity = Identity(DomainId.generate(), principal.id, "Identity", IdentityOrigin.LOCAL)
+    # New ordinary Tenants start PROVISIONING (non-authorizing); the
+    # protected activation path is exercised where authorization matters.
+    tenant = Tenant(
+        DomainId.generate(),
+        "Tenant",
+        SecurityScope.TENANT,
+        identity.id,
+        lifecycle=TenantLifecycle.PROVISIONING,
+    )
     organization = Organization(DomainId.generate(), tenant.id, "Organization", identity.id)
     group = Group(DomainId.generate(), tenant.id, "Group")
     with spi.create_unit_of_work() as uow:

@@ -76,6 +76,7 @@ def _tenant_payload(tenant: Tenant) -> dict[str, object]:
         "name": tenant.name,
         "scope": int(tenant.scope),
         "owner_identity_id": str(tenant.owner_identity_id),
+        "lifecycle": int(tenant.lifecycle),
         "deletion_status": int(tenant.deletion_status),
         "extension": tenant.extension,
     }
@@ -106,6 +107,7 @@ def _identity_payload(identity: Identity) -> dict[str, object]:
         "id": str(identity.id),
         "principal_id": str(identity.principal_id),
         "name": identity.name,
+        "origin": int(identity.origin),
         "deletion_status": int(identity.deletion_status),
         "extension": identity.extension,
     }

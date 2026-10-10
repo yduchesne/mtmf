@@ -63,7 +63,7 @@ def test_i01_fresh_migration_runs_mandatory_verifier(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0006"
+    assert manager.current_revision() == "0008"
     pg_roles.verify_runtime_privileges(db)
     assert not db.execute(
         "SELECT has_table_privilege('mtmf_runtime', 'mtmf.tenant', 'SELECT')"
@@ -77,7 +77,7 @@ def test_i02_already_head_rerun_reverifies_without_drift(
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0006"
+    assert manager.current_revision() == "0008"
     assert helpers.privilege_snapshot(db) == before
 
 
@@ -96,7 +96,7 @@ def test_i03_contaminated_table_grant_fails_noop_migration(
         assert "post-upgrade" in message
         assert "may already be committed" in message
         # Alembic history is unchanged and untouched; no rollback is claimed.
-        assert db.execute("SELECT version_num FROM mtmf.alembic_version").fetchone()[0] == "0006"
+        assert db.execute("SELECT version_num FROM mtmf.alembic_version").fetchone()[0] == "0008"
     finally:
         db.execute("REVOKE SELECT ON mtmf.tenant FROM mtmf_runtime")
 
@@ -111,7 +111,7 @@ def test_i04_recovery_after_remediation_succeeds(
     finally:
         db.execute("REVOKE SELECT ON mtmf.tenant FROM mtmf_runtime")
     PostgresMigrationManager(migrator_config).upgrade_to_head()
-    assert db.execute("SELECT version_num FROM mtmf.alembic_version").fetchone()[0] == "0006"
+    assert db.execute("SELECT version_num FROM mtmf.alembic_version").fetchone()[0] == "0008"
 
 
 def test_i05_unauthorized_function_execute_fails_and_recovers(

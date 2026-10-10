@@ -9,6 +9,7 @@ from mtmf_core import (
     DomainId,
     Group,
     Identity,
+    IdentityOrigin,
     Organization,
     Permission,
     PermissionEffect,
@@ -19,6 +20,7 @@ from mtmf_core import (
     RoleUrn,
     SecurityScope,
     Tenant,
+    TenantLifecycle,
 )
 
 
@@ -32,9 +34,22 @@ def make_tenant(
     scope: SecurityScope = SecurityScope.TENANT,
     *,
     owner: DomainId | None = None,
+    lifecycle: TenantLifecycle = TenantLifecycle.ACTIVE,
 ) -> Tenant:
-    """Build a Tenant with a fresh ID and the given (default TENANT) scope."""
-    return Tenant(make_id(), name, scope, owner if owner is not None else make_id())
+    """Build a Tenant with a fresh ID and the given (default TENANT) scope.
+
+    The test default lifecycle is ACTIVE so authorization-graph tests are
+    not all forced through the provisioning path; explicit PROVISIONING/
+    SUSPENDED lifecycles are passed where the lifecycle behavior itself is
+    under test. The production constructor default remains PROVISIONING.
+    """
+    return Tenant(
+        make_id(),
+        name,
+        scope,
+        owner if owner is not None else make_id(),
+        lifecycle=lifecycle,
+    )
 
 
 def make_organization(
@@ -57,9 +72,19 @@ def make_principal(name: str = "Principal") -> Principal:
     return Principal(make_id(), name)
 
 
-def make_identity(*, principal_id: DomainId | None = None, name: str = "Identity") -> Identity:
+def make_identity(
+    *,
+    principal_id: DomainId | None = None,
+    name: str = "Identity",
+    origin: IdentityOrigin = IdentityOrigin.LOCAL,
+) -> Identity:
     """Build a global Identity for ``principal_id`` (fresh if omitted)."""
-    return Identity(make_id(), principal_id if principal_id is not None else make_id(), name)
+    return Identity(
+        make_id(),
+        principal_id if principal_id is not None else make_id(),
+        name,
+        origin,
+    )
 
 
 def make_group(name: str = "Group", *, tenant_id: DomainId | None = None) -> Group:

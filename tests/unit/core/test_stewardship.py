@@ -111,7 +111,7 @@ def test_root_record_rejects_shared_canonical_ids() -> None:
     # The ID-match checks must pass first; duplicate canonical IDs are then
     # rejected outright even though the supplied objects agree with them.
     shared = make_id()
-    tenant = Tenant(shared, "Root", SecurityScope.ROOT, make_id())
+    tenant = Tenant(shared, "Root", SecurityScope.ROOT, make_id(), TenantLifecycle.ACTIVE)
     principal = Principal(shared, "Root Principal")
     identity = make_identity(principal_id=principal.id)
     forged = RootBootstrapRecord(

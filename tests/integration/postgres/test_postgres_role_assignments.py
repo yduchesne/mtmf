@@ -506,7 +506,7 @@ def test_pa17_in_place_0004_to_0005_upgrade_preserves_data(
 
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0006"
+    assert manager.current_revision() == "0008"
     with psycopg.connect(mtmf_config.psycopg_dsn, autocommit=True) as connection:
         # Existing entity/membership state is preserved across the upgrade.
         assert helpers.membership_count(connection, "identity_tenant_membership") == 4
