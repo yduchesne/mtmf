@@ -44,6 +44,7 @@ from mtmf_core.domain import (
     Identity,
     IdentityGroupMembership,
     IdentityOrgMembership,
+    IdentityOrigin,
     IdentityRoleAssignment,
     IdentityTenantMembership,
     ImmutabilityError,
@@ -70,6 +71,8 @@ from mtmf_core.domain import (
     StewardshipInvariantError,
     Tenant,
     TenantBoundaryError,
+    TenantLifecycle,
+    TenantLifecycleError,
     TenantStewardshipDesignation,
     Urn,
     match_permission,
@@ -85,6 +88,7 @@ from mtmf_core.domain import (
     validate_root_bootstrap_record,
     validate_session_context,
     validate_stewardship_designation,
+    validate_tenant_lifecycle_transition,
 )
 from mtmf_core.persistence import (
     ActionRepository,
@@ -154,6 +158,7 @@ __all__ = [
     "IdentityGroupMembershipRepository",
     "IdentityOrgMembership",
     "IdentityOrgMembershipRepository",
+    "IdentityOrigin",
     "IdentityRepository",
     "IdentityRoleAssignment",
     "IdentityRoleAssignmentRepository",
@@ -193,6 +198,8 @@ __all__ = [
     "StewardshipInvariantError",
     "Tenant",
     "TenantBoundaryError",
+    "TenantLifecycle",
+    "TenantLifecycleError",
     "TenantRepository",
     "TenantStewardshipDesignation",
     "UnitOfWork",
@@ -216,4 +223,5 @@ __all__ = [
     "validate_root_bootstrap_record",
     "validate_session_context",
     "validate_stewardship_designation",
+    "validate_tenant_lifecycle_transition",
 ]

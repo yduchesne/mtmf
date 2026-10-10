@@ -9,6 +9,7 @@ from mtmf_core.domain.errors import (
     SessionContextError,
     StewardshipInvariantError,
     TenantBoundaryError,
+    TenantLifecycleError,
 )
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, PermissionUrn, RoleUrn
@@ -25,7 +26,12 @@ from mtmf_core.domain.invariants import (
     validate_session_context,
 )
 from mtmf_core.domain.json_types import JsonObject, JsonScalar, JsonValue, new_extension
-from mtmf_core.domain.lifecycle import ActiveStatus, DeletionStatus
+from mtmf_core.domain.lifecycle import (
+    ActiveStatus,
+    DeletionStatus,
+    IdentityOrigin,
+    TenantLifecycle,
+)
 from mtmf_core.domain.memberships import (
     GroupOrgMembership,
     GroupTenantMembership,
@@ -55,6 +61,7 @@ from mtmf_core.domain.stewardship import (
     TenantStewardshipDesignation,
     validate_root_bootstrap_record,
     validate_stewardship_designation,
+    validate_tenant_lifecycle_transition,
 )
 from mtmf_core.domain.tenant import Tenant
 from mtmf_core.domain.urn import Urn
@@ -76,6 +83,7 @@ __all__ = [
     "Identity",
     "IdentityGroupMembership",
     "IdentityOrgMembership",
+    "IdentityOrigin",
     "IdentityRoleAssignment",
     "IdentityTenantMembership",
     "ImmutabilityError",
@@ -102,6 +110,8 @@ __all__ = [
     "StewardshipInvariantError",
     "Tenant",
     "TenantBoundaryError",
+    "TenantLifecycle",
+    "TenantLifecycleError",
     "TenantStewardshipDesignation",
     "Urn",
     "match_permission",
@@ -117,4 +127,5 @@ __all__ = [
     "validate_root_bootstrap_record",
     "validate_session_context",
     "validate_stewardship_designation",
+    "validate_tenant_lifecycle_transition",
 ]

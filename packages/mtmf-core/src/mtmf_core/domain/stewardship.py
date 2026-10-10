@@ -33,9 +33,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from mtmf_core.domain.errors import RootInvariantError, StewardshipInvariantError
+from mtmf_core.domain.errors import (
+    RootInvariantError,
+    StewardshipInvariantError,
+    TenantLifecycleError,
+)
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
+from mtmf_core.domain.lifecycle import IdentityOrigin, TenantLifecycle
 from mtmf_core.domain.memberships import IdentityTenantMembership, PrincipalTenantMembership
 from mtmf_core.domain.principal import Principal
 from mtmf_core.domain.scope import SecurityScope
@@ -46,7 +51,19 @@ __all__ = [
     "TenantStewardshipDesignation",
     "validate_root_bootstrap_record",
     "validate_stewardship_designation",
+    "validate_tenant_lifecycle_transition",
 ]
+
+#: The only permitted ordinary-Tenant lifecycle transitions. A transition
+#: outside this set requires a separately specified privileged operation and
+#: is rejected by :func:`validate_tenant_lifecycle_transition`.
+_ALLOWED_ORDINARY_TENANT_TRANSITIONS = frozenset(
+    {
+        (TenantLifecycle.PROVISIONING, TenantLifecycle.ACTIVE),
+        (TenantLifecycle.ACTIVE, TenantLifecycle.SUSPENDED),
+        (TenantLifecycle.SUSPENDED, TenantLifecycle.ACTIVE),
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,12 +110,46 @@ class TenantStewardshipDesignation:
             )
 
 
+def validate_tenant_lifecycle_transition(
+    *,
+    current: TenantLifecycle,
+    target: TenantLifecycle,
+    is_root: bool,
+) -> None:
+    """Validate a structural Tenant lifecycle transition (PR 10).
+
+    The root Tenant must remain ``ACTIVE`` and cannot be suspended or
+    demoted. An ordinary Tenant may make only the documented transitions
+    ``PROVISIONING -> ACTIVE``, ``ACTIVE -> SUSPENDED``, and
+    ``SUSPENDED -> ACTIVE`` (a no-op to the same state is permitted).
+
+    This is pure structural validation only. It does not authenticate an
+    operator, authorize an activation, or verify steward eligibility;
+    those remain the trusted application/persistence boundary's job.
+
+    :raises TenantLifecycleError: for root suspension/demotion or an
+        ordinary transition outside the permitted set.
+    """
+    if is_root:
+        if current is not TenantLifecycle.ACTIVE or target is not TenantLifecycle.ACTIVE:
+            raise TenantLifecycleError("the root Tenant must remain ACTIVE")
+        return
+    if current is target:
+        return
+    if (current, target) not in _ALLOWED_ORDINARY_TENANT_TRANSITIONS:
+        raise TenantLifecycleError(
+            f"ordinary Tenant lifecycle transition {current.name}->{target.name} is not permitted"
+        )
+
+
 def validate_root_bootstrap_record(
     record: RootBootstrapRecord,
     *,
     root_tenant: Tenant,
     root_principal: Principal,
     root_identity: Identity,
+    root_identity_origin: IdentityOrigin | None = None,
+    root_tenant_lifecycle: TenantLifecycle | None = None,
 ) -> None:
     """Validate the settled structural consistency of a root bootstrap record.
 
@@ -133,6 +184,10 @@ def validate_root_bootstrap_record(
         raise RootInvariantError("root Tenant, Principal, and Identity IDs must be distinct")
     if root_tenant.deleted or root_principal.deleted or root_identity.deleted:
         raise RootInvariantError("root Tenant, Principal, and Identity must not be soft-deleted")
+    if root_tenant_lifecycle is not None and root_tenant_lifecycle is not TenantLifecycle.ACTIVE:
+        raise RootInvariantError("the canonical root Tenant must be ACTIVE")
+    if root_identity_origin is not None and root_identity_origin is not IdentityOrigin.LOCAL:
+        raise RootInvariantError("the designated root acting Identity must be LOCAL")
 
 
 def validate_stewardship_designation(
@@ -143,6 +198,7 @@ def validate_stewardship_designation(
     designated_identity: Identity,
     principal_tenant_memberships: Iterable[PrincipalTenantMembership],
     identity_tenant_memberships: Iterable[IdentityTenantMembership],
+    tenant_lifecycle: TenantLifecycle | None = None,
 ) -> None:
     """Validate the settled structural consistency of a stewardship designation.
 
@@ -190,4 +246,8 @@ def validate_stewardship_designation(
     if tenant.deleted or steward_principal.deleted or designated_identity.deleted:
         raise StewardshipInvariantError(
             "Tenant, steward Principal, and designated acting Identity must not be soft-deleted"
+        )
+    if tenant_lifecycle is not None and tenant_lifecycle is not TenantLifecycle.ACTIVE:
+        raise StewardshipInvariantError(
+            "an ordinary Tenant stewardship designation requires an ACTIVE Tenant"
         )

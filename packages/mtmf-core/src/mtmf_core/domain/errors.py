@@ -47,3 +47,11 @@ class StewardshipInvariantError(DomainInvariantError):
     Raised only by the structural stewardship validators. Possessing or
     passing such a designation confers no Role, Permission, or authority.
     """
+
+
+class TenantLifecycleError(DomainInvariantError):
+    """An ordinary-Tenant lifecycle state or transition is invalid (PR 10).
+
+    Raised by the pure lifecycle validators. This is structural validation
+    only; it does not authenticate an operator or authorize an activation.
+    """

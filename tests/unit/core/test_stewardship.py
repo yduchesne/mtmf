@@ -1,9 +1,10 @@
-"""Structural tests for the blocked-set root/stewardship domain helpers (PR 10).
+"""Structural tests for the root/stewardship domain helpers (PR 10).
 
 These tests prove the *settled structural* invariants only. They also record
-that the helpers deliberately do not encode authentication, authorization,
-lifecycle admission, local-Identity representation, or built-in Role policy
-(see ``docs/PR10_IMPLEMENTATION_DECISIONS.md``).
+that the helpers deliberately do not encode authentication or authorization
+(see ``docs/PR10_IMPLEMENTATION_DECISIONS.md``). The approved PR 10
+``IdentityOrigin``/``TenantLifecycle`` vocabulary and lifecycle-transition
+validation are covered here as pure structural rules.
 """
 
 import pytest
@@ -11,6 +12,7 @@ from helpers import make_id, make_identity, make_principal, make_tenant
 
 from mtmf_core import (
     Identity,
+    IdentityOrigin,
     IdentityTenantMembership,
     Principal,
     PrincipalTenantMembership,
@@ -19,9 +21,12 @@ from mtmf_core import (
     SecurityScope,
     StewardshipInvariantError,
     Tenant,
+    TenantLifecycle,
+    TenantLifecycleError,
     TenantStewardshipDesignation,
     validate_root_bootstrap_record,
     validate_stewardship_designation,
+    validate_tenant_lifecycle_transition,
 )
 
 # --- Root bootstrap record -----------------------------------------------------
@@ -284,4 +289,113 @@ def test_designation_rejects_soft_deleted_object(target: str) -> None:
             designated_identity=identity,
             principal_tenant_memberships=pm,
             identity_tenant_memberships=im,
+        )
+
+
+# --- Identity origin and Tenant lifecycle vocabulary ---------------------------
+
+
+def test_identity_origin_exact_values() -> None:
+    assert IdentityOrigin.LOCAL.value == 1
+    assert IdentityOrigin.FEDERATED.value == 2
+    assert set(IdentityOrigin) == {IdentityOrigin.LOCAL, IdentityOrigin.FEDERATED}
+
+
+def test_tenant_lifecycle_exact_values() -> None:
+    assert TenantLifecycle.PROVISIONING.value == 0
+    assert TenantLifecycle.ACTIVE.value == 1
+    assert TenantLifecycle.SUSPENDED.value == 2
+
+
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        (TenantLifecycle.PROVISIONING, TenantLifecycle.ACTIVE),
+        (TenantLifecycle.ACTIVE, TenantLifecycle.SUSPENDED),
+        (TenantLifecycle.SUSPENDED, TenantLifecycle.ACTIVE),
+        (TenantLifecycle.ACTIVE, TenantLifecycle.ACTIVE),
+    ],
+)
+def test_permitted_ordinary_lifecycle_transitions(
+    current: TenantLifecycle, target: TenantLifecycle
+) -> None:
+    validate_tenant_lifecycle_transition(current=current, target=target, is_root=False)
+
+
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        (TenantLifecycle.PROVISIONING, TenantLifecycle.SUSPENDED),
+        (TenantLifecycle.SUSPENDED, TenantLifecycle.PROVISIONING),
+        (TenantLifecycle.ACTIVE, TenantLifecycle.PROVISIONING),
+    ],
+)
+def test_forbidden_ordinary_lifecycle_transitions(
+    current: TenantLifecycle, target: TenantLifecycle
+) -> None:
+    with pytest.raises(TenantLifecycleError):
+        validate_tenant_lifecycle_transition(current=current, target=target, is_root=False)
+
+
+def test_root_lifecycle_must_remain_active() -> None:
+    validate_tenant_lifecycle_transition(
+        current=TenantLifecycle.ACTIVE, target=TenantLifecycle.ACTIVE, is_root=True
+    )
+    with pytest.raises(TenantLifecycleError):
+        validate_tenant_lifecycle_transition(
+            current=TenantLifecycle.ACTIVE, target=TenantLifecycle.SUSPENDED, is_root=True
+        )
+    with pytest.raises(TenantLifecycleError):
+        validate_tenant_lifecycle_transition(
+            current=TenantLifecycle.PROVISIONING, target=TenantLifecycle.ACTIVE, is_root=True
+        )
+
+
+def test_root_record_accepts_local_active_identity() -> None:
+    record, tenant, principal, identity = _valid_root()
+    validate_root_bootstrap_record(
+        record,
+        root_tenant=tenant,
+        root_principal=principal,
+        root_identity=identity,
+        root_identity_origin=IdentityOrigin.LOCAL,
+        root_tenant_lifecycle=TenantLifecycle.ACTIVE,
+    )
+
+
+def test_root_record_rejects_federated_root_identity() -> None:
+    record, tenant, principal, identity = _valid_root()
+    with pytest.raises(RootInvariantError):
+        validate_root_bootstrap_record(
+            record,
+            root_tenant=tenant,
+            root_principal=principal,
+            root_identity=identity,
+            root_identity_origin=IdentityOrigin.FEDERATED,
+        )
+
+
+def test_root_record_rejects_non_active_root_tenant() -> None:
+    record, tenant, principal, identity = _valid_root()
+    with pytest.raises(RootInvariantError):
+        validate_root_bootstrap_record(
+            record,
+            root_tenant=tenant,
+            root_principal=principal,
+            root_identity=identity,
+            root_tenant_lifecycle=TenantLifecycle.SUSPENDED,
+        )
+
+
+def test_designation_rejects_non_active_tenant() -> None:
+    designation, tenant, principal, identity, pm, im = _valid_designation()
+    with pytest.raises(StewardshipInvariantError):
+        validate_stewardship_designation(
+            designation,
+            tenant=tenant,
+            steward_principal=principal,
+            designated_identity=identity,
+            principal_tenant_memberships=pm,
+            identity_tenant_memberships=im,
+            tenant_lifecycle=TenantLifecycle.PROVISIONING,
         )
