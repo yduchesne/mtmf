@@ -80,6 +80,7 @@ EXPECTED_FUNCTION_NAMES = {
     "role_add",
     "role_get",
     "role_save",
+    "install_builtin_policy",
     "principal_tenant_membership_add",
     "principal_tenant_membership_get",
     "principal_tenant_membership_find_by_principal",
@@ -147,7 +148,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0005"
+    assert revision == "0006"
     assert revision == manager.head_revision
 
 
