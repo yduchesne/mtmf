@@ -8,7 +8,7 @@ PR 10 owns protected, operator-controlled installation, root bootstrap, Tenant l
 
 **An Action being defined or a Permission being seeded never makes an operation callable.** All PR 10 built-in policy grants are dormant with respect to end-user administrative execution until the verified-actor enforcement boundary is delivered. Existing PostgreSQL runtime repository entry points must not be treated as that boundary.
 
-## Recommended minimum exact seed — 11 Roles, 11 Permissions, 3 distinct Actions
+## Recommended minimum exact seed — 11 Roles, 11 Permissions, 2 distinct Actions
 
 This is a deliberately minimal **bootstrap policy**, not the final feature-complete administrative policy. All rows are SYSTEM-defined and each Role owns exactly one ALLOW PermissionSet containing exactly one exact Permission. Each listed Action is a real domain read concept, not a made-up placeholder; none is claimed to be end-user enforceable yet.
 
@@ -45,7 +45,7 @@ Abbreviations: `R(x)` = `urn:mtmf:iam:roles:system:x`; `A(r:o)` = `urn:mtmf:iam:
 
 ## Protected installation acceptance
 
-1. Seed exactly eleven SYSTEM-owned Role aggregates, each with one ALLOW PermissionSet and one exact Permission. Seed only the three distinct exact Actions `tenant:get-object`, `role:get-object`, and (if changed during review) an explicitly approved Organization read Action.
+1. Seed exactly eleven SYSTEM-owned Role aggregates, each with one ALLOW PermissionSet and one exact Permission. Seed only the two distinct exact Actions `tenant:get-object`, `role:get-object`, and (if changed during review) an explicitly approved Organization read Action.
 2. Use explicit, immutable, stable UUIDs for each PermissionSet and Permission. Publish all 22 UUID literals in the **final approved seed table**; no random UUID generation at each install, no silent overwrite, no implicit UUID namespace selection.
 3. Replay with identical definitions is idempotent; a conflicting existing Role/PermissionSet/Permission/Action fails closed and reports the conflicting semantic key.
 4. Install via authenticated migrator/owner-controlled migration only. Verify SYSTEM Role definitions cannot be mutated via ordinary runtime Role entry points, including `role_save`; a mere documentation statement is insufficient.
