@@ -23,6 +23,7 @@ import pytest
 
 from mtmf_core import (
     DomainId,
+    GroupRoleAssignment,
     Identity,
     IdentityOrigin,
     IdentityRoleAssignment,
@@ -37,6 +38,7 @@ from mtmf_core import (
 from mtmf_core.persistence.spi import MtmfSpi
 
 _TENANT_ADMIN_URN = RoleUrn("urn:mtmf:iam:roles:system:tenant-administrator")
+_TENANT_READER_URN = RoleUrn("urn:mtmf:iam:roles:system:tenant-reader")
 _CYCLES = 10
 
 
@@ -703,3 +705,110 @@ def test_sc12_designation_races_successor_group_assignment_revocation(
         principal_id, _identity_id, _version = _designation_row(db, tenant)
         if outcomes["designate"] == "ok":
             assert principal_id == str(successor_principal.id.value)
+
+
+def test_sc13_designation_races_successor_assignment_revocation_with_unrelated_role(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, dsn: str
+) -> None:
+    for cycle in range(_CYCLES):
+        tenant, _incumbent_principal, _incumbent_identity = _active_tenant_with_steward(
+            postgres_spi, db
+        )
+        successor_principal, successor_identity = _add_eligible_steward(postgres_spi, tenant)
+        # An unrelated role must not be treated as alternative Tenant Admin authority.
+        with postgres_spi.create_unit_of_work() as uow:
+            postgres_spi.create_identity_role_assignment_repository(uow).add(
+                IdentityRoleAssignment(
+                    DomainId.generate(), tenant.id, successor_identity.id, _TENANT_READER_URN
+                )
+            )
+            uow.commit()
+        assignment_id = db.execute(
+            "SELECT id FROM mtmf.identity_role_assignment "
+            "WHERE tenant_id = %s AND identity_id = %s "
+            "AND organization_id IS NULL AND role_urn = %s",
+            (tenant.id.value, successor_identity.id.value, _TENANT_ADMIN_URN.value),
+        ).fetchone()[0]
+        outcomes = _run_race(
+            dsn,
+            [
+                (
+                    "designate",
+                    partial(
+                        _designate,
+                        tenant=tenant,
+                        principal=successor_principal,
+                        identity=successor_identity,
+                        expected=1,
+                        operation="TRANSFER",
+                    ),
+                ),
+                (
+                    "revoke",
+                    partial(
+                        _execute,
+                        sql="SELECT mtmf.identity_role_assignment_remove(%s)",
+                        params=(assignment_id,),
+                    ),
+                ),
+            ],
+        )
+        assert outcomes in (
+            {"designate": "ok", "revoke": "MT032"},
+            {"designate": "MT013", "revoke": "ok"},
+        ), (cycle, outcomes)
+
+
+def test_sc14_designation_races_successor_group_revocation_with_unrelated_role(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, dsn: str
+) -> None:
+    for cycle in range(_CYCLES):
+        tenant, _incumbent_principal, _incumbent_identity = _active_tenant_with_steward(
+            postgres_spi, db
+        )
+        successor_principal, successor_identity, group_id = _add_group_steward_concurrent(
+            postgres_spi, tenant
+        )
+        with postgres_spi.create_unit_of_work() as uow:
+            postgres_spi.create_group_role_assignment_repository(uow).add(
+                GroupRoleAssignment(
+                    DomainId.generate(),
+                    tenant.id,
+                    DomainId(group_id),
+                    _TENANT_READER_URN,
+                )
+            )
+            uow.commit()
+        assignment_id = db.execute(
+            "SELECT id FROM mtmf.group_role_assignment "
+            "WHERE tenant_id = %s AND group_id = %s AND organization_id IS NULL AND role_urn = %s",
+            (tenant.id.value, group_id, _TENANT_ADMIN_URN.value),
+        ).fetchone()[0]
+        outcomes = _run_race(
+            dsn,
+            [
+                (
+                    "designate",
+                    partial(
+                        _designate,
+                        tenant=tenant,
+                        principal=successor_principal,
+                        identity=successor_identity,
+                        expected=1,
+                        operation="TRANSFER",
+                    ),
+                ),
+                (
+                    "revoke",
+                    partial(
+                        _execute,
+                        sql="SELECT mtmf.group_role_assignment_remove(%s)",
+                        params=(assignment_id,),
+                    ),
+                ),
+            ],
+        )
+        assert outcomes in (
+            {"designate": "ok", "revoke": "MT032"},
+            {"designate": "MT013", "revoke": "ok"},
+        ), (cycle, outcomes)

@@ -361,11 +361,24 @@ AS $$
 DECLARE
     tenant_admin_urn constant text := 'urn:mtmf:iam:roles:system:tenant-administrator';
 BEGIN
+    -- Only a persisted (pre-mutation) Tenant-wide Tenant Administrator grant
+    -- can lose authority. Every alternative-authority check below requires an
+    -- exact tenant-administrator role URN with a NULL Organization scope, so
+    -- an unrelated role or an Organization-refined grant never qualifies.
     IF OLD.role_urn IS DISTINCT FROM tenant_admin_urn OR OLD.organization_id IS NOT NULL THEN
         RETURN COALESCE(NEW, OLD);
     END IF;
 
     IF TG_TABLE_NAME = 'identity_role_assignment' THEN
+        -- An UPDATE that keeps an equivalent Tenant-wide Tenant Administrator
+        -- grant for the same Identity and Tenant loses no authority.
+        IF TG_OP = 'UPDATE'
+           AND NEW.role_urn = tenant_admin_urn
+           AND NEW.organization_id IS NULL
+           AND NEW.identity_id = OLD.identity_id
+           AND NEW.tenant_id = OLD.tenant_id THEN
+            RETURN NEW;
+        END IF;
         -- Lock the subject Identity so a concurrent designation (which locks
         -- the same Identity before validating) serializes against this
         -- revocation; otherwise both could commit a write skew.
@@ -377,7 +390,9 @@ BEGIN
         AND NOT EXISTS (
             SELECT 1 FROM mtmf.identity_role_assignment ira
             WHERE ira.tenant_id = OLD.tenant_id AND ira.identity_id = OLD.identity_id
-              AND ira.organization_id IS NULL AND ira.id <> OLD.id
+              AND ira.role_urn = tenant_admin_urn
+              AND ira.organization_id IS NULL
+              AND ira.id <> OLD.id
         )
         AND NOT EXISTS (
             SELECT 1
@@ -386,13 +401,24 @@ BEGIN
               ON gra.group_id = igm.group_id AND gra.tenant_id = OLD.tenant_id
             JOIN mtmf.group g
               ON g.id = igm.group_id AND g.deletion_status = 2
-            WHERE igm.identity_id = OLD.identity_id AND gra.organization_id IS NULL
+            WHERE igm.identity_id = OLD.identity_id
+              AND gra.role_urn = tenant_admin_urn
+              AND gra.organization_id IS NULL
         ) THEN
             RAISE EXCEPTION USING
                 ERRCODE = 'MT032',
                 MESSAGE = 'the designated steward final Tenant Administrator assignment cannot be removed';
         END IF;
     ELSIF TG_TABLE_NAME = 'group_role_assignment' THEN
+        -- An UPDATE that keeps an equivalent Tenant-wide Tenant Administrator
+        -- grant for the same Group and Tenant loses no authority.
+        IF TG_OP = 'UPDATE'
+           AND NEW.role_urn = tenant_admin_urn
+           AND NEW.organization_id IS NULL
+           AND NEW.group_id = OLD.group_id
+           AND NEW.tenant_id = OLD.tenant_id THEN
+            RETURN NEW;
+        END IF;
         -- Lock every member Identity of the affected Group (deterministic id
         -- order) so a concurrent designation of any of them serializes.
         PERFORM 1 FROM mtmf.identity i
@@ -412,6 +438,7 @@ BEGIN
               AND NOT EXISTS (
                   SELECT 1 FROM mtmf.identity_role_assignment ira
                   WHERE ira.tenant_id = OLD.tenant_id AND ira.identity_id = igm.identity_id
+                    AND ira.role_urn = tenant_admin_urn
                     AND ira.organization_id IS NULL
               )
               AND NOT EXISTS (
@@ -422,6 +449,7 @@ BEGIN
                   JOIN mtmf.group g2
                     ON g2.id = igm2.group_id AND g2.deletion_status = 2
                   WHERE igm2.identity_id = igm.identity_id
+                    AND gra2.role_urn = tenant_admin_urn
                     AND gra2.organization_id IS NULL
                     AND gra2.id <> OLD.id
               )

@@ -79,7 +79,7 @@ write-skew where a concurrent deactivation could otherwise commit after
 eligibility was read.
 
 `tests/integration/postgres/test_postgres_stewardship_concurrency.py` runs
-**13 race scenarios with 10 cycles each** (130 race cycles), two-plus
+**15 race scenarios with 10 cycles each** (150 race cycles), two-plus
 independent connections, a `threading.Barrier`, bounded
 `statement_timeout`/`lock_timeout`, and explicit SQLSTATE + committed-state
 assertions:
@@ -91,6 +91,8 @@ assertions:
 - transfer vs successor Principal / Identity deactivation (`MT013` vs `MT032`);
 - designation vs successor direct-assignment revocation (`MT013` vs `MT032`);
 - designation vs successor group-assignment revocation (`MT013` vs `MT032`);
+- designation vs successor direct/group revocation **with an unrelated role
+  present** (an unrelated role must not satisfy the final-Administrator check);
 - activation vs incomplete setup (`MT014`);
 - activation vs designated-Identity deactivation (`MT013`);
 - root recovery vs replacement-candidate deactivation (`MT026` vs `MT030`);
@@ -107,6 +109,29 @@ now requires the authorizing Group to be non-deleted, matching the effective
 Role resolver, and the Group/membership may not be removed while it is the
 designated steward's final Tenant Administrator source (`MT032`).
 
+## Source-review correction (final)
+
+A source review of `sql/v008/03_root_stewardship_guards.sql` found a
+merge-blocking defect in `guard_steward_role_assignment()`: the
+alternative-authority subqueries did not filter on the exact Tenant
+Administrator role URN, so any other Tenant-wide assignment (e.g. Tenant
+Reader) satisfied the final-authority preservation check and permitted
+removing the steward's last Tenant Administrator grant. The function now:
+
+- requires `role_urn = 'urn:mtmf:iam:roles:system:tenant-administrator'` and
+  `organization_id IS NULL` in **every** alternative-authority subquery; and
+- evaluates the effective post-mutation authority for `UPDATE`: an update that
+  keeps an equivalent Tenant-wide Tenant Administrator grant for the same
+  Identity/Group and Tenant is a no-op for this invariant, while changing the
+  role URN, the Identity/Group, the Tenant, or moving the grant to
+  Organization scope is evaluated as a loss of authority and rejected (`MT032`)
+  unless a genuine Tenant Administrator source remains.
+
+The other stewardship guards (`guard_steward_group_membership`,
+`guard_steward_group`) already required the exact role URN; they were reviewed
+and left unchanged. Locking protocol, SQLSTATE contracts, `SECURITY INVOKER`
+privilege posture, and the exact 58-signature runtime allowlist are unchanged.
+
 ## Coverage of the Amendment #2 matrix
 
 Additional acceptance coverage added: group-derived Tenant Administrator
@@ -116,9 +141,14 @@ Organization-scoped authority rather than Tenant-level stewardship eligibility
 (`rs19`, `rs20`), root/stewardship `SECURITY INVOKER` + owner ownership
 (`rs21`), the exact 58-signature runtime allowlist after all migrations
 (`rs22`), `role_add` collision protection (`bp08`), post-suspension
-fail-closed re-resolution (`ol09`), and group-derived invalidation guards
+fail-closed re-resolution (`ol09`), group-derived invalidation guards
 (`rs23` membership removal rejected, `rs24` group deactivation rejected,
-`rs25` removal allowed when another authority source remains).
+`rs25` removal allowed when another authority source remains), and
+alternative-authority correctness (`rs26` final direct removal rejected with
+unrelated roles present, `rs27` final group-derived removal rejected with
+unrelated group roles present, `rs28`/`rs28b` positive controls with a genuine
+alternative Tenant Administrator source, `rs29` UPDATE to an unrelated role or
+Organization scope rejected, `rs29b` equivalent-authority UPDATE allowed).
 
 ## Deferred (explicitly out of Amendment #2 scope)
 
@@ -137,9 +167,9 @@ UUID, GUC, or shared runtime credential is treated as authentication.
   coverage 91.47%).
 - `./build.sh --sec` — PASS (Bandit Medium/High 0; Semgrep 0 findings).
 - `./build.sh --integration` (real PostgreSQL, configured `MTMF_*`) — PASS,
-  **501 tests**, including `test_postgres_origin_lifecycle.py`,
+  **509 tests**, including `test_postgres_origin_lifecycle.py`,
   `test_postgres_root_stewardship.py`, `test_postgres_builtin_policy.py`, and
-  `test_postgres_stewardship_concurrency.py` (13 scenarios × 10 cycles).
+  `test_postgres_stewardship_concurrency.py` (15 scenarios × 10 cycles).
 - `scripts/mtmf-provision-roles.py --verify` — PASS (`mtmf_runtime` restricted;
   exact 58-signature allowlist).
 

@@ -41,6 +41,7 @@ from mtmf_core import (
 from mtmf_core.persistence.spi import MtmfSpi
 
 _TENANT_ADMIN_URN = RoleUrn("urn:mtmf:iam:roles:system:tenant-administrator")
+_TENANT_READER_URN = RoleUrn("urn:mtmf:iam:roles:system:tenant-reader")
 
 
 def helpers_ids() -> tuple[str, str, str]:
@@ -758,6 +759,186 @@ def test_rs25_group_membership_removal_allowed_when_another_source_remains(
         db.execute(
             "SELECT count(*) FROM mtmf.identity_group_membership WHERE identity_id = %s",
             (identity.id.value,),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+# --- Alternative-authority checks must require the exact Tenant Admin role -----
+
+
+def _tenant_admin_assignment_id(db: psycopg.Connection, tenant: Tenant, identity: Identity) -> str:
+    return str(
+        db.execute(
+            "SELECT id FROM mtmf.identity_role_assignment "
+            "WHERE tenant_id = %s AND identity_id = %s AND organization_id IS NULL "
+            "AND role_urn = %s",
+            (tenant.id.value, identity.id.value, _TENANT_ADMIN_URN.value),
+        ).fetchone()[0]
+    )
+
+
+def test_rs26_final_direct_tenant_admin_removal_rejected_with_unrelated_roles(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
+) -> None:
+    tenant, _principal, identity = _provision_designated_tenant(postgres_spi, db)
+    assignment_id = _tenant_admin_assignment_id(db, tenant, identity)
+    # An unrelated TENANT role must not count as alternative Tenant Admin authority.
+    with postgres_spi.create_unit_of_work() as uow:
+        postgres_spi.create_identity_role_assignment_repository(uow).add(
+            IdentityRoleAssignment(DomainId.generate(), tenant.id, identity.id, _TENANT_READER_URN)
+        )
+        uow.commit()
+    with pytest.raises(psycopg.errors.DatabaseError) as captured:
+        runtime_connection.execute(
+            "SELECT mtmf.identity_role_assignment_remove(%s)", (assignment_id,)
+        )
+    assert captured.value.sqlstate == "MT032"
+    runtime_connection.rollback()
+
+
+def test_rs27_final_group_tenant_admin_removal_rejected_with_unrelated_group_roles(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    db.execute(
+        "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
+        (tenant.id.value, principal.id.value, identity.id.value),
+    )
+    db.execute("SELECT mtmf.activate_tenant(%s)", (tenant.id.value,))
+    group_id = _group_id_for(db, identity)
+    # An unrelated group role must not count as alternative Tenant Admin authority.
+    with postgres_spi.create_unit_of_work() as uow:
+        postgres_spi.create_group_role_assignment_repository(uow).add(
+            GroupRoleAssignment(
+                DomainId.generate(),
+                tenant.id,
+                DomainId.from_str(group_id),
+                _TENANT_READER_URN,
+            )
+        )
+        uow.commit()
+    assignment_id = str(
+        db.execute(
+            "SELECT id FROM mtmf.group_role_assignment "
+            "WHERE tenant_id = %s AND group_id = %s AND organization_id IS NULL AND role_urn = %s",
+            (tenant.id.value, group_id, _TENANT_ADMIN_URN.value),
+        ).fetchone()[0]
+    )
+    with pytest.raises(psycopg.errors.DatabaseError) as captured:
+        runtime_connection.execute("SELECT mtmf.group_role_assignment_remove(%s)", (assignment_id,))
+    assert captured.value.sqlstate == "MT032"
+    runtime_connection.rollback()
+
+
+def test_rs29_update_removing_tenant_admin_authority_is_rejected(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    tenant, _principal, identity = _provision_designated_tenant(postgres_spi, db)
+    assignment_id = _tenant_admin_assignment_id(db, tenant, identity)
+    with pytest.raises(psycopg.errors.DatabaseError) as captured:
+        db.execute(
+            "UPDATE mtmf.identity_role_assignment SET role_urn = %s WHERE id = %s",
+            (_TENANT_READER_URN.value, assignment_id),
+        )
+    assert captured.value.sqlstate == "MT032"
+    # Moving the Tenant-wide grant to Organization scope also removes authority.
+    with postgres_spi.create_unit_of_work() as uow:
+        organization = Organization(DomainId.generate(), tenant.id, "O", identity.id)
+        postgres_spi.create_organization_repository(uow).add(organization)
+        uow.commit()
+    with pytest.raises(psycopg.errors.DatabaseError) as captured:
+        db.execute(
+            "UPDATE mtmf.identity_role_assignment SET organization_id = %s WHERE id = %s",
+            (organization.id.value, assignment_id),
+        )
+    assert captured.value.sqlstate == "MT032"
+
+
+def test_rs29b_update_keeping_tenant_admin_authority_is_allowed(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    tenant, _principal, identity = _provision_designated_tenant(postgres_spi, db)
+    assignment_id = _tenant_admin_assignment_id(db, tenant, identity)
+    # Re-asserting the same Tenant-wide Tenant Administrator authority loses
+    # nothing and must not be rejected.
+    db.execute(
+        "UPDATE mtmf.identity_role_assignment SET role_urn = %s WHERE id = %s",
+        (_TENANT_ADMIN_URN.value, assignment_id),
+    )
+    assert _tenant_admin_assignment_id(db, tenant, identity) == assignment_id
+
+
+def test_rs28_removal_allowed_when_genuine_alternative_tenant_admin_remains(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
+) -> None:
+    tenant, _principal, identity = _provision_designated_tenant(postgres_spi, db)
+    first = _tenant_admin_assignment_id(db, tenant, identity)
+    # A genuine group-derived Tenant Administrator grant is an alternative source.
+    group = Group(DomainId.generate(), tenant.id, "Stewards")
+    with postgres_spi.create_unit_of_work() as uow:
+        postgres_spi.create_group_repository(uow).add(group)
+        postgres_spi.create_group_tenant_membership_repository(uow).add(
+            GroupTenantMembership(group.id, tenant.id)
+        )
+        postgres_spi.create_identity_group_membership_repository(uow).add(
+            IdentityGroupMembership(identity.id, group.id)
+        )
+        postgres_spi.create_group_role_assignment_repository(uow).add(
+            GroupRoleAssignment(DomainId.generate(), tenant.id, group.id, _TENANT_ADMIN_URN)
+        )
+        uow.commit()
+    runtime_connection.execute("SELECT mtmf.identity_role_assignment_remove(%s)", (first,))
+    runtime_connection.commit()
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.identity_role_assignment "
+            "WHERE tenant_id = %s AND identity_id = %s "
+            "AND organization_id IS NULL AND role_urn = %s",
+            (tenant.id.value, identity.id.value, _TENANT_ADMIN_URN.value),
+        ).fetchone()[0]
+        == 0
+    )
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.group_role_assignment "
+            "WHERE tenant_id = %s AND group_id = %s "
+            "AND organization_id IS NULL AND role_urn = %s",
+            (tenant.id.value, group.id.value, _TENANT_ADMIN_URN.value),
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_rs28b_group_assignment_removal_allowed_when_direct_source_remains(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    with postgres_spi.create_unit_of_work() as uow:
+        postgres_spi.create_identity_role_assignment_repository(uow).add(
+            IdentityRoleAssignment(DomainId.generate(), tenant.id, identity.id, _TENANT_ADMIN_URN)
+        )
+        uow.commit()
+    db.execute(
+        "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
+        (tenant.id.value, principal.id.value, identity.id.value),
+    )
+    db.execute("SELECT mtmf.activate_tenant(%s)", (tenant.id.value,))
+    group_id = _group_id_for(db, identity)
+    assignment_id = str(
+        db.execute(
+            "SELECT id FROM mtmf.group_role_assignment "
+            "WHERE tenant_id = %s AND group_id = %s AND organization_id IS NULL AND role_urn = %s",
+            (tenant.id.value, group_id, _TENANT_ADMIN_URN.value),
+        ).fetchone()[0]
+    )
+    runtime_connection.execute("SELECT mtmf.group_role_assignment_remove(%s)", (assignment_id,))
+    runtime_connection.commit()
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.group_role_assignment WHERE id = %s", (assignment_id,)
         ).fetchone()[0]
         == 0
     )
