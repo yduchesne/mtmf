@@ -33,6 +33,9 @@ from mtmf_core.persistence.postgres.repositories import (
     PostgresPrincipalRepository,
     PostgresPrincipalTenantMembershipRepository,
     PostgresRoleRepository,
+    PostgresTenantManagementGroupActorEligibilityRepository,
+    PostgresTenantManagementGroupMembershipRepository,
+    PostgresTenantManagementGroupRepository,
     PostgresTenantRepository,
 )
 from mtmf_core.persistence.postgres.unit_of_work import PostgresUnitOfWork
@@ -51,6 +54,9 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    TenantManagementGroupActorEligibilityRepository,
+    TenantManagementGroupMembershipRepository,
+    TenantManagementGroupRepository,
     TenantRepository,
 )
 from mtmf_core.persistence.unit_of_work import UnitOfWork
@@ -165,3 +171,21 @@ class PostgresMtmfSpi:
     ) -> GroupOrgMembershipRepository:
         """Create a Group-Organization membership repository bound to ``uow``."""
         return PostgresGroupOrgMembershipRepository(self._require_own_uow(uow))
+
+    def create_tenant_management_group_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupRepository:
+        """Create a TenantManagementGroup repository bound to ``uow``."""
+        return PostgresTenantManagementGroupRepository(self._require_own_uow(uow))
+
+    def create_tenant_management_group_membership_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupMembershipRepository:
+        """Create a managed-Tenant membership repository bound to ``uow``."""
+        return PostgresTenantManagementGroupMembershipRepository(self._require_own_uow(uow))
+
+    def create_tenant_management_group_actor_eligibility_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupActorEligibilityRepository:
+        """Create an eligibility-designation repository bound to ``uow``."""
+        return PostgresTenantManagementGroupActorEligibilityRepository(self._require_own_uow(uow))

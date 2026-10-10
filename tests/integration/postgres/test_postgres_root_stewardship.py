@@ -370,7 +370,7 @@ def test_rs22_runtime_signature_allowlist_is_exact(db: psycopg.Connection) -> No
         ).fetchall()
     }
     assert executable == set(expected_runtime_signatures())
-    assert len(executable) == 58
+    assert len(executable) == 67
 
 
 def test_rs12_stewardship_audit_is_append_only(db: psycopg.Connection) -> None:

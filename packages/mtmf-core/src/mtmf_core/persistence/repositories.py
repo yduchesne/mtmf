@@ -30,6 +30,11 @@ from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
+from mtmf_core.domain.management_group import (
+    TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
+    TenantManagementGroupMembership,
+)
 from mtmf_core.domain.memberships import (
     GroupOrgMembership,
     GroupTenantMembership,
@@ -361,4 +366,87 @@ class GroupOrgMembershipRepository(Protocol):
 
     def find_by_organization(self, organization_id: DomainId) -> tuple[GroupOrgMembership, ...]:
         """Return every Group membership fact of one Organization."""
+        ...
+
+
+@runtime_checkable
+class TenantManagementGroupRepository(Protocol):
+    """Persistence for :class:`~mtmf_core.domain.management_group.TenantManagementGroup`.
+
+    A management group is an immutable structural aggregate root keyed by
+    its UUID identity. Creation is privileged installation/operator work;
+    this contract is structural persistence only and never authorizes an
+    Action. ``find_by_manager`` returns every group managed by one Tenant.
+    """
+
+    def add(self, group: TenantManagementGroup) -> None:
+        """Stage a new management group."""
+        ...
+
+    def get(self, id: DomainId) -> TenantManagementGroup | None:
+        """Return the management group with ``id``, or ``None`` when unknown."""
+        ...
+
+    def find_by_manager(self, manager_tenant_id: DomainId) -> tuple[TenantManagementGroup, ...]:
+        """Return every management group managed by one Tenant."""
+        ...
+
+
+@runtime_checkable
+class TenantManagementGroupMembershipRepository(Protocol):
+    """Persistence for explicit SYSTEM managed-Tenant relationships."""
+
+    def add(self, membership: TenantManagementGroupMembership) -> None:
+        """Stage a new managed-Tenant relationship."""
+        ...
+
+    def get(
+        self, management_group_id: DomainId, tenant_id: DomainId
+    ) -> TenantManagementGroupMembership | None:
+        """Return the exact relationship, or ``None`` when unknown."""
+        ...
+
+    def find_by_group(
+        self, management_group_id: DomainId
+    ) -> tuple[TenantManagementGroupMembership, ...]:
+        """Return every managed-Tenant relationship of one management group."""
+        ...
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[TenantManagementGroupMembership, ...]:
+        """Return every management relationship covering one Tenant."""
+        ...
+
+    def remove(self, management_group_id: DomainId, tenant_id: DomainId) -> None:
+        """Physically remove one relationship, rejecting an unknown pair."""
+        ...
+
+
+@runtime_checkable
+class TenantManagementGroupActorEligibilityRepository(Protocol):
+    """Persistence for explicit Identity-level delegation eligibility (D01)."""
+
+    def add(self, eligibility: TenantManagementGroupActorEligibility) -> None:
+        """Stage a new eligibility designation."""
+        ...
+
+    def get(
+        self, management_group_id: DomainId, identity_id: DomainId
+    ) -> TenantManagementGroupActorEligibility | None:
+        """Return the exact designation, or ``None`` when unknown."""
+        ...
+
+    def find_by_group(
+        self, management_group_id: DomainId
+    ) -> tuple[TenantManagementGroupActorEligibility, ...]:
+        """Return every designation of one management group."""
+        ...
+
+    def find_by_identity(
+        self, identity_id: DomainId
+    ) -> tuple[TenantManagementGroupActorEligibility, ...]:
+        """Return every designation of one Identity."""
+        ...
+
+    def remove(self, management_group_id: DomainId, identity_id: DomainId) -> None:
+        """Physically remove one designation, rejecting an unknown pair."""
         ...

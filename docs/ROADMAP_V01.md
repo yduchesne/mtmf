@@ -136,11 +136,19 @@ Delivered on `dev/pr10-bootstrap` (implementation head `aa1d5eb`); pull request 
 
 **Deferred to PR 14 — not delivered by PR 10.** Trusted service/end-user identity propagation and runtime-callable stewardship transfer/recovery depend on the PR 14 trusted actor boundary. PR 10 deliberately does not expose privileged bootstrap, transfer, recovery, or activation through the shared runtime database login or a caller-supplied actor UUID. Until the trusted service identity boundary is implemented, those operations remain installation/operator-only and are not claimed as end-user capabilities.
 
-### PR 11 — TenantManagementGroup delegation
+### PR 11 — TenantManagementGroup delegation [DONE]
 
 Implement ROOT and SYSTEM TenantManagementGroup behavior, implicit universal ROOT management, explicit managed-Tenant relationships for SYSTEM groups, and contextual scope evaluation.
 
-Manager-side actor eligibility must be explicitly settled before enabling delegated authority.
+Manager-side actor eligibility was explicitly settled before delegated authority was enabled.
+
+Delivered on `dev/tenant-mgmt-group`. Gate D D01-D09 and the two approved SYSTEM management Roles (`urn:mtmf:iam:roles:system:root-tenant-management`, `urn:mtmf:iam:roles:system:tenant-management`, each with one exact `tenant:get-object` Permission) are recorded in [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md). Additive Alembic revision `0009` / packaged `sql/v009` adds `tenant_management_group`, `tenant_management_group_membership`, and `tenant_management_group_actor_eligibility` with database guards (ROOT singleton, canonical-root manager, SYSTEM-only eligibility, no ROOT membership rows, immutable structural fields); creates the ROOT management group atomically via an `AFTER INSERT` trigger on `root_registry` (plus an idempotent installation backfill); and installs installation-only `SECURITY INVOKER` mutation primitives that are never granted to `mtmf_runtime`.
+
+The typed `TenantManagementGroup`/`TenantManagementGroupMembership`/`TenantManagementGroupActorEligibility` domain values, pure validators, fail-closed contextual resolver (`resolve_management_scope`), application-layer `ManagementAuthorizationResolver`, and provider-neutral/PostgreSQL/in-memory repositories are implemented. The authoritative `Authorizer` accepts a cross-Tenant target only when the request carries a positively resolved management scope, the action is not an extension mutation, and the applicable policy is exactly the approved management Role; otherwise it denies with `NO_MANAGEMENT_SCOPE`. Coverage, explicit eligibility, and a matching management-Role Permission are all required independently, and the manager Tenant's intrinsic scope is never mutated.
+
+Verification: unit suite (domain, resolver eligibility, Authorizer delegation, in-memory repository contracts); real-PostgreSQL integration (`test_postgres_tenant_management_group.py`: ROOT bootstrap idempotency, ROOT singleton, ROOT membership rejection, SYSTEM create/membership/duplicate/root-target rejection, privileged-function denial, runtime-read grants, positive/negative vertical slice, eligibility revocation, root Identity recovery, and two concurrent mutation scenarios); the mandatory 67-signature post-upgrade privilege verifier; `./build.sh --qa`, `./build.sh --sec`, `./build.sh --rust`, and `./build.sh --integration` all pass.
+
+**Limitations / deferred.** Trusted end-user acting-Identity propagation remains PR 14 (PR 11 consumes only a verified internal session; a caller-supplied Identity UUID is never authentication). Revocation is fail-closed for subsequent decisions and is not retroactive: an in-flight decision based on an already-read snapshot is not re-evaluated, and no linearizable concurrent-authorization lock contract is claimed. The management Roles carry exactly the one approved read Permission; no additional management Actions are seeded.
 
 ### PR 12 — Public API contract and detached DTOs
 

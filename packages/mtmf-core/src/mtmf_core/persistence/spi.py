@@ -33,6 +33,9 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    TenantManagementGroupActorEligibilityRepository,
+    TenantManagementGroupMembershipRepository,
+    TenantManagementGroupRepository,
     TenantRepository,
 )
 from mtmf_core.persistence.unit_of_work import UnitOfWork
@@ -129,4 +132,22 @@ class MtmfSpi(Protocol):
         self, uow: UnitOfWork
     ) -> GroupOrgMembershipRepository:
         """Create a Group-Organization membership repository bound to ``uow``."""
+        ...
+
+    def create_tenant_management_group_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupRepository:
+        """Create a TenantManagementGroup repository bound to ``uow``."""
+        ...
+
+    def create_tenant_management_group_membership_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupMembershipRepository:
+        """Create a managed-Tenant membership repository bound to ``uow``."""
+        ...
+
+    def create_tenant_management_group_actor_eligibility_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupActorEligibilityRepository:
+        """Create an eligibility-designation repository bound to ``uow``."""
         ...

@@ -342,18 +342,30 @@ def test_expected_removal_signatures_are_exactly_six() -> None:
 def test_expected_runtime_signatures_add_repository_and_assignment_functions() -> None:
     removal = roles.expected_removal_signatures()
     runtime = roles.expected_runtime_signatures()
-    assert len(runtime) == 58
+    assert len(runtime) == 67
     assert removal <= runtime
-    # 44 repository functions through v004 plus 8 role-assignment entry points.
-    assert len(runtime - removal) == 52
+    # 44 repository functions through v004, 8 role-assignment entry points,
+    # and 9 TenantManagementGroup runtime reads through v009.
+    assert len(runtime - removal) == 61
     for name in (
         "mtmf.tenant_add",
         "mtmf.role_add",
         "mtmf.action_get",
         "mtmf.identity_role_assignment_add",
         "mtmf.group_role_assignment_find_by_tenant_and_group",
+        "mtmf.tenant_management_group_get",
+        "mtmf.tenant_management_group_find_by_manager",
+        "mtmf.tenant_management_group_membership_find_by_tenant",
+        "mtmf.tenant_management_group_actor_eligibility_find_by_identity",
+        "mtmf.root_registry_get",
     ):
         assert any(signature.startswith(name + "(") for signature in runtime)
+    # Privileged management-group mutation entry points are never approved.
+    assert not any(
+        "management_group_membership_add" in signature
+        or "create_tenant_management_group" in signature
+        for signature in runtime
+    )
     # The private validation helpers are never approved entry points.
     assert not any(
         "role_assignment_validate" in signature for signature in roles.expected_runtime_signatures()

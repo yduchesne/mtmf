@@ -481,9 +481,7 @@ managed Tenants = explicit memberships
 
 Contextual management scope does not mutate the intrinsic scope of the manager Tenant.
 
-The exact persistence representation of TenantManagementGroup and its explicit managed-Tenant memberships remains **UNRESOLVED**.
-
-The rule identifying which Identities or Groups in the manager Tenant may exercise the management Role remains **UNRESOLVED** and must fail closed until specified.
+The persistence representation is settled by PR 11: each TenantManagementGroup is a distinct typed aggregate (`TenantManagementGroup`) with an immutable identity, one manager Tenant, one approved SYSTEM management Role, and an immutable `ROOT`/`SYSTEM` scope. Explicit SYSTEM coverage uses typed `TenantManagementGroupMembership` rows; the ROOT group never materializes managed-Tenant rows. Manager-side eligibility is an explicit Identity-level `TenantManagementGroupActorEligibility` designation scoped to the group and its manager Tenant; ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership never confers eligibility, and the ROOT group follows the canonical root Identity instead. The approved management Roles are `urn:mtmf:iam:roles:system:root-tenant-management` and `urn:mtmf:iam:roles:system:tenant-management`. Delegated authorization requires all three of coverage, eligibility, and a matching management-Role Permission. See [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
 
 ---
 
@@ -590,8 +588,6 @@ Additional aggregate boundaries will be identified during detailed implementatio
 
 The following remain intentionally unsettled:
 
-5. which manager-Tenant Identities or Groups exercise TenantManagementGroup authority;
-6. exact TenantManagementGroup persistence representation;
 7. nested Group support;
 8. Principal Organization membership;
 9. Principal kinds, including service and agent principals;

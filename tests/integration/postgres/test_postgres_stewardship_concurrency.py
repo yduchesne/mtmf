@@ -444,9 +444,9 @@ def test_sc08_concurrent_seed_install_is_idempotent(
         helpers.reset_and_migrate(db, migrator_config)
         outcomes = _run_race(dsn, [("a", worker), ("b", worker)])
         assert all(value == "ok" for value in outcomes.values()), (cycle, outcomes)
-        assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 11
-        assert db.execute("SELECT count(*) FROM mtmf.permission_set").fetchone()[0] == 11
-        assert db.execute("SELECT count(*) FROM mtmf.permission").fetchone()[0] == 11
+        assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 13
+        assert db.execute("SELECT count(*) FROM mtmf.permission_set").fetchone()[0] == 13
+        assert db.execute("SELECT count(*) FROM mtmf.permission").fetchone()[0] == 13
 
 
 # --- SC09: transfer vs successor deactivation ----------------------------------

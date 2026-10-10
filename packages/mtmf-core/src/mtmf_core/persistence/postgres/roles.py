@@ -176,6 +176,25 @@ _ROLE_ASSIGNMENT_FUNCTION_ARGUMENTS = {
     "group_role_assignment_remove": ("id_value uuid"),
 }
 
+#: Exact approved runtime EXECUTE signatures introduced by revision 0009
+#: (the narrowly reviewed TenantManagementGroup authorization read path).
+#: Privileged management-group mutation functions are never granted.
+_TENANT_MANAGEMENT_FUNCTION_ARGUMENTS = {
+    "tenant_management_group_get": ("id_value uuid"),
+    "tenant_management_group_find_by_manager": ("manager_tenant_id_value uuid"),
+    "tenant_management_group_membership_get": (
+        "management_group_id_value uuid, tenant_id_value uuid"
+    ),
+    "tenant_management_group_membership_find_by_group": ("management_group_id_value uuid"),
+    "tenant_management_group_membership_find_by_tenant": ("tenant_id_value uuid"),
+    "tenant_management_group_actor_eligibility_get": (
+        "management_group_id_value uuid, identity_id_value uuid"
+    ),
+    "tenant_management_group_actor_eligibility_find_by_group": ("management_group_id_value uuid"),
+    "tenant_management_group_actor_eligibility_find_by_identity": ("identity_id_value uuid"),
+    "root_registry_get": (""),
+}
+
 
 class RoleProvisioningError(RuntimeError):
     """The MTMF role topology or effective privileges are unsafe."""
@@ -197,20 +216,22 @@ def expected_removal_signatures() -> frozenset[str]:
 
 
 def expected_runtime_signatures() -> frozenset[str]:
-    """Return the reviewed runtime EXECUTE allowlist through revision 0005.
+    """Return the reviewed runtime EXECUTE allowlist through revision 0009.
 
     This is the six membership-removal entry points plus the 44 repository
     read/write functions introduced through v004, plus the eight typed
-    Role-assignment entry points introduced by v005. The mandatory
-    post-upgrade verifier compares the runtime's effective EXECUTE set
-    against exactly this manifest, so a function is only approved when both
-    the migration grants and this manifest are updated in the same
+    Role-assignment entry points introduced by v005, plus the six
+    TenantManagementGroup authorization reads introduced by v009. The
+    mandatory post-upgrade verifier compares the runtime's effective EXECUTE
+    set against exactly this manifest, so a function is only approved when
+    both the migration grants and this manifest are updated in the same
     migration.
     """
     arguments = {
         **_REMOVAL_FUNCTION_ARGUMENTS,
         **_REPOSITORY_FUNCTION_ARGUMENTS,
         **_ROLE_ASSIGNMENT_FUNCTION_ARGUMENTS,
+        **_TENANT_MANAGEMENT_FUNCTION_ARGUMENTS,
     }
     return frozenset(
         f"{SCHEMA}.{name}({arguments_text})" for name, arguments_text in arguments.items()

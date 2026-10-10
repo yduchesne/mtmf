@@ -4,6 +4,7 @@ from mtmf_core.domain.action import BASELINE_ACTIONS, Action
 from mtmf_core.domain.errors import (
     DomainInvariantError,
     ImmutabilityError,
+    ManagementGroupInvariantError,
     MembershipPrerequisiteError,
     RootInvariantError,
     SessionContextError,
@@ -31,6 +32,17 @@ from mtmf_core.domain.lifecycle import (
     DeletionStatus,
     IdentityOrigin,
     TenantLifecycle,
+)
+from mtmf_core.domain.management_group import (
+    ROOT_MANAGEMENT_ROLE_URN,
+    SYSTEM_MANAGEMENT_ROLE_URN,
+    TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
+    TenantManagementGroupMembership,
+    TenantManagementScope,
+    validate_tenant_management_group,
+    validate_tenant_management_group_actor_eligibility,
+    validate_tenant_management_group_membership,
 )
 from mtmf_core.domain.memberships import (
     GroupOrgMembership,
@@ -69,6 +81,8 @@ from mtmf_core.domain.urn import Urn
 __all__ = [
     "BASELINE_ACTIONS",
     "NO_MATCH",
+    "ROOT_MANAGEMENT_ROLE_URN",
+    "SYSTEM_MANAGEMENT_ROLE_URN",
     "Action",
     "ActionUrn",
     "ActiveStatus",
@@ -90,6 +104,7 @@ __all__ = [
     "JsonObject",
     "JsonScalar",
     "JsonValue",
+    "ManagementGroupInvariantError",
     "MatchResult",
     "MatchSpecificity",
     "MembershipPrerequisiteError",
@@ -112,6 +127,10 @@ __all__ = [
     "TenantBoundaryError",
     "TenantLifecycle",
     "TenantLifecycleError",
+    "TenantManagementGroup",
+    "TenantManagementGroupActorEligibility",
+    "TenantManagementGroupMembership",
+    "TenantManagementScope",
     "TenantStewardshipDesignation",
     "Urn",
     "match_permission",
@@ -128,4 +147,7 @@ __all__ = [
     "validate_session_context",
     "validate_stewardship_designation",
     "validate_tenant_lifecycle_transition",
+    "validate_tenant_management_group",
+    "validate_tenant_management_group_actor_eligibility",
+    "validate_tenant_management_group_membership",
 ]

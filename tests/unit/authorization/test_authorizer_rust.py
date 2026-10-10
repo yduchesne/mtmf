@@ -260,7 +260,7 @@ def test_tenant_isolation_is_unchanged_with_the_python_default() -> None:
     )
     decision = Authorizer().authorize(request)
     assert not decision.allowed
-    assert decision.reason is DenyReason.TENANT_MISMATCH
+    assert decision.reason is DenyReason.NO_MANAGEMENT_SCOPE
 
 
 # --- FAIL-CLOSED: native failure through the Rust path is not a policy DENY ---

@@ -26,6 +26,12 @@ from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
 from mtmf_core.domain.json_types import JsonObject
 from mtmf_core.domain.lifecycle import DeletionStatus, IdentityOrigin, TenantLifecycle
+from mtmf_core.domain.management_group import (
+    TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
+    TenantManagementGroupMembership,
+    TenantManagementScope,
+)
 from mtmf_core.domain.organization import Organization
 from mtmf_core.domain.permission import Permission
 from mtmf_core.domain.permission_set import PermissionSet
@@ -48,6 +54,9 @@ __all__ = [
     "role_from_payload",
     "role_to_payload",
     "tenant_from_payload",
+    "tenant_management_group_actor_eligibility_from_payload",
+    "tenant_management_group_from_payload",
+    "tenant_management_group_membership_from_payload",
 ]
 
 
@@ -324,3 +333,49 @@ def role_to_payload(role: Role) -> dict[str, object]:
             for permission_set in role.permission_sets
         ],
     }
+
+
+def tenant_management_group_from_payload(payload: object) -> TenantManagementGroup:
+    """Reconstruct a :class:`TenantManagementGroup` from a stored payload."""
+    source = _require_object(payload, "TenantManagementGroup")
+    raw_scope = _require_int(source, "scope")
+    try:
+        scope = TenantManagementScope(raw_scope)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored TenantManagementGroup scope {raw_scope!r} is not a legal value"
+        ) from exc
+    try:
+        role_urn = RoleUrn(_require_str(source, "management_role_urn"))
+    except Exception as exc:
+        raise PersistenceDataError("stored management_role_urn is not a valid Role URN") from exc
+    return TenantManagementGroup(
+        id=_require_uuid(source, "id"),
+        manager_tenant_id=_require_uuid(source, "manager_tenant_id"),
+        management_role_urn=role_urn,
+        scope=scope,
+    )
+
+
+def tenant_management_group_membership_from_payload(
+    payload: object,
+) -> TenantManagementGroupMembership:
+    """Reconstruct a managed-Tenant relationship from a stored payload."""
+    source = _require_object(payload, "TenantManagementGroupMembership")
+    return TenantManagementGroupMembership(
+        id=_require_uuid(source, "id"),
+        management_group_id=_require_uuid(source, "management_group_id"),
+        tenant_id=_require_uuid(source, "tenant_id"),
+    )
+
+
+def tenant_management_group_actor_eligibility_from_payload(
+    payload: object,
+) -> TenantManagementGroupActorEligibility:
+    """Reconstruct an eligibility designation from a stored payload."""
+    source = _require_object(payload, "TenantManagementGroupActorEligibility")
+    return TenantManagementGroupActorEligibility(
+        id=_require_uuid(source, "id"),
+        management_group_id=_require_uuid(source, "management_group_id"),
+        identity_id=_require_uuid(source, "identity_id"),
+    )

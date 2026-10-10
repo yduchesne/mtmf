@@ -99,6 +99,20 @@ APPROVED_SEED = (
         "2d937b29-264e-578a-83d1-21cd13c6923e",
         "d18a1bd3-dc89-5e64-a019-64a419dd3f75",
     ),
+    (
+        "root-tenant-management",
+        "ROOT Tenant Management",
+        "tenant:get-object",
+        "941a7c76-2720-5e1a-9230-c455daceb05f",
+        "bf685dca-4912-5f31-8840-7ee604319b38",
+    ),
+    (
+        "tenant-management",
+        "Tenant Management",
+        "tenant:get-object",
+        "2f5e2e41-04ed-524c-96a8-bf79b1ad0f65",
+        "196990b7-e325-5419-86e7-3ddeb67a7781",
+    ),
 )
 
 APPROVED_ACTIONS = {
@@ -141,7 +155,7 @@ def test_bp01_exact_approved_seed_is_installed(db: psycopg.Connection) -> None:
     }
     installed = set(_installed_rows(db))
     assert installed == expected
-    assert len(installed) == 11
+    assert len(installed) == 13
 
     actions = {
         str(row[0])
@@ -150,7 +164,7 @@ def test_bp01_exact_approved_seed_is_installed(db: psycopg.Connection) -> None:
         ).fetchall()
     }
     assert actions == APPROVED_ACTIONS
-    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 11
+    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 13
     assert db.execute("SELECT count(*) FROM mtmf.action").fetchone()[0] == 3
     # No built-in matcher contains a wildcard.
     assert (
@@ -178,7 +192,7 @@ def test_bp03_identical_replay_is_idempotent(db: psycopg.Connection) -> None:
     before = _installed_rows(db)
     db.execute("SELECT mtmf.install_builtin_policy()")
     assert _installed_rows(db) == before
-    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 11
+    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 13
 
 
 def test_bp04_conflicting_existing_definition_fails_closed(db: psycopg.Connection) -> None:
@@ -264,5 +278,5 @@ def test_bp08_role_add_cannot_replace_a_builtin_definition(
             "SELECT count(*) FROM mtmf.permission_set ps "
             "JOIN mtmf.builtin_role br ON br.role_urn = ps.role_urn"
         ).fetchone()[0]
-        == 11
+        == 13
     )
