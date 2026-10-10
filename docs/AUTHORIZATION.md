@@ -384,12 +384,14 @@ The PR 10 design explicitly separates installation authority, verified applicati
 The following remain intentionally unresolved:
 
 - the public/application-facing authorization contract and context representation (the internal `PermissionEvaluatorProtocol` evaluator seam established by PR 8D is settled and is not the open item);
-- exact authorization-context representation;
-- manager-side actor eligibility for TenantManagementGroups;
+- exact authorization-context representation for the future HTTP boundary;
 - complete Action catalog and built-in Role policy compositions;
 - built-in Role-to-PermissionSet/Permission mappings;
 - exact audit decision record;
-- caching, invalidation, and compiled permission-index design.
+- caching, invalidation, and compiled permission-index design;
+- the PR 12 integration security decisions (verified acting-user assertion protocol, snapshot TTL/clock semantics, resource-qualifier ownership, Application/credential/Tenant binding), tracked in [PR 12 decisions register](PR12_INTEGRATION_SECURITY_DECISIONS.md).
+
+Manager-side TenantManagementGroup actor eligibility is **settled** (PR 11: explicit Identity-level designation, canonical root Identity for ROOT); it is no longer an open item.
 
 ## Planned batch PDP evaluation and local PEP enforcement (PRs 15–18; NOT IMPLEMENTED)
 

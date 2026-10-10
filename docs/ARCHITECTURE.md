@@ -4,6 +4,8 @@
 
 This document describes the technical architecture of the Multi-Tenant Management Framework (MTMF): package boundaries, layers, deployment modes, persistence abstractions, transport behavior, and cross-cutting infrastructure.
 
+> **v0.1 external integration boundary (PR 12).** The sole supported v0.1 external integration is the authenticated, versioned HTTPS API: MTMF is the authoritative Policy Decision Point (PDP) and consuming applications are Policy Enforcement Points (PEPs). External applications MUST NOT embed `mtmf-core`, connect to MTMF PostgreSQL, or treat a local/in-process connector as an alternative authorization authority. Sections of this document that describe `LocalConnector`/`HttpConnector` location-transparent equivalence, the optional local connector path, and “both local and HTTP deployment modes” are **historical planning** retained for internal-context continuity; they are not the v0.1 external contract. Internal `mtmf-core`/SPI/PostgreSQL architecture remains authoritative. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md) and [PR 12 decisions register](PR12_INTEGRATION_SECURITY_DECISIONS.md).
+
 Security semantics are defined by [SECURITY_MODEL.md](SECURITY_MODEL.md). Authorization-engine behavior is described in [AUTHORIZATION.md](AUTHORIZATION.md). The structural domain model is defined in [DOMAIN_MODEL.md](DOMAIN_MODEL.md).
 
 PostgreSQL-specific architecture and the implemented restricted runtime privilege model are documented in [DATABASE.md](DATABASE.md). PR 7A (revision `0003`) implements the owner/migrator/runtime role separation, default-deny grants, and the six reviewed `SECURITY DEFINER` membership-removal entry points described there. PR 7B (revision `0004`) implements the production `PostgresMtmfSpi` provider, its real-transaction UnitOfWork, all 13 typed repositories, and the 44 reviewed repository stored-function entry points. PR 9 (revision `0005`) adds the two typed Role-assignment tables, their restrictive prerequisite foreign keys, eight reviewed Role-assignment stored functions, and the application-layer `EffectiveRoleResolver` that produces the trusted `applicable_roles` tuple consumed by the unchanged `Authorizer`.
@@ -39,6 +41,8 @@ mtmf/
 
 ### 3.1 mtmf-api
 
+> **Contract note (PR 12/15).** `mtmf-api` owns the detached, versioned public HTTP DTO/error contract (PR 15). The “location-transparent service/Connector interface” described below is historical packaging language; the v0.1 external contract is HTTP-only and `mtmf-api` never carries core-domain serialization.
+
 `mtmf-api` owns the location-transparent public service contract.
 
 It contains:
@@ -71,6 +75,8 @@ The core should remain independent of external transport concerns.
 
 ### 3.3 mtmf-client
 
+> **Historical (pre-PR 12).** The dual `LocalConnector`/`HttpConnector` design below is **not** the v0.1 external integration target. Under PR 12, `mtmf-client` is an HTTP-only, non-authoritative convenience layer (PR 18); it does not embed a PDP and is not an alternative authorization authority. This paragraph is retained only to explain earlier packaging discussion.
+
 `mtmf-client` is the consumer-facing client implementation and depends on `mtmf-api`.
 
 It provides at least:
@@ -96,6 +102,8 @@ FastAPI/Uvicorn are expected service technologies, subject to implementation pla
 
 ## 4. Dependency Direction
 
+> **Historical (pre-PR 12).** The optional local-connector dependency edge shown below is historical. The v0.1 external boundary is HTTP-only; internal `mtmf-core`/`mtmf-api` separation remains valid.
+
 The intended dependency direction is:
 
 ```text
@@ -114,6 +122,8 @@ The preferred design keeps `mtmf-core` independent of `mtmf-api`: connectors/ser
 This boundary remains subject to validation during implementation planning.
 
 ## 5. Connector Semantics
+
+> **Historical (pre-PR 12).** This section describes the earlier location-transparent connector model. It is **not** the v0.1 external contract; the supported external integration is the authenticated HTTPS API. Internal callers inside the MTMF service may still treat internal seams as potentially remote, but external consumers do not use a `LocalConnector` as an authority.
 
 Consumers MUST assume that every Connector implementation is remote.
 
@@ -140,6 +150,8 @@ A public API operation should pass this design test:
 
 ## 6. DTO Semantics
 
+> **Historical (pre-PR 12).** References to `LocalConnector`/`HttpConnector` in this section are historical. In v0.1 the detached DTO contract is HTTP-only (PR 15); internal repository/SPI mapping is unaffected.
+
 Public DTOs represent detached snapshots.
 
 Retrieving the same MTMF resource twice does not imply Python object identity. Mutating a DTO locally does not mutate MTMF state.
@@ -153,6 +165,8 @@ For Tenant, Organization, Principal, Identity, Group, and Role DTOs, application
 The PostgreSQL provider is expected to represent extension data using `jsonb`. This storage choice does not make extension contents part of MTMF domain or authorization semantics.
 
 ## 7. Error Contract
+
+> **Historical (pre-PR 12).** The `HttpConnector`/`LocalConnector` mapping language below is historical; v0.1 exposes a single authenticated HTTP error contract (PR 15/17). The transport-independent MTMF error semantics remain valid.
 
 `mtmf-api` defines stable, transport-independent MTMF error codes and error semantics.
 
@@ -360,6 +374,8 @@ Cross-boundary IdP workflows may eventually require durable workflow state, retr
 
 ## 13. HTTP Service
 
+> **PR 12 note.** The HTTP service is the authenticated trust/transport boundary and the only supported external integration surface; it verifies service and acting-user identity, checks subscription eligibility, and invokes the authoritative core PDP. The historical “both local and HTTP deployment modes ultimately use the same core Authorizer” statement below is retained only for internal continuity; external consumers use HTTP only.
+
 The HTTP service is a thin transport adapter.
 
 Its responsibilities include:
@@ -397,6 +413,8 @@ The intended observability pipeline uses an OpenTelemetry Collector with:
 Domain logic should not depend directly on these backend products.
 
 ## 15. Testing Direction
+
+> **Historical (pre-PR 12).** The shared `LocalConnector`/`HttpConnector` contract suite described below is **not** a v0.1 acceptance criterion. Future integration verification is the authenticated HTTP conformance matrix (PRs 15–20) plus the existing internal authorization conformance suites.
 
 Connector semantics should be validated with a shared contract suite.
 
