@@ -10,12 +10,14 @@ non-ACTIVE ordinary Tenants.
 
 from __future__ import annotations
 
+import helpers
 import psycopg
 import pytest
 
 from mtmf_core import (
     DomainId,
     Identity,
+    IdentityOrgMembership,
     IdentityOrigin,
     IdentityRoleAssignment,
     IdentityTenantMembership,
@@ -190,3 +192,66 @@ def test_ol08_active_tenant_resolves_its_roles(
             target_tenant_id=tenant.id,
         )
     assert [role.urn.value for role in state.applicable_roles] == [_TENANT_ADMIN_URN.value]
+
+
+def test_ol09_suspended_tenant_fails_closed_after_active(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    tenant, principal, identity = _graph(postgres_spi, origin=IdentityOrigin.LOCAL)
+    _make_eligible(postgres_spi, tenant, principal, identity)
+    db.execute(
+        "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'initial', 'test-operator')",
+        (tenant.id.value, principal.id.value, identity.id.value),
+    )
+    db.execute("SELECT mtmf.activate_tenant(%s)", (tenant.id.value,))
+    resolver = EffectiveRoleResolver(postgres_spi)
+    session = SessionContext(tenant.id, principal.id, identity.id)
+    with postgres_spi.create_unit_of_work() as uow:
+        active_state = resolver.resolve(uow, session=session, target_tenant_id=tenant.id)
+    assert [role.urn.value for role in active_state.applicable_roles] == [_TENANT_ADMIN_URN.value]
+    # A previously established ACTIVE context must be re-resolved after
+    # suspension; a stale session is denied.
+    db.execute("SELECT mtmf.suspend_tenant(%s)", (tenant.id.value,))
+    with pytest.raises(SessionContextError), postgres_spi.create_unit_of_work() as uow:
+        resolver.resolve(uow, session=session, target_tenant_id=tenant.id)
+
+
+def test_ol10_organization_refined_assignment_is_organization_scoped(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    helpers.seed_base_entities(db)
+    tenant = DomainId.from_str(helpers.TENANT_A)
+    principal = DomainId.from_str(helpers.PRINCIPAL)
+    identity = DomainId.from_str(helpers.IDENTITY_A)
+    organization = DomainId.from_str(helpers.ORG_A)
+    with postgres_spi.create_unit_of_work() as uow:
+        postgres_spi.create_principal_tenant_membership_repository(uow).add(
+            PrincipalTenantMembership(principal, tenant)
+        )
+        postgres_spi.create_identity_tenant_membership_repository(uow).add(
+            IdentityTenantMembership(identity, tenant)
+        )
+        postgres_spi.create_identity_org_membership_repository(uow).add(
+            IdentityOrgMembership(identity, organization)
+        )
+        postgres_spi.create_identity_role_assignment_repository(uow).add(
+            IdentityRoleAssignment(
+                DomainId.generate(), tenant, identity, _TENANT_ADMIN_URN, organization
+            )
+        )
+        uow.commit()
+    resolver = EffectiveRoleResolver(postgres_spi)
+    session = SessionContext(tenant, principal, identity)
+    # Tenant-wide resolution: an Organization-refined grant does not apply.
+    with postgres_spi.create_unit_of_work() as uow:
+        tenant_wide = resolver.resolve(uow, session=session, target_tenant_id=tenant)
+    assert tenant_wide.applicable_roles == ()
+    # Organization-scoped resolution: it applies only for the matching Org.
+    with postgres_spi.create_unit_of_work() as uow:
+        scoped = resolver.resolve(
+            uow,
+            session=session,
+            target_tenant_id=tenant,
+            target_organization_id=organization,
+        )
+    assert [role.urn.value for role in scoped.applicable_roles] == [_TENANT_ADMIN_URN.value]

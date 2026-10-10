@@ -20,10 +20,17 @@ import pytest
 
 from mtmf_core import (
     DomainId,
+    Group,
+    GroupOrgMembership,
+    GroupRoleAssignment,
+    GroupTenantMembership,
     Identity,
+    IdentityGroupMembership,
+    IdentityOrgMembership,
     IdentityOrigin,
     IdentityRoleAssignment,
     IdentityTenantMembership,
+    Organization,
     Principal,
     PrincipalTenantMembership,
     RoleUrn,
@@ -316,6 +323,10 @@ def test_rs10_transfer_then_old_membership_removal_is_allowed(
             "gen_random_uuid(), NULL, 'RECOVERY', 'r', 'a')"
         ),
         "SELECT mtmf.recover_root_identity(gen_random_uuid(), 'r', 'a')",
+        (
+            "SELECT mtmf.stewardship_is_eligible("
+            "gen_random_uuid(), gen_random_uuid(), gen_random_uuid())"
+        ),
     ],
 )
 def test_rs11_privileged_functions_are_not_runtime_executable(
@@ -324,6 +335,41 @@ def test_rs11_privileged_functions_are_not_runtime_executable(
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         runtime_connection.execute(statement)
     runtime_connection.rollback()
+
+
+def test_rs21_privileged_functions_are_invoker_and_owner_owned(
+    db: psycopg.Connection,
+) -> None:
+    rows = db.execute(
+        "SELECT p.proname, p.prosecdef, pg_get_userbyid(p.proowner) "
+        "FROM pg_catalog.pg_proc p "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = 'mtmf' AND p.proname IN ("
+        "  'bootstrap_root', 'designate_steward', 'activate_tenant', "
+        "  'suspend_tenant', 'recover_root_identity', 'stewardship_is_eligible')"
+    ).fetchall()
+    assert len(rows) == 6
+    for name, prosecdef, owner in rows:
+        assert prosecdef is False, name
+        assert owner == "mtmf_owner", name
+
+
+def test_rs22_runtime_signature_allowlist_is_exact(db: psycopg.Connection) -> None:
+    from mtmf_core.persistence.postgres import expected_runtime_signatures
+
+    executable = {
+        str(row[0])
+        for row in db.execute(
+            "SELECT format('%I.%I(%s)', n.nspname, p.proname, "
+            "              pg_get_function_identity_arguments(p.oid)) "
+            "FROM pg_catalog.pg_proc p "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+            "WHERE n.nspname = 'mtmf' "
+            "AND has_function_privilege('mtmf_runtime', p.oid, 'EXECUTE')"
+        ).fetchall()
+    }
+    assert executable == set(expected_runtime_signatures())
+    assert len(executable) == 58
 
 
 def test_rs12_stewardship_audit_is_append_only(db: psycopg.Connection) -> None:
@@ -449,3 +495,191 @@ def test_rs16_concurrent_designation_rejects_the_stale_writer(
         ).fetchone()[0]
         == 1
     )
+
+
+# --- Group-derived and Organization-scoped eligibility -------------------------
+
+
+def _new_provisioning_tenant(spi: MtmfSpi) -> Tenant:
+    owner_principal = Principal(DomainId.generate(), "Owner")
+    owner_identity = Identity(
+        DomainId.generate(), owner_principal.id, "Owner I", IdentityOrigin.LOCAL
+    )
+    tenant = Tenant(
+        DomainId.generate(),
+        "T",
+        SecurityScope.TENANT,
+        owner_identity.id,
+        lifecycle=TenantLifecycle.PROVISIONING,
+    )
+    with spi.create_unit_of_work() as uow:
+        spi.create_principal_repository(uow).add(owner_principal)
+        spi.create_identity_repository(uow).add(owner_identity)
+        spi.create_tenant_repository(uow).add(tenant)
+        uow.commit()
+    return tenant
+
+
+def _add_group_steward(
+    spi: MtmfSpi, tenant: Tenant, *, organization_scoped: bool
+) -> tuple[Principal, Identity]:
+    principal = Principal(DomainId.generate(), "Group Steward")
+    identity = Identity(DomainId.generate(), principal.id, "Group Steward I", IdentityOrigin.LOCAL)
+    group = Group(DomainId.generate(), tenant.id, "Stewards")
+    organization = (
+        Organization(DomainId.generate(), tenant.id, "O", identity.id)
+        if organization_scoped
+        else None
+    )
+    with spi.create_unit_of_work() as uow:
+        spi.create_principal_repository(uow).add(principal)
+        spi.create_identity_repository(uow).add(identity)
+        spi.create_group_repository(uow).add(group)
+        spi.create_principal_tenant_membership_repository(uow).add(
+            PrincipalTenantMembership(principal.id, tenant.id)
+        )
+        spi.create_identity_tenant_membership_repository(uow).add(
+            IdentityTenantMembership(identity.id, tenant.id)
+        )
+        spi.create_group_tenant_membership_repository(uow).add(
+            GroupTenantMembership(group.id, tenant.id)
+        )
+        spi.create_identity_group_membership_repository(uow).add(
+            IdentityGroupMembership(identity.id, group.id)
+        )
+        if organization is not None:
+            spi.create_organization_repository(uow).add(organization)
+            spi.create_identity_org_membership_repository(uow).add(
+                IdentityOrgMembership(identity.id, organization.id)
+            )
+            spi.create_group_org_membership_repository(uow).add(
+                GroupOrgMembership(group.id, organization.id)
+            )
+        spi.create_group_role_assignment_repository(uow).add(
+            GroupRoleAssignment(
+                DomainId.generate(),
+                tenant.id,
+                group.id,
+                _TENANT_ADMIN_URN,
+                organization.id if organization is not None else None,
+            )
+        )
+        uow.commit()
+    return principal, identity
+
+
+def test_rs17_group_derived_tenant_admin_confers_stewardship_eligibility(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    # Eligibility is satisfied purely through the Group-derived authority.
+    db.execute(
+        "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'group', 'operator')",
+        (tenant.id.value, principal.id.value, identity.id.value),
+    )
+    db.execute("SELECT mtmf.activate_tenant(%s)", (tenant.id.value,))
+    assert (
+        db.execute(
+            "SELECT lifecycle FROM mtmf.tenant WHERE id = %s", (tenant.id.value,)
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_rs18_organization_refined_assignment_is_not_stewardship_eligibility(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=True)
+    # An Organization-refined grant is Organization-scoped authority, not
+    # Tenant-level stewardship eligibility.
+    with pytest.raises(psycopg.errors.DatabaseError) as captured:
+        db.execute(
+            "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'org', 'operator')",
+            (tenant.id.value, principal.id.value, identity.id.value),
+        )
+    assert captured.value.sqlstate == "MT013"
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.stewardship_designation WHERE tenant_id = %s",
+            (tenant.id.value,),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+# --- Designation prerequisite rejection ----------------------------------------
+
+
+def _bare_principal_identity(spi: MtmfSpi) -> tuple[Principal, Identity]:
+    principal = Principal(DomainId.generate(), "Bare")
+    identity = Identity(DomainId.generate(), principal.id, "Bare I", IdentityOrigin.LOCAL)
+    with spi.create_unit_of_work() as uow:
+        spi.create_principal_repository(uow).add(principal)
+        spi.create_identity_repository(uow).add(identity)
+        uow.commit()
+    return principal, identity
+
+
+@pytest.mark.parametrize("scenario", ["no_membership", "no_role", "wrong_principal"])
+def test_rs19_designation_rejects_ineligible_prerequisites(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, scenario: str
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _bare_principal_identity(postgres_spi)
+    designate_principal = principal
+    if scenario in {"no_role", "wrong_principal"}:
+        with postgres_spi.create_unit_of_work() as uow:
+            postgres_spi.create_principal_tenant_membership_repository(uow).add(
+                PrincipalTenantMembership(principal.id, tenant.id)
+            )
+            postgres_spi.create_identity_tenant_membership_repository(uow).add(
+                IdentityTenantMembership(identity.id, tenant.id)
+            )
+            uow.commit()
+    if scenario == "wrong_principal":
+        designate_principal, _ = _bare_principal_identity(postgres_spi)
+    with pytest.raises(psycopg.errors.DatabaseError) as captured:
+        db.execute(
+            "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'r', 'op')",
+            (tenant.id.value, designate_principal.id.value, identity.id.value),
+        )
+    assert captured.value.sqlstate == "MT013"
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.stewardship_designation WHERE tenant_id = %s",
+            (tenant.id.value,),
+        ).fetchone()[0]
+        == 0
+    )
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.stewardship_audit WHERE tenant_id = %s", (tenant.id.value,)
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_rs20_activation_without_designation_writes_no_audit(db: psycopg.Connection) -> None:
+    tenant_id, _principal_id, identity_id = helpers_ids()
+    db.execute(
+        "INSERT INTO mtmf.principal (id, name, deletion_status) VALUES (%s, 'P', 2)",
+        (_principal_id,),
+    )
+    db.execute(
+        "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+        "VALUES (%s, %s, 'I', 1, 2)",
+        (identity_id, _principal_id),
+    )
+    db.execute(
+        "INSERT INTO mtmf.tenant "
+        "(id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+        "VALUES (%s, 'T', 2, %s, 0, 2)",
+        (tenant_id, identity_id),
+    )
+    db.commit()
+    with pytest.raises(psycopg.errors.DatabaseError) as captured:
+        db.execute("SELECT mtmf.activate_tenant(%s)", (tenant_id,))
+    assert captured.value.sqlstate == "MT014"
+    assert db.execute("SELECT count(*) FROM mtmf.stewardship_audit").fetchone()[0] == 0

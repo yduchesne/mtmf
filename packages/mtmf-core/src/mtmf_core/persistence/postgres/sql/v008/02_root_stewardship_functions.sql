@@ -172,13 +172,17 @@ BEGIN
             MESSAGE = 'designate_steward operation must be TRANSFER or RECOVERY';
     END IF;
 
-    -- Global lock order: Tenant row first, then the designation row.
+    -- Global lock order: Tenant, then successor Principal/Identity, then the
+    -- designation row. Locking the subject rows prevents a concurrent
+    -- deactivation from committing after the eligibility read (write skew).
     PERFORM 1 FROM mtmf.tenant WHERE id = tenant_id_value FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING
             ERRCODE = 'MT023',
             MESSAGE = 'designate_steward target Tenant does not exist';
     END IF;
+    PERFORM 1 FROM mtmf.principal WHERE id = steward_principal_id_value FOR UPDATE;
+    PERFORM 1 FROM mtmf.identity WHERE id = designated_identity_id_value FOR UPDATE;
 
     SELECT d.steward_principal_id, d.designated_identity_id
       INTO previous_principal, previous_identity
@@ -267,6 +271,10 @@ BEGIN
             ERRCODE = 'MT014',
             MESSAGE = 'cannot activate an ordinary Tenant without a stewardship designation';
     END IF;
+    -- Lock the designated subject rows before the eligibility read so a
+    -- concurrent deactivation cannot slip past it before this commits.
+    PERFORM 1 FROM mtmf.principal WHERE id = designation_row.steward_principal_id FOR UPDATE;
+    PERFORM 1 FROM mtmf.identity WHERE id = designation_row.designated_identity_id FOR UPDATE;
     IF NOT mtmf.stewardship_is_eligible(
         tenant_id_value, designation_row.steward_principal_id, designation_row.designated_identity_id
     ) THEN
@@ -319,7 +327,8 @@ BEGIN
             MESSAGE = 'root identity recovery requires a completed bootstrap';
     END IF;
 
-    SELECT * INTO candidate FROM mtmf.identity WHERE id = new_identity_id_value;
+    SELECT * INTO candidate
+      FROM mtmf.identity WHERE id = new_identity_id_value FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING ERRCODE = 'MT026', MESSAGE = 'replacement root Identity does not exist';
     END IF;
@@ -349,13 +358,17 @@ BEGIN
 
     UPDATE mtmf.root_registry SET root_identity_id = new_identity_id_value WHERE singleton;
 
+    -- The root Principal is unchanged; the audit records it in both the
+    -- previous/new Principal columns (which are NOT NULL for new).
     INSERT INTO mtmf.stewardship_audit (
-        tenant_id, operation, previous_identity_id, new_identity_id,
-        actor_provenance, reason
+        tenant_id, operation, previous_principal_id, new_principal_id,
+        previous_identity_id, new_identity_id, actor_provenance, reason
     )
     VALUES (
-        registry.root_tenant_id, 'ROOT_IDENTITY_RECOVERY', registry.root_identity_id,
-        new_identity_id_value, actor_provenance_value, reason_value
+        registry.root_tenant_id, 'ROOT_IDENTITY_RECOVERY',
+        registry.root_principal_id, registry.root_principal_id,
+        registry.root_identity_id, new_identity_id_value,
+        actor_provenance_value, reason_value
     );
 END;
 $$;

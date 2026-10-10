@@ -235,3 +235,34 @@ def test_bp07_runtime_cannot_read_the_builtin_registry(
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         runtime_connection.execute("SELECT * FROM mtmf.builtin_role")
     runtime_connection.rollback()
+
+
+def test_bp08_role_add_cannot_replace_a_builtin_definition(
+    runtime_connection: psycopg.Connection, db: psycopg.Connection
+) -> None:
+    payload = {
+        "urn": "urn:mtmf:iam:roles:system:tenant-administrator",
+        "name": "Hijacked",
+        "description": "",
+        "defining_tenant_id": None,
+        "extension": {},
+        "permission_sets": [],
+    }
+    result = runtime_connection.execute("SELECT mtmf.role_add(%s)", (Jsonb(payload),)).fetchone()[0]
+    # ON CONFLICT DO NOTHING: the existing built-in definition is untouched.
+    assert result is False
+    runtime_connection.rollback()
+    assert (
+        db.execute(
+            "SELECT name FROM mtmf.role "
+            "WHERE urn = 'urn:mtmf:iam:roles:system:tenant-administrator'"
+        ).fetchone()[0]
+        == "Tenant Administrator"
+    )
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.permission_set ps "
+            "JOIN mtmf.builtin_role br ON br.role_urn = ps.role_urn"
+        ).fetchone()[0]
+        == 11
+    )
