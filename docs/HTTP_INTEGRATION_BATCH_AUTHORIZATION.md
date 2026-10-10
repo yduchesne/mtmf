@@ -137,6 +137,44 @@ Tenant context, and cannot be mixed or overridden by a request-body field.
 
 **No new PR is needed:** PR 14 and PR 18 already own these responsibilities. The refresh-token exclusion does not prohibit external IdP-managed interactive user refresh tokens. Neither an external user's refresh token nor a service access token can be substituted for a verified MTMF authorization decision.
 
+## 3B. Application-neutral Podman development bootstrap and OAuth service credentials (PRs 13, 14, 17, 18 and 20; NOT IMPLEMENTED)
+
+**Status: future development deployment contract, not an implemented startup behavior.** This section is application-neutral: a *consuming Application* is any independently deployed PEP that integrates with MTMF. The SYSTEM/root Tenant is reserved for MTMF control-plane administration. **No consuming Application may operate, subscribe, or obtain authorization decisions in the SYSTEM/root Tenant**, even if its registration was performed by a root administrator. An Application may serve multiple explicitly subscribed **ordinary** Tenants; a request is bound to one verified Application and one ordinary Tenant. PR 13 must enforce this at the authoritative domain/database boundary, PR 14 at the authenticated request boundary, and PR 20 in negative end-to-end tests.
+
+### Initialization sequence (PR 17 orchestration)
+
+The development profile MUST run a privileged, one-shot, idempotent initializer during Podman startup, **before** the MTMF HTTP service is marked ready:
+
+1. **Database readiness:** wait for PostgreSQL health; abort on unavailable database.
+2. **Migrations:** apply pending Alembic revisions and verify the approved SYSTEM Role/Permission seed.
+3. **Canonical root bootstrap:** invoke the existing PR 10 serialized, installation-only `bootstrap_root` operation; validate the root Tenant, root Principal, protected local root Identity, memberships and registry. Never create a second root or infer a replacement on conflict.
+4. **Ordinary development Tenant:** create or validate a configured non-SYSTEM Tenant with an eligible development administrator, acting Identity, memberships and designated steward; activate only once stewardship invariants are satisfied. A development Tenant is not a SYSTEM Tenant.
+5. **Application registry:** create or validate each configured consuming Application independently of its Tenant; no product-specific Application is hardcoded into MTMF.
+6. **Subscription:** create or validate an ACTIVE Application–ordinary-Tenant subscription, including explicit eligibility checks. Reject any attempted SYSTEM Tenant subscription.
+7. **Local OAuth development issuer:** start/verify a local Keycloak container and configure a dedicated confidential OAuth 2.0 Client Credentials client for each consuming Application. Create or reconcile the external OAuth client and MTMF's one-credential-to-one-Application mapping. Ensure issuer, audience, signature/JWKS and token lifetime are configured for PR 14 validation. **MTMF does not issue OAuth access tokens or refresh tokens.**
+8. **Credential delivery:** securely generate a per-Application client secret where needed and supply the client ID/secret to the consuming application's deployment via Podman secrets or another protected local mechanism; never bake secrets into images, commit them to Git, print them in logs, or expose root/bootstrap credentials. Reuse existing valid credentials on restart; rotation is an explicit operation.
+9. **Readiness:** expose MTMF HTTP readiness only after all mandatory provisioning and issuer trust checks succeed. The consuming Application uses `mtmf-client` (PR 18) to obtain a short-lived access token from the external issuer, then calls MTMF using that token plus the separately verified acting-user context.
+
+**Idempotency and failure policy:** fresh state creates the expected objects; a fully matching state is validated/reused without duplicate resources, secret resets or unnecessary mutations; new configured Applications can be added without changing existing ones. Concurrent startup must serialize provisioning. Missing prerequisites, partial/corrupt state, incompatible registry or subscription mappings, or issuer provisioning errors fail closed and prevent readiness. Do not silently recreate privileged identities, elevate an Application, or recover root credentials. Use deterministic development fixture identities/configuration, but generate secrets securely. The development fixture is opt-in and cannot run in production; production bootstrap requires a separate explicit privileged deployment operation.
+
+**Implementation ownership:** PR 10 already provides the root bootstrap primitive; PR 13 provides Application/subscription persistence and SYSTEM Tenant exclusion; PR 14 provides external OAuth trust and Application mapping; PR 17 owns Podman initialization orchestration, local Keycloak development integration and readiness; PR 18 owns provider-neutral Client Credentials token acquisition/renewal; PR 20 owns generic integration conformance, including negative SYSTEM Tenant tests. This documentation does not assert any of these future integrations exist today.
+
+### Development service credential contract
+
+| Field | Meaning | Example (illustrative only) |
+| --- | --- | --- |
+| `client_id` | OAuth credential identifier for one registered Application; not a Principal or Tenant ID | `sample-app-dev` |
+| `client_secret` | High-entropy confidential credential held by the consumer/IdP, delivered as a secret | generated, never documented |
+| `grant_type` | OAuth 2.0 machine-to-machine flow | `client_credentials` |
+| `token_endpoint` | External issuer endpoint, configurable independently of MTMF | local Keycloak realm token endpoint |
+| `issuer` / `jwks_uri` | MTMF trust and signature verification configuration | local Keycloak development issuer |
+| `audience` | Access token recipient binding | `mtmf-api` (illustrative) |
+| `access_token_ttl` | Short-lived issuer-controlled validity | 15 minutes (illustrative, not mandated) |
+| `application_id` | MTMF Application derived from validated credential mapping | registered consuming Application |
+| `tenant_id` | Verified ordinary Tenant context, independently subscription-checked | configured development Tenant |
+
+A service access token authenticates the Application, **not** its end user and **not** its Tenant. PR 14 separately verifies acting-user identity and Tenant membership via the approved T1 trusted external access token or token-exchange mechanism; a service token cannot be treated as proof of a user session. No OAuth refresh token is issued or used in the Client Credentials flow. Interactive end-user refresh tokens, if present, remain entirely under the external IdP/consuming application's control. Keycloak is the **recommended local development issuer**, not a production dependency or a hardcoded requirement of MTMF's OAuth interfaces; production may use another conforming issuer and stronger client authentication such as `private_key_jwt` or workload identity federation.
+
 ## 4. Batch request semantics (C05)
 
 Semantics are defined here; exact JSON fields, status codes, reason spellings,
