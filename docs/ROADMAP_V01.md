@@ -192,6 +192,16 @@ Exercise end-to-end authenticated HTTP flows against isolated PostgreSQL, includ
 
 **Dependency notes:** PR 12 precedes the new API contract; PRs 13 and 14 may overlap after PR 12; PR 15 freezes transport semantics; PRs 16 and 17 may overlap after PR 15 but must converge before PR 18/20 validation. Existing PR 10 and PR 11 deliverables remain intact. All PRs 12–20 are FUTURE WORK; this documentation change does not implement any of them.
 
+### Production root authentication and recovery — explicit release gate [PLANNED]
+
+PR 10 has implemented the protected canonical root Principal/Tenant/designated LOCAL Identity and the installation/operator-only `recover_root_identity` database primitive. **An operational production root recovery mechanism does not yet exist.** No current root password store, recovery CLI, production IdP binding repair, independent approval/custody, or complete recovery runbook is implied.
+
+- **PR 14:** specify and implement normal root login using a dedicated external OIDC account with strong MFA and a privileged, protected verified `(issuer, subject)` binding to the canonical root Identity; MTMF stores no root password. Resolve the `LOCAL` Identity origin versus externally authenticated subject binding as an explicit architecture gate before implementation. No user UUID or service credential impersonation.
+- **PR 17:** local development Keycloak username/password fixture and controlled initialization only; production recovery must not depend on development fixtures.
+- **Separate production recovery PR (new, number TBD):** implement an operator-authenticated, approval-gated one-shot recovery CLI/container with independent infrastructure IAM/PAM, narrowly granted installation/recovery DB role, protected secrets, independent audit including failures, validation of PR 10 invariants, atomic protected Identity changes, IdP binding repair/reconciliation, credential rotation, and an executable runbook. No ordinary HTTP recovery endpoint, no `mtmf_runtime` recovery grant, and no fabricated root acting-user session. During IdP outage, the operator path may repair configuration but does not provide interactive root OIDC login.
+- **PR 20:** negative trust-boundary and end-to-end recovery conformance once the separate recovery deliverable exists; include missing/compromised IdP, invalid mapping, operator denial, partial failure, and successful restoration.
+- **Production release gate:** recovery must be implemented, security-reviewed, exercised and audited before production readiness can be claimed. Full architecture and ownership: [HTTP Integration and Batch Authorization §12A](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
+
 ## 4. Deferred Beyond the Initial Sequence
 
 The following should be introduced only when their dependent design questions and use cases justify them:
