@@ -111,6 +111,70 @@ Application–Tenant authorization is explicitly registered and verified. Each
 request/batch is bound to exactly one verified Application and one acting
 Tenant context, and cannot be mixed or overridden by a request-body field.
 
+## 3A. OAuth access-token lifecycle and refresh-token boundary (PRs 14 and 18; NOT IMPLEMENTED)
+
+**Status: approved scope clarification, future implementation only.** MTMF is an OAuth 2.0 protected resource server and authorization PDP, **not** an OAuth authorization server or refresh-token issuer. The trusted external issuer/authorization server issues access tokens. PR 14 owns validation and trusted identity mapping; PR 18 owns the official Python client's service-token acquisition/renewal. No OAuth token handling is implemented by this documentation change.
+
+| Flow | Access token | Refresh token | Owner |
+| --- | --- | --- | --- |
+| Backend service → MTMF (OAuth 2.0 Client Credentials) | REQUIRED, validated by MTMF service (PR 14) | NOT used or issued for this flow | External authorization server issues access token; `mtmf-client` acquires/renews it (PR 18) |
+| End user → consuming application (e.g. Authorization Code + PKCE) | External IdP token or approved exchanged token may establish verified acting user (PR 14) | MAY be issued, rotated, and revoked by external IdP; consuming app manages its own session | External IdP and consumer, **not** MTMF |
+| MTMF authorization decision snapshot | NOT an OAuth access token | NOT a refresh token | MTMF PDP issues bounded decisions; PEP/client enforces (PRs 17–18) |
+
+**PR 14 acceptance criteria (server/trust boundary):**
+- Verify issuer, audience, signature/JWKS and key rotation, token type, `nbf`/`iat`/`exp` with bounded clock skew, credential-to-Application mapping, and authorized acting-user/Tenant binding; reject missing, expired, malformed, revoked when issuer revocation evidence is available, or otherwise untrusted tokens.
+- Service credentials MUST be bound to exactly one registered Application; a valid service token alone MUST NOT establish an acting end-user Identity.
+- Separately validate a trusted external end-user access token or approved standards-based token exchange. The exact wire format and exchange endpoint integration remain PR 14 implementation decisions under approved T1/T6; do not accept a caller-provided UUID or service-signed user assertion.
+- MTMF MUST NOT issue, persist, rotate, revoke, or accept refresh tokens as credentials at its authorization endpoint. User refresh tokens, if any, are handled by the external IdP and consumer.
+- Fail closed on token verification/issuer errors; do not treat authentication errors as policy DENY with a usable snapshot.
+
+**PR 18 acceptance criteria (client/PEP helper):**
+- Obtain service access tokens from the configured trusted authorization server using Client Credentials; cache only until their validated expiry and reacquire with the same authorized flow. Do **not** request or use OAuth refresh tokens for service credentials.
+- Bound proactive renewal, concurrency/single-flight handling, timeouts and retries to prevent refresh stampedes; never log credentials or tokens. A bounded, at-most-once retry after a token-expiry `401` MAY reacquire a new service token; do not retry authorization `403` or user/tenant trust failures as token-expiry. No infinite retry loops or downgrade to unauthenticated calls.
+- Keep **service access-token renewal**, **external end-user session refresh**, and **MTMF authorization snapshot reevaluation** independent. A renewed OAuth token does not renew a decision, extend snapshot TTL, or make a previously denied Action ALLOW.
+- Fail closed if the token endpoint is unavailable or a fresh token cannot be obtained; no new authorization grants. Existing snapshots remain subject to their exact binding and previously approved 60s default / 300s maximum / 15s security-sensitive TTL constraints, not to OAuth token lifetime.
+- Add conformance tests for expiry, issuer/audience mismatch, revoked/invalid tokens, one bounded 401 retry, no 403 retry, concurrent acquisition, token-endpoint failure, and snapshot expiry independent of OAuth renewal.
+
+**No new PR is needed:** PR 14 and PR 18 already own these responsibilities. The refresh-token exclusion does not prohibit external IdP-managed interactive user refresh tokens. Neither an external user's refresh token nor a service access token can be substituted for a verified MTMF authorization decision.
+
+## 3B. Application-neutral Podman development bootstrap and OAuth service credentials (PRs 13, 14, 17, 18 and 20; NOT IMPLEMENTED)
+
+**Status: future development deployment contract, not an implemented startup behavior.** This section is application-neutral: a *consuming Application* is any independently deployed PEP that integrates with MTMF. The SYSTEM/root Tenant is reserved for MTMF control-plane administration. **No consuming Application may operate, subscribe, or obtain authorization decisions in the SYSTEM/root Tenant**, even if its registration was performed by a root administrator. An Application may serve multiple explicitly subscribed **ordinary** Tenants; a request is bound to one verified Application and one ordinary Tenant. PR 13 must enforce this at the authoritative domain/database boundary, PR 14 at the authenticated request boundary, and PR 20 in negative end-to-end tests.
+
+### Initialization sequence (PR 17 orchestration)
+
+The development profile MUST run a privileged, one-shot, idempotent initializer during Podman startup, **before** the MTMF HTTP service is marked ready:
+
+1. **Database readiness:** wait for PostgreSQL health; abort on unavailable database.
+2. **Migrations:** apply pending Alembic revisions and verify the approved SYSTEM Role/Permission seed.
+3. **Canonical root bootstrap:** invoke the existing PR 10 serialized, installation-only `bootstrap_root` operation; validate the root Tenant, root Principal, protected local root Identity, memberships and registry. Never create a second root or infer a replacement on conflict.
+4. **Ordinary development Tenant:** create or validate a configured non-SYSTEM Tenant with an eligible development administrator, acting Identity, memberships and designated steward; activate only once stewardship invariants are satisfied. A development Tenant is not a SYSTEM Tenant.
+5. **Application registry:** create or validate each configured consuming Application independently of its Tenant; no product-specific Application is hardcoded into MTMF.
+6. **Subscription:** create or validate an ACTIVE Application–ordinary-Tenant subscription, including explicit eligibility checks. Reject any attempted SYSTEM Tenant subscription.
+7. **Local OAuth development issuer:** start/verify a local Keycloak container and configure a dedicated confidential OAuth 2.0 Client Credentials client for each consuming Application. Create or reconcile the external OAuth client and MTMF's one-credential-to-one-Application mapping. Ensure issuer, audience, signature/JWKS and token lifetime are configured for PR 14 validation. **MTMF does not issue OAuth access tokens or refresh tokens.**
+8. **Credential delivery:** securely generate a per-Application client secret where needed and supply the client ID/secret to the consuming application's deployment via Podman secrets or another protected local mechanism; never bake secrets into images, commit them to Git, print them in logs, or expose root/bootstrap credentials. Reuse existing valid credentials on restart; rotation is an explicit operation.
+9. **Readiness:** expose MTMF HTTP readiness only after all mandatory provisioning and issuer trust checks succeed. The consuming Application uses `mtmf-client` (PR 18) to obtain a short-lived access token from the external issuer, then calls MTMF using that token plus the separately verified acting-user context.
+
+**Idempotency and failure policy:** fresh state creates the expected objects; a fully matching state is validated/reused without duplicate resources, secret resets or unnecessary mutations; new configured Applications can be added without changing existing ones. Concurrent startup must serialize provisioning. Missing prerequisites, partial/corrupt state, incompatible registry or subscription mappings, or issuer provisioning errors fail closed and prevent readiness. Do not silently recreate privileged identities, elevate an Application, or recover root credentials. Use deterministic development fixture identities/configuration, but generate secrets securely. The development fixture is opt-in and cannot run in production; production bootstrap requires a separate explicit privileged deployment operation.
+
+**Implementation ownership:** PR 10 already provides the root bootstrap primitive; PR 13 provides Application/subscription persistence and SYSTEM Tenant exclusion; PR 14 provides external OAuth trust and Application mapping; PR 17 owns Podman initialization orchestration, local Keycloak development integration and readiness; PR 18 owns provider-neutral Client Credentials token acquisition/renewal; PR 20 owns generic integration conformance, including negative SYSTEM Tenant tests. This documentation does not assert any of these future integrations exist today.
+
+### Development service credential contract
+
+| Field | Meaning | Example (illustrative only) |
+| --- | --- | --- |
+| `client_id` | OAuth credential identifier for one registered Application; not a Principal or Tenant ID | `sample-app-dev` |
+| `client_secret` | High-entropy confidential credential held by the consumer/IdP, delivered as a secret | generated, never documented |
+| `grant_type` | OAuth 2.0 machine-to-machine flow | `client_credentials` |
+| `token_endpoint` | External issuer endpoint, configurable independently of MTMF | local Keycloak realm token endpoint |
+| `issuer` / `jwks_uri` | MTMF trust and signature verification configuration | local Keycloak development issuer |
+| `audience` | Access token recipient binding | `mtmf-api` (illustrative) |
+| `access_token_ttl` | Short-lived issuer-controlled validity | 15 minutes (illustrative, not mandated) |
+| `application_id` | MTMF Application derived from validated credential mapping | registered consuming Application |
+| `tenant_id` | Verified ordinary Tenant context, independently subscription-checked | configured development Tenant |
+
+A service access token authenticates the Application, **not** its end user and **not** its Tenant. PR 14 separately verifies acting-user identity and Tenant membership via the approved T1 trusted external access token or token-exchange mechanism; a service token cannot be treated as proof of a user session. No OAuth refresh token is issued or used in the Client Credentials flow. Interactive end-user refresh tokens, if present, remain entirely under the external IdP/consuming application's control. Keycloak is the **recommended local development issuer**, not a production dependency or a hardcoded requirement of MTMF's OAuth interfaces; production may use another conforming issuer and stronger client authentication such as `private_key_jwt` or workload identity federation.
+
 ## 4. Batch request semantics (C05)
 
 Semantics are defined here; exact JSON fields, status codes, reason spellings,
@@ -190,6 +254,7 @@ token, identity credential, or general entitlement.
   replay.
 - `require`/`is_allowed` must deny on any invalid snapshot.
 - No automatic TTL renewal; new grants require fresh trusted PDP evaluation.
+- The official client must obtain fresh service access tokens through Client Credentials, without refresh tokens; access-token renewal never extends authorization snapshot validity (see §3A).
 - A revoked policy or subscription can leave already-issued unexpired
   snapshots stale; there is no distributed instant-revocation promise.
 - A snapshot from a partially failed batch is prohibited (see T7).
@@ -306,6 +371,34 @@ implements the rejection; the test ID is a future conformance case.
 | A16 | Malicious batch sizes | limits | bounded reject | 17 | F17 |
 | A17 | Shared runtime DB credential treated as verified user | trust boundary | reject (not an end-user auth path) | 14/17 | F19 |
 | A18 | Snapshot supplied by end user or another service | snapshot integrity | reject at PEP helper | 18/20 | F20 |
+
+## 12A. Production root authentication and operator-controlled recovery (PLANNED)
+
+**Status: proposed production architecture; documentation only, not an operational recovery mechanism.** PR 10 already implements the installation/operator-only `recover_root_identity` database primitive and root structural invariants. It does **not** deliver an authenticated recovery CLI, independent operator approval and credential custody, IdP binding repair, or end-to-end recovery workflow. Do not describe root recovery as operationally available.
+
+### Normal root authentication (PR 14 design gate)
+
+The canonical root Principal, root Tenant, and protected designated `LOCAL` root Identity are MTMF-owned; MTMF does not maintain a password for that Identity. Proposed normal interactive root authentication uses a **dedicated privileged account at a configured external OIDC IdP**, preferably with phishing-resistant MFA. The IdP owns and validates the credentials. A privileged installation process establishes an immutable/protected binding of the verified `(issuer, subject)` to the designated root Identity; PR 14 validates token issuer, signature/JWKS, audience, lifetime, subject and appropriate authentication assurance before resolving the binding. A username, email, caller-supplied UUID, service credential or ordinary Tenant membership never proves root identity. Root identity binding creation, replacement and revocation are not ordinary self-service API operations. An external authentication binding to an immutable `LOCAL` Identity is an **explicit unresolved semantic/design gate**: reconcile with PR 10 IdentityOrigin invariants and approve the mapping model before implementation. Do not silently reclassify the root Identity as FEDERATED.
+
+Routine SYSTEM administrators may separately use verified federated Identities with **explicitly scoped** administrative Permissions; this is not impersonation of the root Identity and cannot confer canonical root status. The SYSTEM/root Tenant remains prohibited for consuming Application subscriptions and authorization requests.
+
+### Emergency recovery authority and isolation (separate production recovery deliverable)
+
+Emergency recovery is **not an interactive root login** and must not mint a fictitious root session. A real infrastructure operator authenticates using an independent deployment/PAM trust boundary (for example hardware-backed operator identity/SSH certificate) and obtains explicit, recorded recovery approval, preferably dual control. A dedicated one-shot recovery CLI/container, unavailable to the normal HTTP service and consuming Applications, invokes narrowly scoped privileged database recovery operations using a separate protected installation/recovery database role. `mtmf_runtime`, ordinary Application tokens, and public HTTP routes have no recovery grants. Database credentials are provided through a deployment secret manager, never source code, container images, logs, or consuming Application environment variables.
+
+**Recovery workflow (future):**
+1. Record incident, reason, verified operator identity, approvals, and authorized scope in an independent durable audit channel.
+2. Authenticate and authorize the operator at the deployment boundary; issue short-lived, least-privileged recovery access and start the one-shot utility.
+3. Validate canonical root registry, Tenant/Principal, designated active LOCAL Identity, membership, and PR 10 invariants. Unexpected corruption fails closed; no implicit recreation, promotion or ownership transfer.
+4. Re-establish or replace the **authentication binding** only after independently verifying the new external IdP issuer/subject. If the designated root Identity itself must change, invoke the existing privileged atomic root-Identity recovery primitive while preserving canonical root Tenant/Principal, ROOT membership, and immutable ownership.
+5. Commit authorized changes atomically where within one database transaction, revoke superseded bindings/sessions where supported, rotate affected secrets, and emit independent success/failure audit events. Do not imply cross-system IdP and PostgreSQL updates are atomic: use explicit reconciliation and fail-closed partial-failure handling.
+6. Once the IdP is available, require fresh normal IdP authentication and verify resolution to the expected protected root Identity; perform incident review and close temporary recovery access.
+
+**IdP outage:** without an operational IdP, normal root OIDC login is unavailable. The isolated operator recovery path may repair trusted issuer configuration and bindings using its separately authenticated authority; it does not issue root tokens, bypass PDP for arbitrary application data, or supply a fallback HTTP password endpoint. Interactive root login during an IdP outage would require a separately approved emergency authentication provider and is **not** promised here.
+
+**Audit and control:** immutable or externally retained audit evidence must cover approvals, invocation, operator identity, target identifiers, before/after binding fingerprints, outcomes, and failures. A failed PostgreSQL transaction cannot be relied on to retain its own audit row. Require credential custody, expiry/rotation, least privilege, break-glass testing, and a production runbook. An infrastructure operator is not thereby an MTMF root acting Identity.
+
+**Ownership and release gate:** PR 14 owns normal root OIDC verification and protected binding design; PR 17 owns development-only root IdP fixture provisioning (not production recovery); a **separately planned production recovery PR** owns the operator-authenticated CLI, restricted grants, approvals, audit, IdP repair/reconciliation and runbook; PR 20 covers integration and negative trust-boundary tests once available. **Production readiness is blocked until the recovery mechanism is implemented, security-reviewed and successfully exercised.**
 
 ## 13. Illustrative examples (NON-NORMATIVE)
 
