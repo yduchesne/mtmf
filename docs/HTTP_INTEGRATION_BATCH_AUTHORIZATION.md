@@ -111,6 +111,32 @@ Application–Tenant authorization is explicitly registered and verified. Each
 request/batch is bound to exactly one verified Application and one acting
 Tenant context, and cannot be mixed or overridden by a request-body field.
 
+## 3A. OAuth access-token lifecycle and refresh-token boundary (PRs 14 and 18; NOT IMPLEMENTED)
+
+**Status: approved scope clarification, future implementation only.** MTMF is an OAuth 2.0 protected resource server and authorization PDP, **not** an OAuth authorization server or refresh-token issuer. The trusted external issuer/authorization server issues access tokens. PR 14 owns validation and trusted identity mapping; PR 18 owns the official Python client's service-token acquisition/renewal. No OAuth token handling is implemented by this documentation change.
+
+| Flow | Access token | Refresh token | Owner |
+| --- | --- | --- | --- |
+| Backend service → MTMF (OAuth 2.0 Client Credentials) | REQUIRED, validated by MTMF service (PR 14) | NOT used or issued for this flow | External authorization server issues access token; `mtmf-client` acquires/renews it (PR 18) |
+| End user → consuming application (e.g. Authorization Code + PKCE) | External IdP token or approved exchanged token may establish verified acting user (PR 14) | MAY be issued, rotated, and revoked by external IdP; consuming app manages its own session | External IdP and consumer, **not** MTMF |
+| MTMF authorization decision snapshot | NOT an OAuth access token | NOT a refresh token | MTMF PDP issues bounded decisions; PEP/client enforces (PRs 17–18) |
+
+**PR 14 acceptance criteria (server/trust boundary):**
+- Verify issuer, audience, signature/JWKS and key rotation, token type, `nbf`/`iat`/`exp` with bounded clock skew, credential-to-Application mapping, and authorized acting-user/Tenant binding; reject missing, expired, malformed, revoked when issuer revocation evidence is available, or otherwise untrusted tokens.
+- Service credentials MUST be bound to exactly one registered Application; a valid service token alone MUST NOT establish an acting end-user Identity.
+- Separately validate a trusted external end-user access token or approved standards-based token exchange. The exact wire format and exchange endpoint integration remain PR 14 implementation decisions under approved T1/T6; do not accept a caller-provided UUID or service-signed user assertion.
+- MTMF MUST NOT issue, persist, rotate, revoke, or accept refresh tokens as credentials at its authorization endpoint. User refresh tokens, if any, are handled by the external IdP and consumer.
+- Fail closed on token verification/issuer errors; do not treat authentication errors as policy DENY with a usable snapshot.
+
+**PR 18 acceptance criteria (client/PEP helper):**
+- Obtain service access tokens from the configured trusted authorization server using Client Credentials; cache only until their validated expiry and reacquire with the same authorized flow. Do **not** request or use OAuth refresh tokens for service credentials.
+- Bound proactive renewal, concurrency/single-flight handling, timeouts and retries to prevent refresh stampedes; never log credentials or tokens. A bounded, at-most-once retry after a token-expiry `401` MAY reacquire a new service token; do not retry authorization `403` or user/tenant trust failures as token-expiry. No infinite retry loops or downgrade to unauthenticated calls.
+- Keep **service access-token renewal**, **external end-user session refresh**, and **MTMF authorization snapshot reevaluation** independent. A renewed OAuth token does not renew a decision, extend snapshot TTL, or make a previously denied Action ALLOW.
+- Fail closed if the token endpoint is unavailable or a fresh token cannot be obtained; no new authorization grants. Existing snapshots remain subject to their exact binding and previously approved 60s default / 300s maximum / 15s security-sensitive TTL constraints, not to OAuth token lifetime.
+- Add conformance tests for expiry, issuer/audience mismatch, revoked/invalid tokens, one bounded 401 retry, no 403 retry, concurrent acquisition, token-endpoint failure, and snapshot expiry independent of OAuth renewal.
+
+**No new PR is needed:** PR 14 and PR 18 already own these responsibilities. The refresh-token exclusion does not prohibit external IdP-managed interactive user refresh tokens. Neither an external user's refresh token nor a service access token can be substituted for a verified MTMF authorization decision.
+
 ## 4. Batch request semantics (C05)
 
 Semantics are defined here; exact JSON fields, status codes, reason spellings,
@@ -190,6 +216,7 @@ token, identity credential, or general entitlement.
   replay.
 - `require`/`is_allowed` must deny on any invalid snapshot.
 - No automatic TTL renewal; new grants require fresh trusted PDP evaluation.
+- The official client must obtain fresh service access tokens through Client Credentials, without refresh tokens; access-token renewal never extends authorization snapshot validity (see §3A).
 - A revoked policy or subscription can leave already-issued unexpired
   snapshots stale; there is no distributed instant-revocation promise.
 - A snapshot from a partially failed batch is prohibited (see T7).
