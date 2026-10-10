@@ -597,3 +597,9 @@ The following remain intentionally unsettled:
 
 
 These questions should be resolved deliberately before schema or API choices depend on them.
+
+## Planned Application subscriptions (PR 13; NOT IMPLEMENTED)
+
+The proposed v0.1 integration domain introduces a globally registered **Application** (stable identity/key and lifecycle) and a **TenantApplicationSubscription** linking one Tenant to one Application with explicit lifecycle/eligibility dates. Tenant subscriptions govern application eligibility; Organization-specific access remains subject to existing scoped authorization. A subscription does not grant Roles or Permissions, and a Principal's membership in multiple Tenants does not transfer a subscription between them. Billing, metering and quotas are deferred.
+
+**This is a planned extension only.** PR 13 owns exact entity fields, uniqueness constraints, lifecycle transitions, persistence and eligibility semantics. PR 14 owns authenticated service-to-Application identity mapping. PRs 15–18 own batch API and client enforcement. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).

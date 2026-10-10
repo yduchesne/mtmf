@@ -8,7 +8,7 @@ It is intentionally a planning document rather than a frozen specification. PR b
 
 ## 2. v0.1 Direction
 
-MTMF v0.1 should establish a reusable Python framework that can run in-process or behind an HTTP service while preserving one public, location-transparent contract.
+MTMF v0.1 establishes an independent HTTP service as the sole supported integration boundary for consuming applications. Internal Python core components remain reusable within the MTMF service, but external applications MUST use the authenticated, versioned HTTP API; embedded LocalConnector equivalence is no longer a v0.1 integration goal.
 
 The initial implementation targets:
 
@@ -16,15 +16,17 @@ The initial implementation targets:
 - the foundational domain model and authorization primitives;
 - PostgreSQL persistence through `MtmfSpi`, UnitOfWork, repositories, stored functions, and MTMF-owned migration management;
 - authoritative core authorization;
-- public API DTOs and Connector contract;
-- LocalConnector and HttpConnector equivalence;
-- a thin HTTP service;
+- public versioned HTTP API contracts and detached DTOs;
+- application registration, tenant subscriptions, and verified service/end-user identity;
+- batched authorization decisions with short-lived scoped client-side enforcement;
+- native Python/Rust batch-evaluation parity and measured performance;
+- an independently deployed HTTP service and official Python HTTP client;
 - bootstrap/root invariants;
 - Tenant, Principal, Identity, Group, Organization, Role, membership, and assignment management;
 - observability and security/audit foundations;
 - deterministic unit, integration, authorization-conformance, and connector-contract testing.
 
-External IdP implementations and aggressive authorization caching are not required to establish the initial framework foundation. Rust is intentionally included from the PR 8 series onward as a Rust/Python integration showcase and as a deterministic native policy kernel; no profiling evidence claims a performance bottleneck.
+External IdP provider adapters, commercial billing, aggressive authorization caching, and distributed revocation are not required for v0.1; however, a concrete trusted authentication and end-user identity propagation boundary is required. Rust is intentionally included from the PR 8 series onward as a Rust/Python integration showcase and as a deterministic native policy kernel; no profiling evidence claims a performance bottleneck.
 
 ## 3. Planned PR Sequence
 
@@ -150,40 +152,50 @@ Verification: unit suite (domain, resolver eligibility, Authorizer delegation, i
 
 **Limitations / deferred.** Trusted end-user acting-Identity propagation remains PR 14 (PR 11 consumes only a verified internal session; a caller-supplied Identity UUID is never authentication). Revocation is fail-closed for subsequent decisions and is not retroactive: an in-flight decision based on an already-read snapshot is not re-evaluated, and no linearizable concurrent-authorization lock contract is claimed. The management Roles carry exactly the one approved read Permission; no additional management Actions are seeded.
 
-### PR 12 — Public API contract and detached DTOs
+### PR 12 — Integration architecture and security contracts [NEW — PLANNED]
 
-Implement `mtmf-api` service interfaces, detached Pydantic DTOs, stable transport-independent errors, Connector contract, and mappings that preserve remote-service semantics.
+Documentation/design gate before any public HTTP API contract. Define the independent HTTP-only consumer integration boundary, MTMF as Policy Decision Point (PDP), consuming applications as Policy Enforcement Points (PEPs), and `mtmf-client` as a non-authoritative HTTP helper. Specify verified caller/application identity, acting user identity, Tenant/Organization context, subscription gate, batch decision semantics, scope binding, revocation/expiry and failure behavior. Update architecture/security/authorization/domain documents; no production endpoint, batch evaluator, client helper, or subscription persistence is implemented by this documentation PR.
 
-Public contracts must not leak core domain, PostgreSQL, FastAPI, or persistence internals.
+### PR 13 — Application registry and Tenant subscriptions [NEW — PLANNED]
 
-### PR 13 — LocalConnector
+Add registered Application and TenantApplicationSubscription domain objects, lifecycle and eligibility rules, PostgreSQL persistence and management use cases. A subscription belongs to a Tenant; Organizations may be further restricted by authorization but do not independently subscribe in v0.1. Define inactive/missing subscription as a deny prerequisite. Do not implement payments, invoices, usage quotas, or feature metering.
 
-Implement LocalConnector against core application use cases while preserving the same detached, failure-aware semantics expected of a remote Connector.
+### PR 14 — Service authentication and verified acting-user propagation [NEW — PLANNED]
 
-Begin the shared Connector contract suite.
+Implement trusted HTTP service authentication (OAuth 2.0 client credentials), token issuer/audience/signature/lifetime validation, mapping authenticated service credentials to registered Applications, and a separately verified end-user identity propagation contract. Explicitly bind acting Identity to Principal/Tenant/Identity session and enforce caller eligibility for the requested user/Tenant. Never accept caller-provided principal/identity IDs as proof of authentication. Address PR 10/11 trusted-actor deferrals without exposing privileged database functions through shared runtime credentials.
 
-### PR 14 — HTTP service and HttpConnector
+### PR 15 — Public HTTP API contract and detached DTOs [REVISED from former PR 12 — PLANNED]
 
-Implement the thin FastAPI/Uvicorn service adapter and HttpConnector, including DTO/error mapping, timeouts/failure semantics, and the same authorization path used by LocalConnector.
+Define `mtmf-api` detached request/response DTOs, stable HTTP errors, versioning, authenticated application context, and `POST /v1/authorization/evaluate` batch semantics. Every requested action returns an ALLOW/DENY effect with machine-readable reason; missing/unrecognized actions deny. Resource/scope qualifiers must be explicit where relevant. Application identity comes from authenticated credentials, not an untrusted request field. Distinguish subscription ineligibility, authorization denial, and transport/infrastructure failure without ever granting access on failure. Do not leak core domain objects, Rust internals, PostgreSQL, or FastAPI through DTOs.
 
-Run the shared Connector contract suite against both implementations.
+### PR 16 — Native batch authorization and Python/Rust parity [NEW — PLANNED]
 
-### PR 15 — Observability and security/audit hardening
+Implement one shared-context native Rust batch call, not a Python loop invoking Rust for every action, plus a comparable pure-Python indexed-policy batch evaluator. Preserve the existing Python semantic oracle and the PR 8H production default unless measurements justify changing it. Verify parity, deterministic ordering, equal-specificity DENY, wildcard behavior, default deny, tenant isolation, malformed input handling, and cross-scope rejection. Benchmark Python individual, Python batch, and Rust batch paths including policy preparation and PyO3 conversion at multiple batch sizes; no unmeasured Rust speed claim.
 
-Add OpenTelemetry instrumentation across application use cases, authorization, UnitOfWork, repositories, PostgreSQL, and HTTP transport. Establish the intended Collector/Prometheus/Jaeger/Loki integration boundaries and security/audit event foundations without leaking sensitive authorization details.
+### PR 17 — Independent HTTP service [REVISED from former PR 14 — PLANNED]
 
-### PR 16 — v0.1 integration and conformance hardening
+Implement FastAPI/Uvicorn HTTP adapter, authenticated service boundary, application subscription gate, batch authorization orchestration, DTO/error mapping, timeouts, rate/size limits, and service operational behavior. MTMF core remains the authoritative PDP; the HTTP layer does not duplicate permission semantics. LocalConnector/HttpConnector equivalence is not a v0.1 acceptance criterion.
 
-Exercise complete local and HTTP flows against isolated PostgreSQL; expand security-constitution tests, connector equivalence tests, migration tests, concurrency/transaction tests, and failure-path coverage.
+### PR 18 — Official Python HTTP client and authorization helper [REVISED from former PR 13 and part of former PR 14 — PLANNED]
 
-Resolve documentation drift and prepare the framework for its first consuming product integration.
+Implement `mtmf-client` as an HTTP-only integration package, with service credential handling, batch evaluation requests, strict detached response validation, and scoped, expiring authorization snapshots. Provide `is_allowed`/`require` conveniences for application PEPs. Bind snapshots to authenticated application, verified user, Tenant, optional Organization, resource/scope, and evaluated action set; unknown, absent, invalid, or expired decisions deny. No embedded PDP or permission engine and no automatic stale-decision renewal that could mask revocation. A consuming application remains responsible for actual resource/data isolation.
+
+### PR 19 — Observability and security/audit hardening [EXISTING, RENUMBERED from PR 15 — PLANNED]
+
+Instrument application use cases, subscription checks, trusted actor boundary, batch PDP evaluation, UnitOfWork, repositories, PostgreSQL, HTTP transport, and client integration. Add privacy-preserving decision audit and trace correlation, plus operational failure metrics; do not log sensitive tokens or authorization policy contents.
+
+### PR 20 — v0.1 integration, conformance, and ATI reference validation [REVISED from former PR 16 — PLANNED]
+
+Exercise end-to-end authenticated HTTP flows against isolated PostgreSQL, including ATI as first reference consuming application. Verify subscribed/unsubscribed/suspended Tenant outcomes, user/Tenant context spoofing rejection, scoped batch ALLOW/DENY, client helper default-deny and expiry, resource-level PEP enforcement, policy revocation stale-window behavior, Rust/Python parity, failure modes, and migration/concurrency/contract tests. This PR is not a requirement to integrate Digr, Darkula, or Hammeridian into v0.1.
+
+**Dependency notes:** PR 12 precedes the new API contract; PRs 13 and 14 may overlap after PR 12; PR 15 freezes transport semantics; PRs 16 and 17 may overlap after PR 15 but must converge before PR 18/20 validation. Existing PR 10 and PR 11 deliverables remain intact. All PRs 12–20 are FUTURE WORK; this documentation change does not implement any of them.
 
 ## 4. Deferred Beyond the Initial Sequence
 
 The following should be introduced only when their dependent design questions and use cases justify them:
 
 - concrete external IdP providers and durable cross-boundary IdP workflows;
-- authorization-state caching and invalidation;
+- distributed authorization-state caching and active invalidation beyond short-lived client snapshots;
 - additional persistence providers;
 - nested Groups;
 - Principal Organization membership;
@@ -191,6 +203,10 @@ The following should be introduced only when their dependent design questions an
 - broader service/agent Principal semantics.
 
 Rust/PyO3 permission-engine work is owned by the PR 8 series above and is not deferred.
+
+## Integration implementation status (roadmap-only)
+
+**NOT IMPLEMENTED:** application subscriptions (PR 13), authenticated service/end-user HTTP trust (PR 14), batch HTTP authorization DTOs (PR 15), native batch evaluation (PR 16), production HTTP batch endpoint (PR 17), scoped client snapshots (PR 18), and ATI integration (PR 20). Existing single-action authorization and experimental Rust work MUST NOT be described as implementing this future integration design. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
 
 ## 5. Roadmap Maintenance
 

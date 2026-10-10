@@ -390,3 +390,11 @@ The following remain intentionally unresolved:
 - built-in Role-to-PermissionSet/Permission mappings;
 - exact audit decision record;
 - caching, invalidation, and compiled permission-index design.
+
+## Planned batch PDP evaluation and local PEP enforcement (PRs 15–18; NOT IMPLEMENTED)
+
+The existing single-action `Authorizer` and Python indexed `CompiledPolicy` remain the current implemented authorization path. A **future** `POST /v1/authorization/evaluate` endpoint (contract PR 15; implementation PR 17) will evaluate an explicit array of Actions for a verified acting Identity/Tenant/Organization context, with the authenticated Application derived from service credentials (PR 14). Tenant subscription eligibility (PR 13) is a mandatory precondition to ALLOW, not a Role grant.
+
+`mtmf-core` is the authoritative Policy Decision Point (PDP); PR 16 will add a true native Rust batch evaluator and comparable Python batch path, subject to full semantic parity and measured performance. `mtmf-client` (PR 18) will provide a short-lived scoped authorization snapshot and default-deny `require`/`is_allowed` helper, **not** a second policy evaluator. Applications remain Policy Enforcement Points (PEPs) and must enforce domain resource and data isolation.
+
+Unknown/omitted Actions, expired/context-mismatched snapshots, unsupported constraints, and evaluation failures never yield ALLOW. Snapshot reuse is bound to user, Application, Tenant, Organization, Action and resource/scope; revocations take effect for new evaluations but existing unexpired decisions can be stale. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md). **None of these batch features is currently implemented.**

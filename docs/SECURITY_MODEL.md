@@ -938,3 +938,13 @@ The MTMF security model rests on these non-negotiable principles:
 - URN namespace information must agree with structural Tenant ownership;
 - security invariants must be enforced server-side/trusted-side, not merely in a UI;
 - undefined security behavior is not permission to broaden authority.
+
+## Planned HTTP integration security boundary (PRs 12–20; NOT IMPLEMENTED)
+
+**Status:** Future architecture requirements; this section does **not** assert an implemented subscription, HTTP actor authentication, batch API, or client cache. Existing security invariants and implemented single-action semantics remain authoritative.
+
+For future HTTP integration, MTMF is the authoritative Policy Decision Point (PDP) and each consuming application is a Policy Enforcement Point (PEP). The HTTP service MUST authenticate the calling service (PR 14) and derive its registered Application identity from validated credentials; it MUST NOT trust a body-supplied Application identifier. It MUST separately verify end-user acting Identity and membership in the selected Tenant; a caller-supplied UUID alone MUST NOT establish actor authority. A Tenant's active Application subscription (PR 13) is a prerequisite for new ALLOW decisions, not a replacement for scoped Role/Permission checks.
+
+Batch authorization (PRs 15–17) MUST preserve existing default-deny, specificity, equal-specificity DENY, scope/dominance, Tenant isolation and management-delegation restrictions for **each** requested Action. Missing, malformed, unknown or context-mismatched decisions MUST NOT authorize. `mtmf-client` snapshots (PR 18) MUST be bounded to the exact verified Application, actor, Tenant, Organization, Action and resource/scope, MUST expire, and MUST NOT extend grants when MTMF is unreachable. Applications MUST enforce the returned decisions and their own data isolation; an ALLOW capability is not universal access to resources. Subscription or Role revocation may leave a bounded stale window until expiry absent active invalidation.
+
+Implementation ownership and unresolved exact contracts: [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md), [ROADMAP_V01.md](ROADMAP_V01.md).
