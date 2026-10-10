@@ -8,12 +8,17 @@ manager-side actor eligibility remains unresolved (Gate D), so
 
 from __future__ import annotations
 
-from helpers import make_id, make_identity, make_principal, make_role_urn, make_tenant
+from helpers import make_id, make_identity, make_principal, make_tenant
 
 from mtmf_core import (
+    ROOT_MANAGEMENT_ROLE_URN,
+    SYSTEM_MANAGEMENT_ROLE_URN,
+    RoleUrn,
     SecurityScope,
     SessionContext,
+    TenantLifecycle,
     TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
     TenantManagementGroupMembership,
     TenantManagementScope,
     resolve_management_scope,
@@ -27,10 +32,15 @@ def _session(tenant_id):
 
 
 def _group(manager_id, scope, role_urn=None):
+    approved = (
+        ROOT_MANAGEMENT_ROLE_URN
+        if scope is TenantManagementScope.ROOT
+        else SYSTEM_MANAGEMENT_ROLE_URN
+    )
     return TenantManagementGroup(
         make_id(),
         manager_id,
-        role_urn if role_urn is not None else make_role_urn(),
+        role_urn if role_urn is not None else RoleUrn(approved),
         scope,
     )
 
@@ -218,3 +228,150 @@ def test_system_group_for_other_manager_is_ignored() -> None:
         canonical_root_tenant_id=root.id,
     )
     assert resolution.candidate is None
+
+
+# --- Approved eligibility semantics (D01/D03/D04) ----------------------------
+
+
+def _session_for(tenant_id, identity):
+    return SessionContext(tenant_id, identity.principal_id, identity.id)
+
+
+def test_system_eligible_actor_yields_elevated_system_scope() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    manager = make_tenant("Manager")
+    target = make_tenant("Target")
+    identity = make_identity()
+    group = _group(manager.id, TenantManagementScope.SYSTEM)
+    membership = TenantManagementGroupMembership(make_id(), group.id, target.id)
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, identity.id)
+    resolution = resolve_management_scope(
+        session=_session_for(manager.id, identity),
+        target_tenant_id=target.id,
+        management_groups=[group],
+        memberships=[membership],
+        canonical_root_tenant_id=root.id,
+        actor_eligibilities=[eligibility],
+        manager_tenant=manager,
+        target_tenant=target,
+    )
+    assert resolution.candidate is not None
+    assert resolution.actor_eligible is True
+    assert resolution.elevated_scope is TenantManagementScope.SYSTEM
+    assert resolution.blocked_reason is None
+
+
+def test_system_without_designation_is_not_eligible() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    manager = make_tenant("Manager")
+    target = make_tenant("Target")
+    identity = make_identity()
+    group = _group(manager.id, TenantManagementScope.SYSTEM)
+    membership = TenantManagementGroupMembership(make_id(), group.id, target.id)
+    other_identity = make_identity()
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, other_identity.id)
+    resolution = resolve_management_scope(
+        session=_session_for(manager.id, identity),
+        target_tenant_id=target.id,
+        management_groups=[group],
+        memberships=[membership],
+        canonical_root_tenant_id=root.id,
+        actor_eligibilities=[eligibility],
+        manager_tenant=manager,
+        target_tenant=target,
+    )
+    assert resolution.candidate is not None
+    assert resolution.actor_eligible is False
+    assert resolution.elevated_scope is None
+
+
+def test_root_group_requires_canonical_root_identity() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    target = make_tenant("Target")
+    root_identity = make_identity()
+    other_identity = make_identity()
+    group = _group(root.id, TenantManagementScope.ROOT)
+
+    eligible = resolve_management_scope(
+        session=_session_for(root.id, root_identity),
+        target_tenant_id=target.id,
+        management_groups=[group],
+        memberships=[],
+        canonical_root_tenant_id=root.id,
+        manager_tenant=root,
+        target_tenant=target,
+        canonical_root_identity_id=root_identity.id,
+    )
+    assert eligible.actor_eligible is True
+    assert eligible.elevated_scope is TenantManagementScope.ROOT
+
+    denied = resolve_management_scope(
+        session=_session_for(root.id, other_identity),
+        target_tenant_id=target.id,
+        management_groups=[group],
+        memberships=[],
+        canonical_root_tenant_id=root.id,
+        manager_tenant=root,
+        target_tenant=target,
+        canonical_root_identity_id=root_identity.id,
+    )
+    assert denied.candidate is not None
+    assert denied.actor_eligible is False
+    assert denied.elevated_scope is None
+
+
+def test_missing_lifecycle_context_fails_closed() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    manager = make_tenant("Manager")
+    target = make_tenant("Target")
+    identity = make_identity()
+    group = _group(manager.id, TenantManagementScope.SYSTEM)
+    membership = TenantManagementGroupMembership(make_id(), group.id, target.id)
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, identity.id)
+    resolution = resolve_management_scope(
+        session=_session_for(manager.id, identity),
+        target_tenant_id=target.id,
+        management_groups=[group],
+        memberships=[membership],
+        canonical_root_tenant_id=root.id,
+        actor_eligibilities=[eligibility],
+    )
+    assert resolution.actor_eligible is False
+    assert resolution.elevated_scope is None
+
+
+def test_suspended_or_deleted_participant_fails_closed() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    manager = make_tenant("Manager")
+    target = make_tenant("Target")
+    identity = make_identity()
+    group = _group(manager.id, TenantManagementScope.SYSTEM)
+    membership = TenantManagementGroupMembership(make_id(), group.id, target.id)
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, identity.id)
+
+    manager.lifecycle = TenantLifecycle.SUSPENDED
+    suspended = resolve_management_scope(
+        session=_session_for(manager.id, identity),
+        target_tenant_id=target.id,
+        management_groups=[group],
+        memberships=[membership],
+        canonical_root_tenant_id=root.id,
+        actor_eligibilities=[eligibility],
+        manager_tenant=manager,
+        target_tenant=target,
+    )
+    assert suspended.actor_eligible is False
+
+    manager.lifecycle = TenantLifecycle.ACTIVE
+    target.soft_delete()
+    deleted = resolve_management_scope(
+        session=_session_for(manager.id, identity),
+        target_tenant_id=target.id,
+        management_groups=[group],
+        memberships=[membership],
+        canonical_root_tenant_id=root.id,
+        actor_eligibilities=[eligibility],
+        manager_tenant=manager,
+        target_tenant=target,
+    )
+    assert deleted.actor_eligible is False

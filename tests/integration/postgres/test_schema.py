@@ -47,7 +47,6 @@ def test_sch02_to_sch04_expected_tables_exist(db, table: str) -> None:
         ("principal_group_membership", "no Principal Group membership"),
         ("role_assignment", "Role assignments belong to PR 9"),
         ("tenant_stewardship", "stewardship belongs to later PRs"),
-        ("tenant_management_group", "TenantManagementGroup belongs to later PRs"),
         ("audit_event", "audit schema is not part of PR 6"),
     ],
 )

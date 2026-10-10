@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from mtmf_core.authorization.management import ManagementScopeResolution
 from mtmf_core.domain.action import Action
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
@@ -86,9 +87,12 @@ class AuthorizationRequest:
     """The narrow internal evaluation request.
 
     ``target_tenant_id`` must equal the session/supplied Tenant for
-    ordinary Tenant-bound evaluation; PR 4 deliberately fails closed on
-    any cross-Tenant target. ``subject_scope`` and ``target_scope`` are
-    required exactly when ``dominance_requirement`` is STRICT. A
+    ordinary Tenant-bound evaluation. A cross-Tenant target is accepted
+    only when ``management_scope`` carries a positively resolved
+    TenantManagementGroup coverage and eligibility result; the caller
+    must then supply exactly the management Role as
+    ``context.applicable_roles``. ``subject_scope`` and ``target_scope``
+    are required exactly when ``dominance_requirement`` is STRICT. A
     required-but-unresolved security constraint must be declared through
     ``unsupported_constraints``, which fails closed.
     """
@@ -100,3 +104,4 @@ class AuthorizationRequest:
     subject_scope: SecurityScope | None = None
     target_scope: SecurityScope | None = None
     unsupported_constraints: tuple[UnsupportedConstraint, ...] = ()
+    management_scope: ManagementScopeResolution | None = None

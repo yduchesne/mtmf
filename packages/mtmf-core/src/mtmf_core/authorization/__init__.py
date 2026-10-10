@@ -63,6 +63,11 @@ from mtmf_core.authorization.decision import (
     DenyReason,
 )
 from mtmf_core.authorization.dominance import strictly_dominates
+from mtmf_core.authorization.management import (
+    ManagementScopeCandidate,
+    ManagementScopeResolution,
+    is_extension_action,
+)
 from mtmf_core.authorization.permission_evaluator import (
     PermissionEvaluationError,
     PermissionEvaluator,
@@ -86,8 +91,11 @@ __all__ = [
     "DenyReason",
     "DominanceRequirement",
     "EffectivePolicy",
+    "ManagementScopeCandidate",
+    "ManagementScopeResolution",
     "PermissionEvaluationError",
     "PermissionEvaluator",
     "UnsupportedConstraint",
+    "is_extension_action",
     "strictly_dominates",
 ]

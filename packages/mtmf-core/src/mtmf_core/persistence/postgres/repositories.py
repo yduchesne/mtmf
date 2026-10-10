@@ -34,6 +34,11 @@ from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
+from mtmf_core.domain.management_group import (
+    TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
+    TenantManagementGroupMembership,
+)
 from mtmf_core.domain.memberships import (
     GroupOrgMembership,
     GroupTenantMembership,
@@ -62,6 +67,9 @@ from mtmf_core.persistence.postgres.mapping import (
     role_from_payload,
     role_to_payload,
     tenant_from_payload,
+    tenant_management_group_actor_eligibility_from_payload,
+    tenant_management_group_from_payload,
+    tenant_management_group_membership_from_payload,
 )
 from mtmf_core.persistence.postgres.unit_of_work import PostgresUnitOfWork
 
@@ -80,6 +88,9 @@ __all__ = [
     "PostgresPrincipalRepository",
     "PostgresPrincipalTenantMembershipRepository",
     "PostgresRoleRepository",
+    "PostgresTenantManagementGroupActorEligibilityRepository",
+    "PostgresTenantManagementGroupMembershipRepository",
+    "PostgresTenantManagementGroupRepository",
     "PostgresTenantRepository",
 ]
 
@@ -731,3 +742,163 @@ class PostgresGroupOrgMembershipRepository(_MembershipRepository[GroupOrgMembers
                 "SELECT mtmf.group_org_membership_find_by_organization(%s)", organization_id
             )
         )
+
+
+class PostgresTenantManagementGroupRepository(_Repository):
+    """PostgreSQL :class:`~mtmf_core.persistence.repositories.TenantManagementGroupRepository`."""
+
+    def add(self, group: TenantManagementGroup) -> None:
+        """Stage a new management group (installation/operator privilege)."""
+        added = self._bool(
+            "SELECT mtmf.create_tenant_management_group(%s, %s, %s, %s)",
+            (
+                group.id.value,
+                group.manager_tenant_id.value,
+                group.management_role_urn.value,
+                int(group.scope),
+            ),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                f"TenantManagementGroup: identity {group.id!r} already exists"
+            )
+
+    def get(self, id: DomainId) -> TenantManagementGroup | None:
+        """Return the management group with ``id``, or ``None`` when unknown."""
+        payload = self._payload("SELECT mtmf.tenant_management_group_get(%s)", (id.value,))
+        return None if payload is None else tenant_management_group_from_payload(payload)
+
+    def find_by_manager(self, manager_tenant_id: DomainId) -> tuple[TenantManagementGroup, ...]:
+        """Return every management group managed by one Tenant."""
+        rows = self._uow._execute(
+            "SELECT mtmf.tenant_management_group_find_by_manager(%s)",
+            (manager_tenant_id.value,),
+        ).fetchall()
+        return tuple(tenant_management_group_from_payload(row[0]) for row in rows)
+
+
+class PostgresTenantManagementGroupMembershipRepository(_Repository):
+    """PostgreSQL managed-Tenant membership repository."""
+
+    def add(self, membership: TenantManagementGroupMembership) -> None:
+        """Stage a new managed-Tenant relationship (installation/operator privilege)."""
+        added = self._bool(
+            "SELECT mtmf.add_tenant_management_group_membership(%s, %s, %s)",
+            (membership.id.value, membership.management_group_id.value, membership.tenant_id.value),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                "TenantManagementGroupMembership: relationship "
+                f"({membership.management_group_id!s}, {membership.tenant_id!s}) already exists"
+            )
+
+    def get(
+        self, management_group_id: DomainId, tenant_id: DomainId
+    ) -> TenantManagementGroupMembership | None:
+        """Return the exact relationship, or ``None`` when unknown."""
+        payload = self._payload(
+            "SELECT mtmf.tenant_management_group_membership_get(%s, %s)",
+            (management_group_id.value, tenant_id.value),
+        )
+        return None if payload is None else tenant_management_group_membership_from_payload(payload)
+
+    def _find(self, query: str, value: DomainId) -> tuple[TenantManagementGroupMembership, ...]:
+        rows = self._uow._execute(query, (value.value,)).fetchall()
+        return tuple(tenant_management_group_membership_from_payload(row[0]) for row in rows)
+
+    def find_by_group(
+        self, management_group_id: DomainId
+    ) -> tuple[TenantManagementGroupMembership, ...]:
+        """Return every managed-Tenant relationship of one management group."""
+        return self._find(
+            "SELECT mtmf.tenant_management_group_membership_find_by_group(%s)",
+            management_group_id,
+        )
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[TenantManagementGroupMembership, ...]:
+        """Return every management relationship covering one Tenant."""
+        return self._find(
+            "SELECT mtmf.tenant_management_group_membership_find_by_tenant(%s)", tenant_id
+        )
+
+    def remove(self, management_group_id: DomainId, tenant_id: DomainId) -> None:
+        """Physically remove one relationship, rejecting an unknown pair."""
+        removed = self._bool(
+            "SELECT mtmf.remove_tenant_management_group_membership(%s, %s)",
+            (management_group_id.value, tenant_id.value),
+        )
+        if not removed:
+            raise UnknownPersistenceIdentityError(
+                "TenantManagementGroupMembership: cannot remove unknown relationship "
+                f"({management_group_id!s}, {tenant_id!s})"
+            )
+
+
+class PostgresTenantManagementGroupActorEligibilityRepository(_Repository):
+    """PostgreSQL delegation eligibility repository."""
+
+    def add(self, eligibility: TenantManagementGroupActorEligibility) -> None:
+        """Stage a new eligibility designation (installation/operator privilege)."""
+        added = self._bool(
+            "SELECT mtmf.add_tenant_management_group_actor_eligibility(%s, %s, %s)",
+            (
+                eligibility.id.value,
+                eligibility.management_group_id.value,
+                eligibility.identity_id.value,
+            ),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                "TenantManagementGroupActorEligibility: designation "
+                f"({eligibility.management_group_id!s}, {eligibility.identity_id!s}) already exists"
+            )
+
+    def get(
+        self, management_group_id: DomainId, identity_id: DomainId
+    ) -> TenantManagementGroupActorEligibility | None:
+        """Return the exact designation, or ``None`` when unknown."""
+        payload = self._payload(
+            "SELECT mtmf.tenant_management_group_actor_eligibility_get(%s, %s)",
+            (management_group_id.value, identity_id.value),
+        )
+        return (
+            None
+            if payload is None
+            else tenant_management_group_actor_eligibility_from_payload(payload)
+        )
+
+    def _find(
+        self, query: str, value: DomainId
+    ) -> tuple[TenantManagementGroupActorEligibility, ...]:
+        rows = self._uow._execute(query, (value.value,)).fetchall()
+        return tuple(tenant_management_group_actor_eligibility_from_payload(row[0]) for row in rows)
+
+    def find_by_group(
+        self, management_group_id: DomainId
+    ) -> tuple[TenantManagementGroupActorEligibility, ...]:
+        """Return every designation of one management group."""
+        return self._find(
+            "SELECT mtmf.tenant_management_group_actor_eligibility_find_by_group(%s)",
+            management_group_id,
+        )
+
+    def find_by_identity(
+        self, identity_id: DomainId
+    ) -> tuple[TenantManagementGroupActorEligibility, ...]:
+        """Return every designation of one Identity."""
+        return self._find(
+            "SELECT mtmf.tenant_management_group_actor_eligibility_find_by_identity(%s)",
+            identity_id,
+        )
+
+    def remove(self, management_group_id: DomainId, identity_id: DomainId) -> None:
+        """Physically remove one designation, rejecting an unknown pair."""
+        removed = self._bool(
+            "SELECT mtmf.remove_tenant_management_group_actor_eligibility(%s, %s)",
+            (management_group_id.value, identity_id.value),
+        )
+        if not removed:
+            raise UnknownPersistenceIdentityError(
+                "TenantManagementGroupActorEligibility: cannot remove unknown designation "
+                f"({management_group_id!s}, {identity_id!s})"
+            )

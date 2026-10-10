@@ -132,7 +132,7 @@ def test_slice_6_tenant_isolation() -> None:
     )
     decision = Authorizer().authorize(request)
     assert not decision.allowed
-    assert decision.reason is DenyReason.TENANT_MISMATCH
+    assert decision.reason is DenyReason.NO_MANAGEMENT_SCOPE
 
 
 def test_slice_7_strict_dominance_allow() -> None:

@@ -136,7 +136,8 @@ def test_a04_session_tenant_differs_from_target_tenant_is_deny() -> None:
     )
     decision = Authorizer().authorize(request)
     assert not decision.allowed
-    assert decision.reason is DenyReason.TENANT_MISMATCH
+    # A cross-Tenant target without a resolved management scope is denied.
+    assert decision.reason is DenyReason.NO_MANAGEMENT_SCOPE
 
 
 def test_a05_session_tenant_differs_from_supplied_tenant_is_deny() -> None:
@@ -341,7 +342,8 @@ def test_a19_cross_tenant_context_cannot_authorize() -> None:
     )
     decision = Authorizer().authorize(request)
     assert not decision.allowed
-    assert decision.reason is DenyReason.TENANT_MISMATCH
+    # Ordinary (non-management) context can never authorize cross-Tenant.
+    assert decision.reason is DenyReason.NO_MANAGEMENT_SCOPE
 
 
 def test_a20_unsupported_security_constraint_is_deny() -> None:
@@ -488,7 +490,7 @@ def test_resolver_is_not_called_for_target_tenant_mismatch() -> None:
     )
     decision = Authorizer(resolver).authorize(request)
     assert not decision.allowed
-    assert decision.reason is DenyReason.TENANT_MISMATCH
+    assert decision.reason is DenyReason.NO_MANAGEMENT_SCOPE
     assert resolver.resolved == []
     assert policy.evaluated == []
 
@@ -569,4 +571,5 @@ def test_context_and_request_carry_only_narrow_supplied_facts() -> None:
         "subject_scope",
         "target_scope",
         "unsupported_constraints",
+        "management_scope",
     }

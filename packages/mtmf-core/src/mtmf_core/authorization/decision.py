@@ -46,6 +46,7 @@ class DenyReason(Enum):
     MATCHED_DENY = "matched-deny"
     INVALID_CONTEXT = "invalid-context"
     TENANT_MISMATCH = "tenant-mismatch"
+    NO_MANAGEMENT_SCOPE = "no-management-scope"
     INSUFFICIENT_DOMINANCE = "insufficient-dominance"
     UNSUPPORTED_CONSTRAINT = "unsupported-constraint"
 

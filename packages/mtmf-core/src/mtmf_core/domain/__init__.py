@@ -34,10 +34,14 @@ from mtmf_core.domain.lifecycle import (
     TenantLifecycle,
 )
 from mtmf_core.domain.management_group import (
+    ROOT_MANAGEMENT_ROLE_URN,
+    SYSTEM_MANAGEMENT_ROLE_URN,
     TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
     TenantManagementGroupMembership,
     TenantManagementScope,
     validate_tenant_management_group,
+    validate_tenant_management_group_actor_eligibility,
     validate_tenant_management_group_membership,
 )
 from mtmf_core.domain.memberships import (
@@ -77,6 +81,8 @@ from mtmf_core.domain.urn import Urn
 __all__ = [
     "BASELINE_ACTIONS",
     "NO_MATCH",
+    "ROOT_MANAGEMENT_ROLE_URN",
+    "SYSTEM_MANAGEMENT_ROLE_URN",
     "Action",
     "ActionUrn",
     "ActiveStatus",
@@ -122,6 +128,7 @@ __all__ = [
     "TenantLifecycle",
     "TenantLifecycleError",
     "TenantManagementGroup",
+    "TenantManagementGroupActorEligibility",
     "TenantManagementGroupMembership",
     "TenantManagementScope",
     "TenantStewardshipDesignation",
@@ -141,5 +148,6 @@ __all__ = [
     "validate_stewardship_designation",
     "validate_tenant_lifecycle_transition",
     "validate_tenant_management_group",
+    "validate_tenant_management_group_actor_eligibility",
     "validate_tenant_management_group_membership",
 ]

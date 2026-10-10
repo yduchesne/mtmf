@@ -39,6 +39,11 @@ from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
 from mtmf_core.domain.json_types import JsonObject, JsonValue
+from mtmf_core.domain.management_group import (
+    TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
+    TenantManagementGroupMembership,
+)
 from mtmf_core.domain.memberships import (
     GroupOrgMembership,
     GroupTenantMembership,
@@ -73,6 +78,9 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    TenantManagementGroupActorEligibilityRepository,
+    TenantManagementGroupMembershipRepository,
+    TenantManagementGroupRepository,
     TenantRepository,
 )
 from mtmf_core.persistence.unit_of_work import UnitOfWork
@@ -738,6 +746,201 @@ class _InMemoryGroupRoleAssignmentRepository(
         )
 
 
+class _InMemoryLogicalRecordRepository[RecordT]:
+    """Shared add/find/remove for surrogate-id records with logical uniqueness.
+
+    Unlike the Role-assignment helper this base deliberately defines no
+    ``get(id)``/``remove(id)`` public methods, so concrete repositories are
+    free to address records by their immutable logical tuple.
+    """
+
+    _collection: ClassVar[str]
+
+    def __init__(self, uow: _InMemoryUnitOfWork) -> None:
+        self._uow = uow
+
+    def _key(self, record: RecordT) -> object:
+        return record.id  # type: ignore[attr-defined]
+
+    def _logical_tuple(self, record: RecordT) -> object:
+        raise NotImplementedError
+
+    def _visible_committed(self) -> tuple[RecordT, ...]:
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        return tuple(
+            cast(RecordT, value)
+            for key, value in self._uow._committed_state.items(self._collection)
+            if key not in deletions
+        )
+
+    def add(self, record: RecordT) -> None:
+        """Stage a new record, rejecting a duplicate identity or logical tuple."""
+        self._uow._require_active(f"{type(self).__name__}.add")
+        key = self._key(record)
+        staged = self._uow._staged_for(self._collection)
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        committed_present = key not in deletions and self._uow._committed_state.has(
+            self._collection, key
+        )
+        if key in staged or committed_present:
+            raise DuplicatePersistenceIdentityError(
+                f"{self._collection}: identity {key!r} already exists"
+            )
+        logical = self._logical_tuple(record)
+        for existing in (*self._visible_committed(), *staged.values()):
+            if self._logical_tuple(cast(RecordT, existing)) == logical:
+                raise DuplicatePersistenceIdentityError(
+                    f"{self._collection}: logical relationship {logical!r} already exists"
+                )
+        staged[key] = record
+
+    def _find(self, predicate: Callable[[RecordT], bool]) -> tuple[RecordT, ...]:
+        """Return every visible record matching ``predicate``."""
+        self._uow._require_active(f"{type(self).__name__} query")
+        staged = self._uow._staged_for(self._collection)
+        matches = [item for item in self._visible_committed() if predicate(item)]
+        matches.extend(
+            cast(RecordT, value) for value in staged.values() if predicate(cast(RecordT, value))
+        )
+        return tuple(matches)
+
+    def _remove_by_id(self, id: DomainId) -> None:
+        """Physically remove one record by surrogate identity."""
+        self._uow._require_active(f"{type(self).__name__}.remove")
+        staged = self._uow._staged_for(self._collection)
+        if id in staged:
+            del staged[id]
+            return
+        deletions = self._uow._staged_deletions_for(self._collection)
+        if self._uow._committed_state.has(self._collection, id) and id not in deletions:
+            deletions.add(id)
+            return
+        raise UnknownPersistenceIdentityError(
+            f"{self._collection}: cannot remove unknown identity {id!r}"
+        )
+
+
+class _InMemoryTenantManagementGroupRepository(_InMemoryEntityRepository[TenantManagementGroup]):
+    """In-memory TenantManagementGroup repository."""
+
+    _collection: ClassVar[str] = "TenantManagementGroup"
+
+    def get(self, id: DomainId) -> TenantManagementGroup | None:
+        """Return the management group with ``id``, if any."""
+        return self._get(id)
+
+    def _key(self, entity: TenantManagementGroup) -> object:
+        return entity.id
+
+    def _clone(self, entity: TenantManagementGroup) -> TenantManagementGroup:
+        return replace(entity)
+
+    def find_by_manager(self, manager_tenant_id: DomainId) -> tuple[TenantManagementGroup, ...]:
+        """Return every management group managed by one Tenant."""
+        self._require_active()
+        staged = self._uow._staged_for(self._collection)
+        committed = [
+            cast(TenantManagementGroup, value)
+            for _, value in self._uow._committed_state.items(self._collection)
+        ]
+        staged_values = [cast(TenantManagementGroup, value) for value in staged.values()]
+        return tuple(
+            clone
+            for clone in (self._clone(item) for item in (*committed, *staged_values))
+            if clone.manager_tenant_id == manager_tenant_id
+        )
+
+
+class _InMemoryTenantManagementGroupMembershipRepository(
+    _InMemoryLogicalRecordRepository[TenantManagementGroupMembership]
+):
+    """In-memory explicit managed-Tenant membership repository."""
+
+    _collection: ClassVar[str] = "TenantManagementGroupMembership"
+
+    def _logical_tuple(self, membership: TenantManagementGroupMembership) -> object:
+        return (membership.management_group_id, membership.tenant_id)
+
+    def get(
+        self, management_group_id: DomainId, tenant_id: DomainId
+    ) -> TenantManagementGroupMembership | None:
+        """Return the exact membership relationship, if any."""
+        found = self._find(
+            lambda membership: (
+                membership.management_group_id == management_group_id
+                and membership.tenant_id == tenant_id
+            )
+        )
+        return found[0] if found else None
+
+    def find_by_group(
+        self, management_group_id: DomainId
+    ) -> tuple[TenantManagementGroupMembership, ...]:
+        """Return every managed-Tenant relationship of one management group."""
+        return self._find(lambda membership: membership.management_group_id == management_group_id)
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[TenantManagementGroupMembership, ...]:
+        """Return every management relationship covering one Tenant."""
+        return self._find(lambda membership: membership.tenant_id == tenant_id)
+
+    def remove(self, management_group_id: DomainId, tenant_id: DomainId) -> None:
+        """Physically remove one membership, rejecting an unknown pair."""
+        found = self.get(management_group_id, tenant_id)
+        if found is None:
+            raise UnknownPersistenceIdentityError(
+                f"{self._collection}: cannot remove unknown relationship "
+                f"({management_group_id!s}, {tenant_id!s})"
+            )
+        self._remove_by_id(found.id)
+
+
+class _InMemoryTenantManagementGroupActorEligibilityRepository(
+    _InMemoryLogicalRecordRepository[TenantManagementGroupActorEligibility]
+):
+    """In-memory explicit delegation eligibility repository."""
+
+    _collection: ClassVar[str] = "TenantManagementGroupActorEligibility"
+
+    def _logical_tuple(self, eligibility: TenantManagementGroupActorEligibility) -> object:
+        return (eligibility.management_group_id, eligibility.identity_id)
+
+    def get(
+        self, management_group_id: DomainId, identity_id: DomainId
+    ) -> TenantManagementGroupActorEligibility | None:
+        """Return the exact eligibility designation, if any."""
+        found = self._find(
+            lambda eligibility: (
+                eligibility.management_group_id == management_group_id
+                and eligibility.identity_id == identity_id
+            )
+        )
+        return found[0] if found else None
+
+    def find_by_group(
+        self, management_group_id: DomainId
+    ) -> tuple[TenantManagementGroupActorEligibility, ...]:
+        """Return every designation of one management group."""
+        return self._find(
+            lambda eligibility: eligibility.management_group_id == management_group_id
+        )
+
+    def find_by_identity(
+        self, identity_id: DomainId
+    ) -> tuple[TenantManagementGroupActorEligibility, ...]:
+        """Return every designation of one Identity."""
+        return self._find(lambda eligibility: eligibility.identity_id == identity_id)
+
+    def remove(self, management_group_id: DomainId, identity_id: DomainId) -> None:
+        """Physically remove one designation, rejecting an unknown pair."""
+        found = self.get(management_group_id, identity_id)
+        if found is None:
+            raise UnknownPersistenceIdentityError(
+                f"{self._collection}: cannot remove unknown designation "
+                f"({management_group_id!s}, {identity_id!s})"
+            )
+        self._remove_by_id(found.id)
+
+
 class InMemoryMtmfSpi:
     """Deterministic in-memory :class:`~mtmf_core.persistence.spi.MtmfSpi`.
 
@@ -844,3 +1047,21 @@ class InMemoryMtmfSpi:
     ) -> GroupOrgMembershipRepository:
         """Create a Group-Organization membership repository bound to ``uow``."""
         return _InMemoryGroupOrgMembershipRepository(self._require_own_uow(uow))
+
+    def create_tenant_management_group_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupRepository:
+        """Create a TenantManagementGroup repository bound to ``uow``."""
+        return _InMemoryTenantManagementGroupRepository(self._require_own_uow(uow))
+
+    def create_tenant_management_group_membership_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupMembershipRepository:
+        """Create a managed-Tenant membership repository bound to ``uow``."""
+        return _InMemoryTenantManagementGroupMembershipRepository(self._require_own_uow(uow))
+
+    def create_tenant_management_group_actor_eligibility_repository(
+        self, uow: UnitOfWork
+    ) -> TenantManagementGroupActorEligibilityRepository:
+        """Create an eligibility-designation repository bound to ``uow``."""
+        return _InMemoryTenantManagementGroupActorEligibilityRepository(self._require_own_uow(uow))

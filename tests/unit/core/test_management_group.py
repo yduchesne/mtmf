@@ -9,24 +9,38 @@ structural management relationship must never be treated as a grant.
 from __future__ import annotations
 
 import pytest
-from helpers import make_id, make_role_urn, make_tenant
+from helpers import make_id, make_identity, make_role_urn, make_tenant
 
 from mtmf_core import (
+    ROOT_MANAGEMENT_ROLE_URN,
+    SYSTEM_MANAGEMENT_ROLE_URN,
     DomainInvariantError,
+    IdentityTenantMembership,
     ImmutabilityError,
     ManagementGroupInvariantError,
+    RoleUrn,
     SecurityScope,
     TenantManagementGroup,
+    TenantManagementGroupActorEligibility,
     TenantManagementGroupMembership,
     TenantManagementScope,
     validate_tenant_management_group,
+    validate_tenant_management_group_actor_eligibility,
     validate_tenant_management_group_membership,
 )
 
 
 def _root_group(manager_id, *, scope=TenantManagementScope.ROOT, role_urn=None):
+    approved = (
+        ROOT_MANAGEMENT_ROLE_URN
+        if scope is TenantManagementScope.ROOT
+        else SYSTEM_MANAGEMENT_ROLE_URN
+    )
     return TenantManagementGroup(
-        make_id(), manager_id, role_urn if role_urn is not None else make_role_urn(), scope
+        make_id(),
+        manager_id,
+        role_urn if role_urn is not None else RoleUrn(approved),
+        scope,
     )
 
 
@@ -133,7 +147,42 @@ def test_immutable_group_fields_rejected() -> None:
     with pytest.raises(ImmutabilityError):
         group.scope = TenantManagementScope.SYSTEM
     with pytest.raises(ImmutabilityError):
-        group.management_role_urn = make_role_urn()
+        group.management_role_urn = RoleUrn(SYSTEM_MANAGEMENT_ROLE_URN)
+
+
+def test_group_rejects_non_approved_system_role() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    manager = make_tenant("Manager", scope=SecurityScope.TENANT)
+    group = _root_group(manager.id, scope=TenantManagementScope.SYSTEM, role_urn=make_role_urn())
+    with pytest.raises(ManagementGroupInvariantError):
+        validate_tenant_management_group(
+            group, manager_tenant=manager, canonical_root_tenant_id=root.id
+        )
+
+
+def test_group_rejects_tenant_defined_role() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    manager = make_tenant("Manager", scope=SecurityScope.TENANT)
+    group = _root_group(
+        manager.id,
+        scope=TenantManagementScope.SYSTEM,
+        role_urn=make_role_urn(tenant_id=manager.id),
+    )
+    with pytest.raises(ManagementGroupInvariantError):
+        validate_tenant_management_group(
+            group, manager_tenant=manager, canonical_root_tenant_id=root.id
+        )
+
+
+def test_group_rejects_system_role_for_root_scope() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    group = _root_group(
+        root.id, scope=TenantManagementScope.ROOT, role_urn=RoleUrn(SYSTEM_MANAGEMENT_ROLE_URN)
+    )
+    with pytest.raises(ManagementGroupInvariantError):
+        validate_tenant_management_group(
+            group, manager_tenant=root, canonical_root_tenant_id=root.id
+        )
 
 
 def test_immutable_membership_fields_rejected() -> None:
@@ -247,4 +296,64 @@ def test_membership_rejects_soft_deleted_target() -> None:
             management_group=group,
             tenant=target,
             canonical_root_tenant_id=root.id,
+        )
+
+
+# --- D01 eligibility designations --------------------------------------------
+
+
+def test_eligibility_designation_accepted_for_manager_member() -> None:
+    manager = make_tenant("Manager", scope=SecurityScope.TENANT)
+    group = _root_group(manager.id, scope=TenantManagementScope.SYSTEM)
+    identity = make_identity()
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, identity.id)
+    validate_tenant_management_group_actor_eligibility(
+        eligibility,
+        management_group=group,
+        identity=identity,
+        identity_tenant_memberships=(IdentityTenantMembership(identity.id, manager.id),),
+    )
+
+
+def test_eligibility_rejected_for_root_group() -> None:
+    root = make_tenant("Root", scope=SecurityScope.ROOT)
+    group = _root_group(root.id)
+    identity = make_identity()
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, identity.id)
+    with pytest.raises(ManagementGroupInvariantError):
+        validate_tenant_management_group_actor_eligibility(
+            eligibility,
+            management_group=group,
+            identity=identity,
+            identity_tenant_memberships=(IdentityTenantMembership(identity.id, root.id),),
+        )
+
+
+def test_eligibility_requires_manager_tenant_membership() -> None:
+    manager = make_tenant("Manager", scope=SecurityScope.TENANT)
+    other = make_tenant("Other", scope=SecurityScope.TENANT)
+    group = _root_group(manager.id, scope=TenantManagementScope.SYSTEM)
+    identity = make_identity()
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, identity.id)
+    with pytest.raises(ManagementGroupInvariantError):
+        validate_tenant_management_group_actor_eligibility(
+            eligibility,
+            management_group=group,
+            identity=identity,
+            identity_tenant_memberships=(IdentityTenantMembership(identity.id, other.id),),
+        )
+
+
+def test_eligibility_rejects_soft_deleted_identity() -> None:
+    manager = make_tenant("Manager", scope=SecurityScope.TENANT)
+    group = _root_group(manager.id, scope=TenantManagementScope.SYSTEM)
+    identity = make_identity()
+    identity.soft_delete()
+    eligibility = TenantManagementGroupActorEligibility(make_id(), group.id, identity.id)
+    with pytest.raises(ManagementGroupInvariantError):
+        validate_tenant_management_group_actor_eligibility(
+            eligibility,
+            management_group=group,
+            identity=identity,
+            identity_tenant_memberships=(IdentityTenantMembership(identity.id, manager.id),),
         )

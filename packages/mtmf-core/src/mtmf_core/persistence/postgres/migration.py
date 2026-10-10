@@ -42,7 +42,7 @@ from mtmf_core.persistence.postgres.roles import (
     verify_runtime_privileges,
 )
 
-HEAD_REVISION = "0008"
+HEAD_REVISION = "0009"
 
 #: The ``NOLOGIN`` role that owns every MTMF schema object. It is only
 #: ever assumed through a controlled ``SET ROLE`` from a deployment login.

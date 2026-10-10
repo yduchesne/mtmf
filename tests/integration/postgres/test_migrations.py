@@ -136,12 +136,31 @@ EXPECTED_FUNCTION_NAMES = {
     "group_role_assignment_get",
     "group_role_assignment_find_by_tenant_and_group",
     "group_role_assignment_remove",
+    "install_management_roles",
+    "guard_tenant_management_group",
+    "guard_tenant_management_group_membership",
+    "guard_tenant_management_group_actor_eligibility",
+    "create_root_management_group",
+    "initialize_root_tenant_management_group",
+    "create_tenant_management_group",
+    "add_tenant_management_group_membership",
+    "remove_tenant_management_group_membership",
+    "add_tenant_management_group_actor_eligibility",
+    "remove_tenant_management_group_actor_eligibility",
+    "tenant_management_group_get",
+    "tenant_management_group_find_by_manager",
+    "tenant_management_group_membership_get",
+    "tenant_management_group_membership_find_by_group",
+    "tenant_management_group_membership_find_by_tenant",
+    "tenant_management_group_actor_eligibility_get",
+    "tenant_management_group_actor_eligibility_find_by_group",
+    "tenant_management_group_actor_eligibility_find_by_identity",
+    "root_registry_get",
 }
 
 _FORBIDDEN_TABLES = (
     "role_assignment",
     "tenant_stewardship",
-    "tenant_management_group",
     "principal_org_membership",
     "principal_group_membership",
     "generic_membership",
@@ -168,7 +187,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0008"
+    assert revision == "0009"
     assert revision == manager.head_revision
 
 

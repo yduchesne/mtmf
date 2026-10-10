@@ -51,6 +51,9 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    TenantManagementGroupActorEligibilityRepository,
+    TenantManagementGroupMembershipRepository,
+    TenantManagementGroupRepository,
     TenantRepository,
 )
 from mtmf_core.persistence.spi import MtmfSpi
@@ -84,6 +87,9 @@ __all__ = [
     "PrincipalRepository",
     "PrincipalTenantMembershipRepository",
     "RoleRepository",
+    "TenantManagementGroupActorEligibilityRepository",
+    "TenantManagementGroupMembershipRepository",
+    "TenantManagementGroupRepository",
     "TenantRepository",
     "UnitOfWork",
     "UnitOfWorkError",

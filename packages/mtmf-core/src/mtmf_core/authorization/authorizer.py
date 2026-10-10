@@ -39,6 +39,7 @@ from __future__ import annotations
 from mtmf_core.authorization.context import AuthorizationRequest, DominanceRequirement
 from mtmf_core.authorization.decision import AuthorizationDecision, DenyReason
 from mtmf_core.authorization.dominance import strictly_dominates
+from mtmf_core.authorization.management import is_extension_action
 from mtmf_core.authorization.policy_resolver import (
     AuthorizationPolicyResolver,
     DefaultAuthorizationPolicyResolver,
@@ -117,12 +118,15 @@ class Authorizer:
             # context produces a semantic DENY, never an ALLOW.
             return AuthorizationDecision.deny(DenyReason.INVALID_CONTEXT)
 
-        # Tenant isolation: no Role/policy from another Tenant may be
-        # introduced. A target outside the session/supplied Tenant fails
-        # closed; cross-Tenant management belongs to later delegation
-        # work and is never enabled here.
-        if request.target_tenant_id != context.tenant.id:
-            return AuthorizationDecision.deny(DenyReason.TENANT_MISMATCH)
+        # Tenant isolation: ordinary evaluation is same-Tenant. A
+        # cross-Tenant target is considered only through an explicitly
+        # resolved TenantManagementGroup scope (PR 11), and only when the
+        # applicable policy is exactly the approved management Role; no
+        # ordinary manager-Tenant Role may be unioned in.
+        if request.target_tenant_id != context.tenant.id and not _management_scope_is_valid(
+            request
+        ):
+            return AuthorizationDecision.deny(DenyReason.NO_MANAGEMENT_SCOPE)
 
         policy = self._policy_resolver.resolve(context)
         decision = policy.evaluate(request.action)
@@ -143,3 +147,31 @@ class Authorizer:
                 return AuthorizationDecision.deny(DenyReason.INSUFFICIENT_DOMINANCE)
 
         return decision
+
+
+def _management_scope_is_valid(request: AuthorizationRequest) -> bool:
+    """Validate a trusted cross-Tenant TenantManagementGroup delegation.
+
+    A delegated cross-Tenant evaluation is accepted only when:
+
+    - the request carries a resolved management scope whose
+      ``elevated_scope`` is established (positive coverage *and* explicit
+      actor eligibility);
+    - the action is not an application extension mutation, which a
+      SYSTEM-defined management Role must never authorize; and
+    - ``context.applicable_roles`` is exactly the resolved management Role,
+      so no ordinary manager-Tenant Role policy is silently unioned in.
+
+    The management Role still has to produce a matching ALLOW through the
+    normal policy evaluation; this check only gates the cross-Tenant
+    boundary.
+    """
+    resolution = request.management_scope
+    if resolution is None or resolution.candidate is None:
+        return False
+    if resolution.elevated_scope is None:
+        return False
+    if is_extension_action(request.action):
+        return False
+    expected = resolution.candidate.management_role_urn.value
+    return {role.urn.value for role in request.context.applicable_roles} == {expected}

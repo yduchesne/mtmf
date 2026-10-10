@@ -57,6 +57,7 @@ def test_deny_reason_categories_are_coarse_and_internal() -> None:
         "MATCHED_DENY",
         "INVALID_CONTEXT",
         "TENANT_MISMATCH",
+        "NO_MANAGEMENT_SCOPE",
         "INSUFFICIENT_DOMINANCE",
         "UNSUPPORTED_CONSTRAINT",
     }

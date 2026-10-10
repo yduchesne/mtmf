@@ -1,4 +1,4 @@
-"""Structural TenantManagementGroup domain model (PR 11, non-gated subset).
+"""Typed TenantManagementGroup domain model (PR 11).
 
 A :class:`TenantManagementGroup` (TMG) is a delegated cross-Tenant
 administration relationship. It is deliberately **not** an ordinary IAM
@@ -12,20 +12,23 @@ Tenants created later, and never materializes managed-Tenant membership
 rows. A SYSTEM management group covers only explicitly associated Tenants
 through :class:`TenantManagementGroupMembership` rows.
 
-This module captures only the *structural* facts that are already settled
-by the authoritative documents. It deliberately does **not** encode the
-manager-side actor eligibility rule, whose authoritative status is
-``UNRESOLVED`` (:mod:`docs/SECURITY_MODEL.md` section 20.2,
-:mod:`docs/DOMAIN_MODEL.md` section 15, and the PR 11 decision gate). The
-structural validators here validate identity/scope/manager consistency
-only. They do not authenticate a caller, evaluate a Role, elevate a
-security scope, grant a Permission, or authorize an Action, and a valid
+Manager-side eligibility is settled (Gate D, PR 11): delegated authority
+requires an explicit Identity-level :class:`TenantManagementGroupActorEligibility`
+designation scoped to the management group and its manager Tenant.
+Ordinary membership, Tenant Administrator status, stewardship, or IAM
+Group membership never substitutes for it, and the ROOT group instead
+follows the canonical root Identity.
+
+This module validates structural consistency only. It does not
+authenticate a caller, evaluate a management Role permission, elevate a
+security scope, or authorize an Action, and a valid
 :class:`TenantManagementGroup` MUST NOT be treated as a grant of
 authority.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import ClassVar
@@ -36,17 +39,32 @@ from mtmf_core.domain.errors import (
 )
 from mtmf_core.domain.iam_urn import RoleUrn
 from mtmf_core.domain.identity import DomainId
+from mtmf_core.domain.identity_entity import Identity
+from mtmf_core.domain.memberships import IdentityTenantMembership
 from mtmf_core.domain.mixins import ImmutableFieldGuard
 from mtmf_core.domain.scope import SecurityScope
 from mtmf_core.domain.tenant import Tenant
 
 __all__ = [
+    "ROOT_MANAGEMENT_ROLE_URN",
+    "SYSTEM_MANAGEMENT_ROLE_URN",
     "TenantManagementGroup",
+    "TenantManagementGroupActorEligibility",
     "TenantManagementGroupMembership",
     "TenantManagementScope",
     "validate_tenant_management_group",
+    "validate_tenant_management_group_actor_eligibility",
     "validate_tenant_management_group_membership",
 ]
+
+#: The single approved SYSTEM-defined management Role for the ROOT group.
+#: Delegated management Roles are installation constants: a TENANT-defined
+#: Role, or any other SYSTEM Role, must never provide cross-Tenant
+#: management authority.
+ROOT_MANAGEMENT_ROLE_URN = "urn:mtmf:iam:roles:system:root-tenant-management"
+
+#: The single approved SYSTEM-defined management Role for SYSTEM groups.
+SYSTEM_MANAGEMENT_ROLE_URN = "urn:mtmf:iam:roles:system:tenant-management"
 
 
 class TenantManagementScope(IntEnum):
@@ -109,8 +127,7 @@ class TenantManagementGroupMembership(ImmutableFieldGuard):
     membership row is rejected structurally.
 
     The row is a coverage fact only. It never grants an Action; the
-    management Role must independently authorize each exact Action and the
-    unresolved manager-actor eligibility rule must be satisfied.
+    management Role must independently authorize each exact Action.
     """
 
     _immutable_fields: ClassVar[frozenset[str]] = frozenset(
@@ -122,6 +139,31 @@ class TenantManagementGroupMembership(ImmutableFieldGuard):
     tenant_id: DomainId
 
 
+@dataclass(slots=True)
+class TenantManagementGroupActorEligibility(ImmutableFieldGuard):
+    """An explicit Identity-level delegation eligibility designation (D01).
+
+    :attr:`id` is the immutable designation identity;
+    :attr:`management_group_id` and :attr:`identity_id` are the immutable
+    relationship endpoints. Ordinary manager-Tenant membership, Tenant
+    Administrator status, stewardship, or IAM Group membership never
+    substitutes for this explicit designation.
+
+    The designation is scoped to one management group and its manager
+    Tenant. It is never created for the ROOT management group: ROOT
+    authority follows the canonical root Identity through root recovery and
+    has no independent eligibility list (D03).
+    """
+
+    _immutable_fields: ClassVar[frozenset[str]] = frozenset(
+        {"id", "management_group_id", "identity_id"}
+    )
+
+    id: DomainId
+    management_group_id: DomainId
+    identity_id: DomainId
+
+
 def validate_tenant_management_group(
     group: TenantManagementGroup,
     *,
@@ -130,19 +172,19 @@ def validate_tenant_management_group(
 ) -> None:
     """Validate the settled structural consistency of a management group.
 
-    Enforces the manager/scope invariants of the security model:
+    Enforces the manager/scope/Role invariants of the security model:
 
     - the manager Tenant must be the supplied ``manager_tenant``;
+    - the management Role must be the approved SYSTEM-defined Role for the
+      group's scope (D05), so a TENANT-defined Role can never be used;
     - a ``ROOT`` group must be managed by the canonical root Tenant (ROOT
       scope), advancing no other manager;
     - a ``SYSTEM`` group must be managed by a non-root ordinary (TENANT
       scope) Tenant;
     - the manager Tenant must not be soft-deleted.
 
-    The management Role's namespace/ownership validity is deliberately not
-    settled here: the approved management-Role constraints remain part of
-    the PR 11 decision gate and MUST NOT be inferred. This function is
-    structural validation only and MUST NOT be used as authorization.
+    This function is structural validation only and MUST NOT be used as
+    authorization.
 
     :raises ManagementGroupInvariantError: on any structural mismatch.
     """
@@ -153,6 +195,16 @@ def validate_tenant_management_group(
     if manager_tenant.deleted:
         raise ManagementGroupInvariantError(
             "a TenantManagementGroup manager Tenant must not be soft-deleted"
+        )
+    expected_role = (
+        ROOT_MANAGEMENT_ROLE_URN
+        if group.scope is TenantManagementScope.ROOT
+        else SYSTEM_MANAGEMENT_ROLE_URN
+    )
+    if group.management_role_urn.value != expected_role:
+        raise ManagementGroupInvariantError(
+            "a TenantManagementGroup management Role must be the approved "
+            f"SYSTEM-defined Role {expected_role!r} for its scope"
         )
     if group.scope is TenantManagementScope.ROOT:
         if manager_tenant.id != canonical_root_tenant_id:
@@ -189,9 +241,7 @@ def validate_tenant_management_group_membership(
     - only a ``SYSTEM`` management group may own explicit managed-Tenant
       rows (ROOT coverage is implicit and universal);
     - the canonical root Tenant must never be an explicitly managed target;
-    - a management group must not explicitly manage its own manager Tenant
-      (the restrictive default while the delegation-constraint decision
-      remains open);
+    - a management group must not explicitly manage its own manager Tenant;
     - the managed Tenant must not be soft-deleted.
 
     This is structural validation only and MUST NOT be used as
@@ -222,3 +272,49 @@ def validate_tenant_management_group_membership(
         )
     if tenant.deleted:
         raise ManagementGroupInvariantError("an explicitly managed Tenant must not be soft-deleted")
+
+
+def validate_tenant_management_group_actor_eligibility(
+    eligibility: TenantManagementGroupActorEligibility,
+    *,
+    management_group: TenantManagementGroup,
+    identity: Identity,
+    identity_tenant_memberships: Iterable[IdentityTenantMembership],
+) -> None:
+    """Validate one explicit delegation eligibility designation (D01/D04).
+
+    Enforces that the designation references the supplied SYSTEM management
+    group and Identity, that the Identity is not soft-deleted, and that the
+    Identity has an explicit membership in the management group's manager
+    Tenant. A ROOT group must not carry eligibility rows: ROOT authority
+    follows the canonical root Identity only.
+
+    This is structural validation only and MUST NOT be used as
+    authorization: it establishes that a designation is well-formed, not
+    that the acting session was authenticated.
+
+    :raises ManagementGroupInvariantError: on any structural mismatch.
+    """
+    if eligibility.management_group_id != management_group.id:
+        raise ManagementGroupInvariantError(
+            "eligibility designation does not correspond to the supplied management group"
+        )
+    if management_group.scope is not TenantManagementScope.SYSTEM:
+        raise ManagementGroupInvariantError(
+            "a ROOT TenantManagementGroup must not carry explicit eligibility designations; "
+            "ROOT authority follows the canonical root Identity"
+        )
+    if eligibility.identity_id != identity.id:
+        raise ManagementGroupInvariantError(
+            "eligibility designation does not correspond to the supplied Identity"
+        )
+    if identity.deleted:
+        raise ManagementGroupInvariantError("an eligible Identity must not be soft-deleted")
+    if not any(
+        membership.identity_id == identity.id
+        and membership.tenant_id == management_group.manager_tenant_id
+        for membership in identity_tenant_memberships
+    ):
+        raise ManagementGroupInvariantError(
+            "an eligible Identity must have an explicit membership in the manager Tenant"
+        )

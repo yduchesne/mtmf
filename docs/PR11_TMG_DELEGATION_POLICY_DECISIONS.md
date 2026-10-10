@@ -1,11 +1,6 @@
 # PR 11 — TenantManagementGroup delegation policy decisions (Gate D)
 
-**Status: APPROVED (Gate D security semantics).** The reviewer approved the
-D01-D09 decisions below. Delegated authorization is still **not enabled**:
-one follow-on implementation decision remains open and is recorded at the
-end of this document (the canonical management Role URNs and their
-management Permission allocations). No coding agent may invent additional
-Role definitions or Permission allocations.
+**Status: APPROVED (Gate D security semantics) and management Role policy approved.** The reviewer approved D01-D09 and Option 1 of STOP `PR11-STOP-01`. PR 11 is implemented on `dev/tenant-mgmt-group`: the structural schema, the two approved SYSTEM management Roles, explicit managed-Tenant and Identity eligibility relationships, atomic ROOT bootstrap integration, fail-closed delegation, and Authorizer integration. Delegated authorization requires an eligible actor, a covered target, and a matching management-Role Permission; nothing else elevates.
 
 Authoritative sources:
 
@@ -98,64 +93,44 @@ delegation. Externally callable end-user identity propagation remains PR 14
 scope. No actor UUID session variables, request headers, or other
 unverified trust substitutes are introduced.
 
-## Implementation status of the structural subset
+## Implementation status
 
-Implemented and unit-verified before approval (preserved):
+Implemented:
 
-- typed structural `TenantManagementGroup` and
-  `TenantManagementGroupMembership` domain values with pure validators
+- typed `TenantManagementGroup`, `TenantManagementGroupMembership`, and
+  `TenantManagementGroupActorEligibility` domain values with pure validators
   (`packages/mtmf-core/src/mtmf_core/domain/management_group.py`);
-- fail-closed structural contextual resolver
-  (`packages/mtmf-core/src/mtmf_core/application/management_scope.py`),
-  returning a non-elevating candidate and always reporting
-  `actor_eligible=False`;
-- structural unit tests.
+- the fail-closed eligibility-aware contextual resolver
+  (`resolve_management_scope`) and application-layer
+  `ManagementAuthorizationResolver`;
+- the Authorizer cross-Tenant delegation path (`NO_MANAGEMENT_SCOPE`,
+  management-Role-only policy, extension-mutation denial);
+- additive Alembic revision `0009` / packaged `sql/v009`: structural
+  tables, database guards, the two approved management Roles, atomic ROOT
+  bootstrap integration, installation-only mutation functions, and
+  narrowly reviewed runtime reads;
+- SPI/UnitOfWork repositories (provider-neutral, in-memory, PostgreSQL);
+- unit and real-PostgreSQL integration, concurrency, and privilege tests.
 
-Still to implement after the open Role decision is resolved: Identity
-eligibility designations, PostgreSQL schema/stored functions, ROOT
-bootstrap integration, SPI/UnitOfWork repositories, Authorizer/policy
-integration, lifecycle and revocation semantics.
+## APPROVED management Role catalog
 
-## OPEN DECISION (blocks schema work) — management Role catalog
+The reviewer approved Option 1 of STOP `PR11-STOP-01`. Two SYSTEM-defined
+built-in Roles are installed by Alembic revision `0009`, each owning exactly
+one ALLOW PermissionSet with exactly one exact Permission for
+`tenant:get-object`:
 
-The approved policy requires each TenantManagementGroup to reference an
-**approved SYSTEM-defined management Role**. The approved built-in Role
-catalog installed by Alembic revision `0006`
-(`docs/PR10_GATE_M_SEED_POLICY.md`) contains exactly eleven SYSTEM Roles,
-each carrying a single narrow read Permission:
-
-| Role URN | Seeded Permission |
+| Role URN | Permission matcher |
 | --- | --- |
-| `urn:mtmf:iam:roles:system:system-administrator` | `tenant:get-object` |
-| `urn:mtmf:iam:roles:system:system-security-administrator` | `role:get-object` |
-| `urn:mtmf:iam:roles:system:system-reader` | `tenant:get-object` |
-| `urn:mtmf:iam:roles:system:tenant-administrator` | `tenant:get-object` |
-| `urn:mtmf:iam:roles:system:tenant-security-administrator` | `role:get-object` |
-| `urn:mtmf:iam:roles:system:tenant-contributor` | `tenant:get-object` |
-| `urn:mtmf:iam:roles:system:tenant-reader` | `tenant:get-object` |
-| `urn:mtmf:iam:roles:system:organization-administrator` | `organization:get-object` |
-| `urn:mtmf:iam:roles:system:organization-security-administrator` | `role:get-object` |
-| `urn:mtmf:iam:roles:system:organization-contributor` | `organization:get-object` |
-| `urn:mtmf:iam:roles:system:organization-reader` | `organization:get-object` |
+| `urn:mtmf:iam:roles:system:root-tenant-management` | `urn:mtmf:iam:permissions:system:tenant:get-object` |
+| `urn:mtmf:iam:roles:system:tenant-management` | `urn:mtmf:iam:permissions:system:tenant:get-object` |
 
-The broader 34-Action candidate catalog in
-`docs/PR10_EXACT_PERMISSION_MANIFEST.md` remains candidate-only and
-unseeded. No role in the approved catalog is a cross-Tenant management
-Role, and no management-specific Permission is approved.
+No wildcard Permission or additional Action is approved. The deterministic
+seed-identity convention and UUIDv5 namespace from PR 10 are reused.
 
-**Decision required.** Approve one of:
-
-1. a new SYSTEM-defined management Role URN (for example
-   `urn:mtmf:iam:roles:system:tenant-management`) with an explicitly
-   reviewed management Permission allocation written through a later
-   additive migration; or
-2. an explicit instruction that an existing approved SYSTEM Role is
-   designated as the management Role and, if so, which exact Permissions
-   delegated authority may exercise.
-
-Until this decision is recorded, no schema migration, stored function,
-bootstrap integration, or Authorizer integration may be added, and no
-built-in Role/Permission may be invented.
+- A ROOT TenantManagementGroup references `root-tenant-management` only.
+- A SYSTEM TenantManagementGroup references `tenant-management` only.
+- Both are protected built-in SYSTEM definitions and are never materialized
+  as ordinary Identity/Group Role assignments.
 
 ## Required negative cases
 

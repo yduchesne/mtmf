@@ -798,7 +798,7 @@ When an eligible actor of its manager Tenant performs an operation against an ex
 
 Membership in a TenantManagementGroup does not by itself grant an Action. The applicable management Role must also produce an authorization result permitting the requested Action, and all other required invariants must hold.
 
-Manager-side eligibility is settled: delegated authority requires an explicit Identity-level eligibility designation associated with the TenantManagementGroup and scoped to its manager Tenant. Ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership does not confer eligibility. Only the canonical root Identity may exercise the ROOT group. The concrete canonical management Role URNs and their management Permission allocation remain an open implementation decision recorded in [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
+Manager-side eligibility is settled: delegated authority requires an explicit Identity-level eligibility designation associated with the TenantManagementGroup and scoped to its manager Tenant. Ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership does not confer eligibility. Only the canonical root Identity may exercise the ROOT group, and root Identity recovery replaces the eligible actor without retaining authority for the previous root Identity. Delegated authority is restricted to explicit Actions permitted by the applicable management Role and never authorizes another Tenant's application extension data. The approved management Roles are `urn:mtmf:iam:roles:system:root-tenant-management` (ROOT) and `urn:mtmf:iam:roles:system:tenant-management` (SYSTEM); see [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
 
 ---
 
@@ -903,8 +903,7 @@ The following security details have not yet been fully specified and MUST NOT be
 4. detailed Principal/Identity lifecycle and tombstone/soft-deletion behavior required to preserve immutable provenance;
 6. agent/service-principal authentication and authorization details;
 7. IdP-specific federation semantics beyond the invariant that every Principal retains a mandatory local MTMF Identity;
-8. the concrete canonical management Role URNs and their management Permission allocation for TenantManagementGroups (manager-side eligibility itself is settled as an explicit Identity-level designation; see [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md));
-9. whether soft-deleted objects can be restored and, if so, their restoration lifecycle semantics.
+8. whether soft-deleted objects can be restored and, if so, their restoration lifecycle semantics.
 
 Until these matters are explicitly defined, implementations MUST choose the more restrictive behavior when a security decision would otherwise require an unstated assumption.
 
