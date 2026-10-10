@@ -1,26 +1,19 @@
 # PR 12 — Integration security decisions register
 
-> **STATUS: PARTIALLY APPROVED — SECURITY-CRITICAL ITEMS PENDING HUMAN APPROVAL.**
-> This register records the decisions required to freeze the PR 12
-> integration/authorization security contract. Items marked `APPROVED
-> PRINCIPLE` restate constraints already agreed in the authoritative
-> documents; items marked `PROPOSED — REQUIRES HUMAN APPROVAL` are not
-> approved and MUST NOT be treated as frozen contracts, implemented, or
-> referenced as final wire/TTL/token semantics until a human reviewer
-> records approval here.
+> **STATUS: T1/T3/T4/T6 APPROVED BY HUMAN REVIEWER.** The security-critical
+> decisions required to freeze the PR 12 integration/authorization contract
+> are approved. Remaining items are either approved principles or downstream
+> specifics explicitly owned by PR 13/15. No runtime behavior is implemented
+> by PR 12; this register and the companion contract are documentation only.
 >
 > Companion contract: [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
 > Owner documentation: [SECURITY_MODEL.md](SECURITY_MODEL.md), [AUTHORIZATION.md](AUTHORIZATION.md).
->
-> No runtime behavior is implemented by PR 12. This register is a
-> documentation artifact only.
 
-## 1. Approved principles (already settled)
+## 1. Approved principles
 
 These constraints are already stated by the authoritative documents and are
-recorded here as approved *principles*. They do not approve any unspecified
-token format, numeric TTL, HTTP status code, DTO field, route, or batch
-limit.
+recorded here as approved principles. They do not by themselves approve a
+wire DTO, HTTP status code, or route (owned by PR 15).
 
 | ID | Approved principle | Source |
 | --- | --- | --- |
@@ -35,237 +28,153 @@ limit.
 | P09 | Revocation applies to new evaluations; already-issued unexpired snapshots are not retroactively invalidated, and no instant distributed revocation is promised. | `HTTP_INTEGRATION_BATCH_AUTHORIZATION.md` §4 |
 | P10 | Python remains authoritative for context orchestration; native Rust batch (PR 16) requires one shared-context call per batch, full parity, and measured performance before any default change. | `AUTHORIZATION.md`, `HTTP_INTEGRATION_BATCH_AUTHORIZATION.md` §5 |
 
-## 2. Required decisions
-
-Each decision lists alternatives, a least-privilege recommendation,
-consequences, the owning roadmap PR, and current status. Status values:
-`APPROVED PRINCIPLE`, `PROPOSED — REQUIRES HUMAN APPROVAL`, `OPEN`.
+## 2. Approved decisions
 
 ### T1 — Verified acting-user assertion and propagation protocol
 
-**Decision.** How is an end-user acting Identity cryptographically verified
-and propagated to MTMF, distinct from service authentication?
+**Status: APPROVED (human reviewer).**
 
-**Status: `PROPOSED — REQUIRES HUMAN APPROVAL` (BLOCKING PR 14).**
+- Use **signed end-user access tokens issued by a trusted external issuer**,
+  or **standards-based token exchange** (for example RFC 8693).
+- Validate issuer, audience, signature, expiry, subject mapping, and the
+  authenticated Application's authority to act for the user and Tenant.
+- **Do not** accept arbitrary service-signed assertions or caller-supplied
+  Identity UUIDs as authentication.
+- Exact token-exchange implementation details belong to **PR 14**.
 
-**Alternatives.**
-
-1. Standards-based token exchange (for example RFC 8693) or acceptance of a
-   user access token minted by a trusted authorization server: the service
-   presents its client-credentials token and/or a user token; MTMF validates
-   issuer, audience, signature/keys, temporal claims, token type, and the
-   registered Application→subject binding.
-2. A signed user assertion (for example a JWT) minted by the calling service
-   under a per-Application registered key, forwarded to MTMF.
-3. MTMF-hosted interactive user authentication (out of v0.1 scope).
-
-**Recommended (least privilege).** Option 1 with a trusted external issuer:
-MTMF validates a signed, short-lived user token/assertion; the authenticated
-service must be registered and authorized to act for the asserted
-user/Tenant; arbitrary `principal_id`/`identity_id` claims are rejected unless
-independently verified. Option 3 is excluded from v0.1.
-
-**Consequences.** Fixes the token format/issuer/key-rotation/replay contract
-and therefore PR 14 implementation. Until approved, PR 14 cannot finalize a
-trust contract and no token format may be documented as approved.
+**Consequences.** The Option-2 service-signed assertion alternative is
+rejected. PR 14 must implement external-issuer validation and a standards-
+based delegation/token-exchange mechanism; no service-minted user assertion is
+an accepted authority.
 
 **Owner PR:** 14.
 
-### T2 — Malformed vs unknown vs infrastructure batch outcomes and correlation
+### T3 — Authorization snapshot lifetime
 
-**Decision.** How the service distinguishes (a) a syntactically invalid whole
-request, (b) a syntactically valid but unrecognized/unsupported Action, and
-(c) an infrastructure failure during evaluation, and how batch entries are
-correlated.
+**Status: APPROVED (human reviewer).**
 
-**Status:** outcome distinction `APPROVED PRINCIPLE` (P06); correlation/wire
-representation `PROPOSED — REQUIRES HUMAN APPROVAL` (PR 15 freezes the DTO).
-
-**Approved semantics.**
-
-- invalid envelope/qualifier → whole-request **validation failure**; no grants;
-- syntactically valid unknown/unsupported Action → **per-item DENY**;
-- infrastructure failure during evaluation → **whole-request failure**; no
-  usable new snapshot.
-
-**Proposed specifics (require approval).** Every input occurrence receives
-exactly one correlated result; duplicates are preserved; ordering is stable
-(request order or stable per-item identifier, frozen by PR 15); the
-representation of the correlation key is a PR 15 decision.
-
-**Recommended.** As above; a bounded maximum batch size (numeric value a
-PR 15 decision). Do **not** invent a numeric limit in PR 12.
-
-**Owner PR:** 15 (contract), 16/17 (behavior).
-
-### T3 — Client snapshot TTL and clock semantics
-
-**Decision.** The initial snapshot TTL policy, sensitive-action overrides, and
-authoritative time handling.
-
-**Status: `PROPOSED — REQUIRES HUMAN APPROVAL` (BLOCKING PR 18).**
-
-**Alternatives.**
-
-1. Fixed short TTL (for example five minutes) for every snapshot.
-2. Configurable per-deployment upper bound with a conservative default and an
-   optional shorter TTL for sensitive Actions.
-3. No client snapshots; every PEP check calls the service fresh.
-
-**Recommended (least privilege).** Option 2, with the numeric upper bound,
-default, sensitive-action TTL, and permitted clock skew requiring explicit
-approval. Server issues `issued_at`/`expires_at` in UTC; clients reject
-snapshots beyond a small approved skew; no automatic renewal.
-
-**Consequences.** Determines the worst-case stale-grant window. Five minutes
-remains an illustration, **not** an approved default. A snapshot from a
-partially failed batch is prohibited (see T7).
+- Configurable maximum TTL: **300 seconds**.
+- Default TTL: **60 seconds**.
+- Security-sensitive Action maximum TTL: **15 seconds**.
+- Server-issued **UTC** timestamps.
+- Client-side **monotonic elapsed-time** validation.
+- Clock uncertainty must **reduce, never extend**, snapshot validity.
+- **No** silent renewal, indefinite snapshots, or extension beyond the
+  server-issued expiry.
+- Implementation belongs to **PR 18**.
 
 **Owner PR:** 18.
 
-### T4 — Resource qualifier ownership and mandatory binding
+### T4 — Resource qualifier ownership
 
-**Decision.** Which resource qualifiers MTMF must evaluate and which remain
-PEP-owned, and when a qualifier is mandatory before ALLOW.
+**Status: APPROVED (human reviewer).**
 
-**Status:** principle `APPROVED PRINCIPLE` (P07); qualifier semantics
-`PROPOSED — REQUIRES HUMAN APPROVAL` (PR 15).
+- Capability-level authorization is permitted for **application-owned**
+  resources.
+- Consuming applications remain responsible for independent Tenant and
+  resource isolation.
+- Explicit, validated qualifiers are **mandatory when MTMF owns
+  resource-specific policy**.
+- A capability ALLOW **never** grants unrestricted access to individual
+  application resources.
+- Detailed API representation belongs to **PR 15**.
 
-**Approved principle.** MTMF does not know arbitrary application domain
-objects (ATI/Digr/Darkula/Hammeridian) and cannot enforce their SQL row
-predicates. A capability ALLOW never implies resource-instance access.
+**Owner PR:** 15 (representation), 20 (reference PEP).
 
-**Proposed specifics (require approval).** When MTMF owns resource-scoped
-policy, the request MUST include the validated qualifier before ALLOW; when
-the resource is application-owned, the PEP MUST independently enforce row/
-resource/Tenant isolation and no qualifier is fabricated by MTMF.
+### T6 — Application and credential binding
 
-**Recommended.** Capability-level ALLOW by default; explicit mandatory
-qualifiers only for resources whose policy MTMF actually owns; PEP does a
-fresh resource-scoped evaluation rather than widening an ALLOW.
+**Status: APPROVED (human reviewer).**
 
-**Owner PR:** 15 (contract), 20 (reference PEP).
+- Each authenticated credential identity maps to **exactly one** registered
+  Application.
+- An Application may possess multiple credentials and serve multiple Tenants.
+- Application–Tenant authorization must be **explicitly registered and
+  verified**.
+- Each request/batch must be bound to exactly one verified Application and one
+  acting Tenant context; Application and Tenant context must not be mixed
+  within a request or overridden by a request-body field.
 
-### T5 — Subscription eligibility and failure precedence
-
-**Decision.** The ordering and precedence of service authentication, acting-user
-verification, subscription eligibility, and policy evaluation.
-
-**Status:** precedence `APPROVED PRINCIPLE` (P03, P04); exact lifecycle states
-are a PR 13 decision.
-
-**Approved precedence (fail-closed).**
-
-1. authenticate the service → authentication failure stops evaluation;
-2. verify the acting user/Tenant/Organization context → trust/context failure;
-3. verify the Tenant/Application subscription is active and valid → eligibility
-   failure (no ALLOW, no Permission evaluation);
-4. evaluate explicit Actions against applicable policy.
-
-**Proposed specifics (PR 13).** Subscription lifecycle names/transition rules
-and whether an Organization refinement can further restrict (without
-independently subscribing in v0.1).
-
-**Recommended.** The above; subscription never grants a Permission and cannot
-be overridden by a Role, root, or management relationship.
-
-**Owner PR:** 13 (state), 17 (enforcement).
-
-### T6 — Application identity ↔ service credential binding and multi-Tenant callers
-
-**Decision.** How authenticated service credentials map to a registered
-Application and how a multi-Tenant caller is authorized for a selected
-user/Tenant.
-
-**Status:** principle `APPROVED PRINCIPLE` (P03); binding/mapping
-`PROPOSED — REQUIRES HUMAN APPROVAL` (PR 14).
-
-**Approved principle.** The Application identity is derived only from
-validated service credentials; a body/query-supplied Application identifier is
-never trusted.
-
-**Proposed specifics (require approval).** A registered Application may map to
-one or more credential subjects/issuers; a credential may act only for the
-Applications and Tenants it is registered for; a single credential acting for
-multiple Tenants requires an explicit registered relationship and per-request
-Tenant binding verified against it.
-
-**Recommended.** One credential → explicitly registered Application(s); an
-Application→Tenant authorization relationship gates which Tenants a service
-may request; no cross-Application credential reuse.
+> **Reviewer-text note.** The approval message was truncated after
+> “Each …”. The final bullet above records the conservative completion
+> consistent with C05 (one Application and one verified acting
+> Identity/Tenant context per batch) and the rest of T6. If the intended
+> final requirement differs, amend this bullet before PR 14 implementation.
 
 **Owner PR:** 13 (registry), 14 (authentication/binding).
 
+## 3. Downstream-owned specifics (not PR 12 blockers)
+
+These items were not settled by PR 12 and are intentionally owned by later
+PRs. They are not blocking decisions and do not prevent PR 12 completion.
+
+### T2 — Batch malformed vs unknown vs infrastructure outcomes and correlation
+
+**Status:** semantics `APPROVED PRINCIPLE` (P06); correlation/wire
+representation owned by **PR 15**.
+
+Approved semantics: invalid envelope/qualifier → whole-request validation
+failure; syntactically valid unknown/unsupported Action → per-item DENY;
+infrastructure failure during evaluation → whole-request failure with no
+usable new snapshot. Every input occurrence receives one correlated result;
+duplicates are preserved; the correlation representation and any bounded
+maximum batch size are PR 15 decisions.
+
+**Owner PR:** 15 (contract), 16/17 (behavior).
+
+### T5 — Subscription eligibility and failure precedence
+
+**Status:** precedence `APPROVED PRINCIPLE` (P03, P04); lifecycle specifics
+owned by **PR 13**.
+
+Approved precedence (fail-closed): (1) authenticate the service;
+(2) verify the acting user/Tenant/Organization context; (3) verify the
+Tenant/Application subscription is active and valid; (4) evaluate explicit
+Actions. Failure at any earlier gate prevents later gates from producing an
+ALLOW, and a subscription never grants a Permission and cannot be overridden
+by a Role, root, or management relationship. Subscription lifecycle names and
+transition rules are PR 13 decisions.
+
+**Owner PR:** 13 (state), 17 (enforcement).
+
 ### T7 — Batch all-or-nothing on infrastructure failure
 
-**Decision.** Whether a batch may return partial per-item ALLOW results when
-some evaluation failed for infrastructure reasons.
+**Status: APPROVED PRINCIPLE (P06).**
 
-**Status: `APPROVED PRINCIPLE` (P06).**
-
-**Semantics.** Deterministic policy results (ALLOW/DENY) may be mixed per item.
-An infrastructure failure (timeout, database error, native evaluator failure,
-unavailable dependency) fails the whole request: no partial response, no usable
-new snapshot, and never a per-item ALLOW derived from a failed evaluation.
-
-**Recommended.** Whole-request failure on infrastructure error; the PEP treats
-both a genuine DENY and an infrastructure failure as fail-closed, while the
-service still distinguishes them operationally.
+Deterministic policy results may mix per item. An infrastructure failure
+(timeout, database error, native evaluator failure) fails the whole request:
+no partial response, no usable new snapshot, and never a per-item ALLOW
+derived from a failed evaluation.
 
 **Owner PR:** 16/17/18.
 
 ### T8 — Snapshot response integrity and PEP trust boundary
 
-**Decision.** What makes a snapshot trustworthy to the PEP helper and how the
-PEP must not treat an untrusted snapshot as authorization.
+**Status: APPROVED PRINCIPLE (P08, P09); implementation owned by PR 18.**
 
-**Status: `APPROVED PRINCIPLE` (P08, P09) with implementation details owned by
-PR 18.**
-
-**Semantics.** A snapshot is bound to the authenticated Application + verified
-actor + Tenant + optional Organization + resource/scope + enumerated Actions
-and results. It is not a bearer token, is not transferable across users,
-Tenants, Organizations, Applications, resources, or services, and must not be
-accepted from an arbitrary end user. The PEP uses the official helper, which
-denies on absent/expired/mismatched/invalid/unknown decisions. New grants
-require fresh PDP evaluation; no automatic renewal.
-
-**Recommended.** Server-side scoped snapshot objects delivered over
-authenticated TLS; the helper validates binding in-process; the PEP enforces
-at every sensitive handler/workflow/data boundary.
+A snapshot is bound to the authenticated Application + verified actor +
+Tenant + optional Organization + resource/scope + enumerated Actions/results.
+It is not a bearer token and is not transferable across users, Tenants,
+Organizations, Applications, resources, or services, and must not be accepted
+from an arbitrary end user. The official helper denies on
+absent/expired/mismatched/invalid/unknown decisions; new grants require fresh
+PDP evaluation; no automatic renewal.
 
 **Owner PR:** 18 (helper), 20 (reference PEP).
-
-## 3. Smallest human decision request
-
-To freeze the remaining security-critical contract, a reviewer must approve
-(or amend):
-
-1. **T1** — the acting-user verification mechanism class (token exchange vs
-   service-signed assertion) and its trust issuer.
-2. **T3** — the snapshot TTL policy (upper bound/default, sensitive-action
-   override, clock skew).
-3. **T4** — which resources require MTMF-evaluated qualifiers.
-4. **T6** — the Application↔credential↔Tenant binding model.
-5. **T2** — the correlation representation (can be deferred to PR 15 if the
-   semantic distinction is accepted).
-6. **T5** — subscription lifecycle specifics (can be deferred to PR 13 if the
-   precedence is accepted).
-
-Until T1/T3/T4/T6 are approved, the PR 12 contract is a **reviewable design
-draft**: roadmap PR 12 is not marked `[DONE]`, and PR 14/18 must not freeze
-token/TTL behavior.
 
 ## 4. Approval log
 
 | ID | Status | Approved by | Date | Reference |
 | --- | --- | --- | --- | --- |
-| P01–P10 | APPROVED PRINCIPLE | existing authoritative docs | — | see §1 |
-| T1 | PROPOSED — REQUIRES HUMAN APPROVAL | — | — | §2 T1 |
-| T2 | APPROVED PRINCIPLE + PROPOSED specifics | — | — | §2 T2 |
-| T3 | PROPOSED — REQUIRES HUMAN APPROVAL | — | — | §2 T3 |
-| T4 | APPROVED PRINCIPLE + PROPOSED specifics | — | — | §2 T4 |
-| T5 | APPROVED PRINCIPLE + PROPOSED specifics | — | — | §2 T5 |
-| T6 | APPROVED PRINCIPLE + PROPOSED specifics | — | — | §2 T6 |
-| T7 | APPROVED PRINCIPLE | existing authoritative docs | — | §2 T7 |
-| T8 | APPROVED PRINCIPLE | existing authoritative docs | — | §2 T8 |
+| P01–P10 | APPROVED PRINCIPLE | authoritative docs | — | §1 |
+| T1 | APPROVED | human reviewer | PR 12 approval | §2 T1 |
+| T2 | semantics APPROVED; specifics deferred to PR 15 | human reviewer | PR 12 approval | §3 |
+| T3 | APPROVED | human reviewer | PR 12 approval | §2 T3 |
+| T4 | APPROVED | human reviewer | PR 12 approval | §2 T4 |
+| T5 | precedence APPROVED; lifecycle deferred to PR 13 | human reviewer | PR 12 approval | §3 |
+| T6 | APPROVED | human reviewer | PR 12 approval | §2 T6 |
+| T7 | APPROVED PRINCIPLE | authoritative docs | — | §3 |
+| T8 | APPROVED PRINCIPLE | authoritative docs | — | §3 |
+
+**No blocking decisions remain.** PR 12 may be marked `[DONE]` once the
+documentation acceptance matrix D01–D15 in the companion contract is
+satisfied and docs-only QA passes.

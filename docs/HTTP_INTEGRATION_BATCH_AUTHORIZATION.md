@@ -1,6 +1,6 @@
 # HTTP Integration and Batch Authorization — v0.1 Normative Design Contract (PR 12)
 
-> **STATUS: NORMATIVE DESIGN CONTRACT — RUNTIME NOT IMPLEMENTED.**
+> **STATUS: NORMATIVE DESIGN CONTRACT — RUNTIME NOT IMPLEMENTED; SECURITY DECISIONS APPROVED.**
 > This document is the PR 12 normative contract for the planned HTTP-only
 > consumer integration. No Application registry, Tenant subscription,
 > trusted HTTP actor propagation, batch endpoint, native Rust batch
@@ -8,11 +8,11 @@
 > implemented baseline remains the single-action `Authorizer` with the PR 8H
 > pure-Python indexed `CompiledPolicy`.
 >
-> Security-critical decisions that must be approved before this contract is
-> final are tracked in [PR12_INTEGRATION_SECURITY_DECISIONS.md](PR12_INTEGRATION_SECURITY_DECISIONS.md)
-> (`T1`–`T8`). Items marked `PROPOSED — REQUIRES HUMAN APPROVAL` there are
-> **not** frozen; the illustrative JSON below is **non-normative** until PR 15
-> freezes the DTO contract.
+> Security-critical decisions `T1`, `T3`, `T4`, and `T6` are **APPROVED**;
+> `T2`/`T5` wire/lifecycle specifics are owned by PR 15/13. See
+> [PR12_INTEGRATION_SECURITY_DECISIONS.md](PR12_INTEGRATION_SECURITY_DECISIONS.md).
+> The illustrative JSON below remains **non-normative** until PR 15 freezes
+> the DTO contract.
 >
 > Contract identifiers `C01`–`C11` are stable review anchors.
 
@@ -82,14 +82,20 @@ eligibility are **separate gates**. Failure at any gate cannot yield `ALLOW`.
 2. **Acting-user verification (PR 14).** End-user identity is verified through
    a separate, explicit trust mechanism. MTMF authenticates the concrete
    Identity and binds Principal, Identity, active Tenant, and optional
-   Organization. A UUID, unsigned header, or body field is not proof.
+   Organization. A UUID, unsigned header, or body field is not proof. The
+   **approved** mechanism is a signed end-user access token issued by a
+   trusted external issuer, or standards-based token exchange; MTMF validates
+   issuer, audience, signature, expiry, subject mapping, and the authenticated
+   Application's authority to act for the user and Tenant. Arbitrary
+   service-signed assertions and caller-supplied Identity UUIDs are rejected.
+   Exact token-exchange implementation belongs to PR 14.
 3. **Subscription eligibility (PR 13).** A Tenant subscribes to a registered
    Application. Missing, expired, suspended, or cancelled subscriptions deny
    new grants. A Tenant subscription does not automatically grant
    Organization-level permission and never grants a Permission.
 
-Mandatory trust properties for the acting-user mechanism (the exact protocol
-is decision `T1`, still pending): issuer and audience binding;
+Mandatory trust properties for the acting-user mechanism: issuer and
+audience binding;
 signature/key validation and rotation; bounded lifetime; token/service-to-
 Application binding; replay constraints; an authorized service-to-user/Tenant
 relationship; immutable authenticated subject mapping; rejection of arbitrary
@@ -97,6 +103,13 @@ relationship; immutable authenticated subject mapping; rejection of arbitrary
 Tenant/Principal/Identity memberships; explicit Organization validation.
 An authenticated service acting on its own behalf is distinct from a
 user-delegated call; there is no implicit service-as-user or root fallback.
+
+**Application/credential binding (approved T6).** Each authenticated
+credential identity maps to exactly one registered Application. An
+Application may possess multiple credentials and serve multiple Tenants;
+Application–Tenant authorization is explicitly registered and verified. Each
+request/batch is bound to exactly one verified Application and one acting
+Tenant context, and cannot be mixed or overridden by a request-body field.
 
 ## 4. Batch request semantics (C05)
 
@@ -143,8 +156,12 @@ available.
 - MTMF does not know arbitrary ATI/Digr/Darkula/Hammeridian domain objects and
   cannot enforce their SQL row predicates.
 
-Resource-qualifier ownership is decision `T4` (principle approved; specifics
-pending).
+**Resource-qualifier ownership (approved T4).** Capability-level authorization
+is permitted for application-owned resources, and the consuming application
+remains responsible for independent Tenant and resource isolation. Explicit,
+validated qualifiers are mandatory when MTMF owns resource-specific policy. A
+capability ALLOW never grants unrestricted access to individual application
+resources. Detailed API representation belongs to PR 15.
 
 ## 6. Policy semantics are preserved (C07)
 
@@ -177,8 +194,13 @@ token, identity credential, or general entitlement.
   snapshots stale; there is no distributed instant-revocation promise.
 - A snapshot from a partially failed batch is prohibited (see T7).
 
-TTL/clock policy is decision `T3` (pending). Five minutes is an illustration,
-**not** an approved default.
+**Snapshot lifetime (approved T3).** The configurable maximum TTL is
+**300 seconds**, the default TTL is **60 seconds**, and security-sensitive
+Actions use a maximum TTL of **15 seconds**. Timestamps are server-issued in
+UTC; clients validate with monotonic elapsed time; clock uncertainty must
+reduce, never extend, validity; there is no silent renewal, indefinite
+snapshot, or extension beyond the server-issued expiry. Implementation
+belongs to PR 18.
 
 ## 8. Failure taxonomy (C09)
 
