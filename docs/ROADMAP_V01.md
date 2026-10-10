@@ -152,9 +152,11 @@ Verification: unit suite (domain, resolver eligibility, Authorizer delegation, i
 
 **Limitations / deferred.** Trusted end-user acting-Identity propagation remains PR 14 (PR 11 consumes only a verified internal session; a caller-supplied Identity UUID is never authentication). Revocation is fail-closed for subsequent decisions and is not retroactive: an in-flight decision based on an already-read snapshot is not re-evaluated, and no linearizable concurrent-authorization lock contract is claimed. The management Roles carry exactly the one approved read Permission; no additional management Actions are seeded.
 
-### PR 12 — Integration architecture and security contracts [NEW — PLANNED]
+### PR 12 — Integration architecture and security contracts [NEW — PLANNED — DESIGN DRAFT]
 
 Documentation/design gate before any public HTTP API contract. Define the independent HTTP-only consumer integration boundary, MTMF as Policy Decision Point (PDP), consuming applications as Policy Enforcement Points (PEPs), and `mtmf-client` as a non-authoritative HTTP helper. Specify verified caller/application identity, acting user identity, Tenant/Organization context, subscription gate, batch decision semantics, scope binding, revocation/expiry and failure behavior. Update architecture/security/authorization/domain documents; no production endpoint, batch evaluator, client helper, or subscription persistence is implemented by this documentation PR.
+
+**Status: design contract delivered; security-critical decisions pending. PR 12 is NOT `[DONE]`.** The normative draft is [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md); required decisions are tracked in [PR 12 Integration Security Decisions](PR12_INTEGRATION_SECURITY_DECISIONS.md). The approved principles (C01–C11 / P01–P10) and the historical-connector reconciliation are in place, but `T1` (acting-user verification protocol), `T3` (snapshot TTL/clock semantics), `T4` (resource-qualifier ownership specifics), and `T6` (Application/credential/Tenant binding) remain `PROPOSED — REQUIRES HUMAN APPROVAL`. Per the PR 12 plan, a design draft with blocking unapproved security decisions is not completion: mark `[DONE]` only after human approval is recorded and the documentation acceptance matrix D01–D15 is satisfied.
 
 ### PR 13 — Application registry and Tenant subscriptions [NEW — PLANNED]
 
