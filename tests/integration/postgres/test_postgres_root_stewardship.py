@@ -683,3 +683,81 @@ def test_rs20_activation_without_designation_writes_no_audit(db: psycopg.Connect
         db.execute("SELECT mtmf.activate_tenant(%s)", (tenant_id,))
     assert captured.value.sqlstate == "MT014"
     assert db.execute("SELECT count(*) FROM mtmf.stewardship_audit").fetchone()[0] == 0
+
+
+# --- Group-derived eligibility invalidation paths ------------------------------
+
+
+def _group_id_for(db: psycopg.Connection, identity: Identity) -> str:
+    return str(
+        db.execute(
+            "SELECT group_id FROM mtmf.identity_group_membership WHERE identity_id = %s",
+            (identity.id.value,),
+        ).fetchone()[0]
+    )
+
+
+def test_rs23_group_derived_steward_membership_removal_is_rejected(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    db.execute(
+        "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
+        (tenant.id.value, principal.id.value, identity.id.value),
+    )
+    db.execute("SELECT mtmf.activate_tenant(%s)", (tenant.id.value,))
+    group_id = _group_id_for(db, identity)
+    with pytest.raises(psycopg.errors.DatabaseError):
+        runtime_connection.execute(
+            "SELECT mtmf.remove_identity_group_membership(%s, %s, NULL)",
+            (identity.id.value, group_id),
+        )
+    runtime_connection.rollback()
+
+
+def test_rs24_group_soft_delete_cannot_orphan_group_derived_steward(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    db.execute(
+        "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
+        (tenant.id.value, principal.id.value, identity.id.value),
+    )
+    db.execute("SELECT mtmf.activate_tenant(%s)", (tenant.id.value,))
+    group_id = _group_id_for(db, identity)
+    with pytest.raises(psycopg.errors.DatabaseError):
+        db.execute("UPDATE mtmf.group SET deletion_status = 1 WHERE id = %s", (group_id,))
+
+
+def test_rs25_group_membership_removal_allowed_when_another_source_remains(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
+) -> None:
+    tenant = _new_provisioning_tenant(postgres_spi)
+    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    # Add a direct Tenant Administrator source so the Group is not the last one.
+    with postgres_spi.create_unit_of_work() as uow:
+        postgres_spi.create_identity_role_assignment_repository(uow).add(
+            IdentityRoleAssignment(DomainId.generate(), tenant.id, identity.id, _TENANT_ADMIN_URN)
+        )
+        uow.commit()
+    db.execute(
+        "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
+        (tenant.id.value, principal.id.value, identity.id.value),
+    )
+    db.execute("SELECT mtmf.activate_tenant(%s)", (tenant.id.value,))
+    group_id = _group_id_for(db, identity)
+    # The direct assignment remains, so removing the Group membership is allowed.
+    runtime_connection.execute(
+        "SELECT mtmf.remove_identity_group_membership(%s, %s, NULL)",
+        (identity.id.value, group_id),
+    )
+    runtime_connection.commit()
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.identity_group_membership WHERE identity_id = %s",
+            (identity.id.value,),
+        ).fetchone()[0]
+        == 0
+    )

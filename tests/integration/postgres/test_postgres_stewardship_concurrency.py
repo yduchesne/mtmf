@@ -565,3 +565,141 @@ def test_sc10_activation_races_designated_deactivation(
         else:
             # Activation failed closed; the Tenant stays non-authorizing.
             assert lifecycle == 0
+
+
+# --- SC11: designation vs successor assignment/group source revocation ---------
+
+
+def test_sc11_designation_races_successor_assignment_revocation(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, dsn: str
+) -> None:
+    for cycle in range(_CYCLES):
+        tenant, _incumbent_principal, _incumbent_identity = _active_tenant_with_steward(
+            postgres_spi, db
+        )
+        successor_principal, successor_identity = _add_eligible_steward(postgres_spi, tenant)
+        assignment_id = db.execute(
+            "SELECT id FROM mtmf.identity_role_assignment "
+            "WHERE tenant_id = %s AND identity_id = %s AND organization_id IS NULL",
+            (tenant.id.value, successor_identity.id.value),
+        ).fetchone()[0]
+        outcomes = _run_race(
+            dsn,
+            [
+                (
+                    "designate",
+                    partial(
+                        _designate,
+                        tenant=tenant,
+                        principal=successor_principal,
+                        identity=successor_identity,
+                        expected=1,
+                        operation="TRANSFER",
+                    ),
+                ),
+                (
+                    "revoke",
+                    partial(
+                        _execute,
+                        sql="SELECT mtmf.identity_role_assignment_remove(%s)",
+                        params=(assignment_id,),
+                    ),
+                ),
+            ],
+        )
+        assert outcomes in (
+            {"designate": "ok", "revoke": "MT032"},
+            {"designate": "MT013", "revoke": "ok"},
+        ), (cycle, outcomes)
+        principal_id, _identity_id, _version = _designation_row(db, tenant)
+        if outcomes["designate"] == "ok":
+            assert principal_id == str(successor_principal.id.value)
+            # The designated successor must still have a Tenant Admin source.
+            assert (
+                db.execute(
+                    "SELECT count(*) FROM mtmf.identity_role_assignment "
+                    "WHERE tenant_id = %s AND identity_id = %s AND organization_id IS NULL "
+                    "AND role_urn = 'urn:mtmf:iam:roles:system:tenant-administrator'",
+                    (tenant.id.value, successor_identity.id.value),
+                ).fetchone()[0]
+                == 1
+            )
+        else:
+            assert principal_id != str(successor_principal.id.value)
+
+
+def _add_group_steward_concurrent(spi: MtmfSpi, tenant: Tenant) -> tuple[Principal, Identity, str]:
+    from mtmf_core import Group, GroupRoleAssignment, GroupTenantMembership, IdentityGroupMembership
+
+    principal = Principal(DomainId.generate(), "Group Steward")
+    identity = Identity(DomainId.generate(), principal.id, "Group I", IdentityOrigin.LOCAL)
+    group = Group(DomainId.generate(), tenant.id, "Stewards")
+    with spi.create_unit_of_work() as uow:
+        spi.create_principal_repository(uow).add(principal)
+        spi.create_identity_repository(uow).add(identity)
+        spi.create_group_repository(uow).add(group)
+        spi.create_principal_tenant_membership_repository(uow).add(
+            PrincipalTenantMembership(principal.id, tenant.id)
+        )
+        spi.create_identity_tenant_membership_repository(uow).add(
+            IdentityTenantMembership(identity.id, tenant.id)
+        )
+        spi.create_group_tenant_membership_repository(uow).add(
+            GroupTenantMembership(group.id, tenant.id)
+        )
+        spi.create_identity_group_membership_repository(uow).add(
+            IdentityGroupMembership(identity.id, group.id)
+        )
+        spi.create_group_role_assignment_repository(uow).add(
+            GroupRoleAssignment(DomainId.generate(), tenant.id, group.id, _TENANT_ADMIN_URN)
+        )
+        uow.commit()
+    return principal, identity, group.id.value
+
+
+def test_sc12_designation_races_successor_group_assignment_revocation(
+    postgres_spi: MtmfSpi, db: psycopg.Connection, dsn: str
+) -> None:
+    for cycle in range(_CYCLES):
+        tenant, _incumbent_principal, _incumbent_identity = _active_tenant_with_steward(
+            postgres_spi, db
+        )
+        successor_principal, successor_identity, group_id = _add_group_steward_concurrent(
+            postgres_spi, tenant
+        )
+        assignment_id = db.execute(
+            "SELECT id FROM mtmf.group_role_assignment "
+            "WHERE tenant_id = %s AND group_id = %s AND organization_id IS NULL",
+            (tenant.id.value, group_id),
+        ).fetchone()[0]
+        outcomes = _run_race(
+            dsn,
+            [
+                (
+                    "designate",
+                    partial(
+                        _designate,
+                        tenant=tenant,
+                        principal=successor_principal,
+                        identity=successor_identity,
+                        expected=1,
+                        operation="TRANSFER",
+                    ),
+                ),
+                (
+                    "revoke",
+                    partial(
+                        _execute,
+                        sql="SELECT mtmf.group_role_assignment_remove(%s)",
+                        params=(assignment_id,),
+                    ),
+                ),
+            ],
+        )
+        assert outcomes in (
+            {"designate": "ok", "revoke": "MT032"},
+            {"designate": "MT013", "revoke": "ok"},
+        ), (cycle, outcomes)
+        principal_id, _identity_id, _version = _designation_row(db, tenant)
+        if outcomes["designate"] == "ok":
+            assert principal_id == str(successor_principal.id.value)

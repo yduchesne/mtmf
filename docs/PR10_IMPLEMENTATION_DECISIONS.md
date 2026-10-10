@@ -79,7 +79,7 @@ write-skew where a concurrent deactivation could otherwise commit after
 eligibility was read.
 
 `tests/integration/postgres/test_postgres_stewardship_concurrency.py` runs
-**11 race scenarios with 10 cycles each** (110 race cycles), two-plus
+**13 race scenarios with 10 cycles each** (130 race cycles), two-plus
 independent connections, a `threading.Barrier`, bounded
 `statement_timeout`/`lock_timeout`, and explicit SQLSTATE + committed-state
 assertions:
@@ -89,12 +89,23 @@ assertions:
 - transfer vs incumbent Principal / Identity deactivation;
 - transfer vs final Tenant Administrator revocation;
 - transfer vs successor Principal / Identity deactivation (`MT013` vs `MT032`);
+- designation vs successor direct-assignment revocation (`MT013` vs `MT032`);
+- designation vs successor group-assignment revocation (`MT013` vs `MT032`);
 - activation vs incomplete setup (`MT014`);
 - activation vs designated-Identity deactivation (`MT013`);
 - root recovery vs replacement-candidate deactivation (`MT026` vs `MT030`);
 - concurrent built-in seed install (idempotent, no duplicates).
 
-A hang or split state fails a test; none was observed.
+A hang or split state fails a test; none was observed. Two additional locking
+defects were found by this matrix and fixed: (1) the authority-revocation
+paths (`identity_role_assignment`, `group_role_assignment`,
+`identity_group_membership`, group deactivation) now lock the affected subject
+Identity row(s) `FOR UPDATE` — in deterministic `id` order — *before* the
+eligibility check, so they serialize with `designate_steward`/`activate_tenant`
+(which already lock the subject Identity); and (2) group-derived eligibility
+now requires the authorizing Group to be non-deleted, matching the effective
+Role resolver, and the Group/membership may not be removed while it is the
+designated steward's final Tenant Administrator source (`MT032`).
 
 ## Coverage of the Amendment #2 matrix
 
@@ -104,8 +115,10 @@ Organization-scoped authority rather than Tenant-level stewardship eligibility
 (`rs18`, `ol10`), ineligible-prerequisite rejection and no-audit-on-failure
 (`rs19`, `rs20`), root/stewardship `SECURITY INVOKER` + owner ownership
 (`rs21`), the exact 58-signature runtime allowlist after all migrations
-(`rs22`), `role_add` collision protection (`bp08`), and post-suspension
-fail-closed re-resolution (`ol09`).
+(`rs22`), `role_add` collision protection (`bp08`), post-suspension
+fail-closed re-resolution (`ol09`), and group-derived invalidation guards
+(`rs23` membership removal rejected, `rs24` group deactivation rejected,
+`rs25` removal allowed when another authority source remains).
 
 ## Deferred (explicitly out of Amendment #2 scope)
 
@@ -124,9 +137,11 @@ UUID, GUC, or shared runtime credential is treated as authentication.
   coverage 91.47%).
 - `./build.sh --sec` — PASS (Bandit Medium/High 0; Semgrep 0 findings).
 - `./build.sh --integration` (real PostgreSQL, configured `MTMF_*`) — PASS,
-  **496 tests**, including `test_postgres_origin_lifecycle.py`,
+  **501 tests**, including `test_postgres_origin_lifecycle.py`,
   `test_postgres_root_stewardship.py`, `test_postgres_builtin_policy.py`, and
-  `test_postgres_stewardship_concurrency.py` (11 scenarios × 10 cycles).
+  `test_postgres_stewardship_concurrency.py` (13 scenarios × 10 cycles).
+- `scripts/mtmf-provision-roles.py --verify` — PASS (`mtmf_runtime` restricted;
+  exact 58-signature allowlist).
 
 ## Merge recommendation
 

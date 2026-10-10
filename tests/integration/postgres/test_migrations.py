@@ -99,6 +99,8 @@ EXPECTED_FUNCTION_NAMES = {
     "guard_tenant_activation",
     "guard_stewardship_audit",
     "guard_steward_role_assignment",
+    "guard_steward_group_membership",
+    "guard_steward_group",
     "principal_tenant_membership_add",
     "principal_tenant_membership_get",
     "principal_tenant_membership_find_by_principal",

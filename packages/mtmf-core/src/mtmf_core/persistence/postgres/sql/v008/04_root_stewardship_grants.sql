@@ -61,3 +61,15 @@ GRANT EXECUTE ON FUNCTION mtmf.tenant_add(
     id_value uuid, name_value text, scope_value smallint, owner_identity_id_value uuid,
     lifecycle_value smallint, deletion_status_value smallint, extension_value jsonb
 ) TO mtmf_runtime;
+
+-- Group-derived eligibility guards: owner-owned, SECURITY INVOKER, and never
+-- runtime-executable entry points.
+ALTER FUNCTION mtmf.guard_steward_group_membership() OWNER TO mtmf_owner;
+ALTER FUNCTION mtmf.guard_steward_group_membership() SECURITY INVOKER;
+ALTER FUNCTION mtmf.guard_steward_group_membership() SET search_path = '';
+REVOKE ALL ON FUNCTION mtmf.guard_steward_group_membership() FROM PUBLIC;
+
+ALTER FUNCTION mtmf.guard_steward_group() OWNER TO mtmf_owner;
+ALTER FUNCTION mtmf.guard_steward_group() SECURITY INVOKER;
+ALTER FUNCTION mtmf.guard_steward_group() SET search_path = '';
+REVOKE ALL ON FUNCTION mtmf.guard_steward_group() FROM PUBLIC;

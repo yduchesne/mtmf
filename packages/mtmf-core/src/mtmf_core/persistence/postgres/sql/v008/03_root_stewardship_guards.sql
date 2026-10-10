@@ -366,6 +366,10 @@ BEGIN
     END IF;
 
     IF TG_TABLE_NAME = 'identity_role_assignment' THEN
+        -- Lock the subject Identity so a concurrent designation (which locks
+        -- the same Identity before validating) serializes against this
+        -- revocation; otherwise both could commit a write skew.
+        PERFORM 1 FROM mtmf.identity WHERE id = OLD.identity_id FOR UPDATE;
         IF EXISTS (
             SELECT 1 FROM mtmf.stewardship_designation d
             WHERE d.tenant_id = OLD.tenant_id AND d.designated_identity_id = OLD.identity_id
@@ -376,9 +380,12 @@ BEGIN
               AND ira.organization_id IS NULL AND ira.id <> OLD.id
         )
         AND NOT EXISTS (
-            SELECT 1 FROM mtmf.identity_group_membership igm
+            SELECT 1
+            FROM mtmf.identity_group_membership igm
             JOIN mtmf.group_role_assignment gra
               ON gra.group_id = igm.group_id AND gra.tenant_id = OLD.tenant_id
+            JOIN mtmf.group g
+              ON g.id = igm.group_id AND g.deletion_status = 2
             WHERE igm.identity_id = OLD.identity_id AND gra.organization_id IS NULL
         ) THEN
             RAISE EXCEPTION USING
@@ -386,6 +393,16 @@ BEGIN
                 MESSAGE = 'the designated steward final Tenant Administrator assignment cannot be removed';
         END IF;
     ELSIF TG_TABLE_NAME = 'group_role_assignment' THEN
+        -- Lock every member Identity of the affected Group (deterministic id
+        -- order) so a concurrent designation of any of them serializes.
+        PERFORM 1 FROM mtmf.identity i
+        WHERE i.id IN (
+            SELECT igm.identity_id
+            FROM mtmf.identity_group_membership igm
+            WHERE igm.group_id = OLD.group_id
+        )
+        ORDER BY i.id
+        FOR UPDATE;
         IF EXISTS (
             SELECT 1
             FROM mtmf.identity_group_membership igm
@@ -398,9 +415,12 @@ BEGIN
                     AND ira.organization_id IS NULL
               )
               AND NOT EXISTS (
-                  SELECT 1 FROM mtmf.identity_group_membership igm2
+                  SELECT 1
+                  FROM mtmf.identity_group_membership igm2
                   JOIN mtmf.group_role_assignment gra2
                     ON gra2.group_id = igm2.group_id AND gra2.tenant_id = OLD.tenant_id
+                  JOIN mtmf.group g2
+                    ON g2.id = igm2.group_id AND g2.deletion_status = 2
                   WHERE igm2.identity_id = igm.identity_id
                     AND gra2.organization_id IS NULL
                     AND gra2.id <> OLD.id
@@ -422,3 +442,127 @@ CREATE TRIGGER identity_role_assignment_steward_guard
 CREATE TRIGGER group_role_assignment_steward_guard
     BEFORE DELETE OR UPDATE ON mtmf.group_role_assignment
     FOR EACH ROW EXECUTE FUNCTION mtmf.guard_steward_role_assignment();
+
+-- 10. A Group-derived designated steward cannot be orphaned by removing the
+--     Identity's membership in the authorizing Group while the designation
+--     stands and no other active Tenant Administrator source remains.
+CREATE OR REPLACE FUNCTION mtmf.guard_steward_group_membership()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+    group_tenant uuid;
+    tenant_admin_urn constant text := 'urn:mtmf:iam:roles:system:tenant-administrator';
+BEGIN
+    SELECT g.tenant_id INTO group_tenant FROM mtmf.group AS g WHERE g.id = OLD.group_id;
+    IF group_tenant IS NULL THEN
+        RETURN OLD;
+    END IF;
+    -- Serialize against a concurrent designation of this Identity.
+    PERFORM 1 FROM mtmf.identity WHERE id = OLD.identity_id FOR UPDATE;
+    IF NOT EXISTS (
+        SELECT 1 FROM mtmf.stewardship_designation d
+        WHERE d.tenant_id = group_tenant AND d.designated_identity_id = OLD.identity_id
+    ) THEN
+        RETURN OLD;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM mtmf.group_role_assignment gra
+        WHERE gra.group_id = OLD.group_id AND gra.tenant_id = group_tenant
+          AND gra.role_urn = tenant_admin_urn AND gra.organization_id IS NULL
+    ) THEN
+        RETURN OLD;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM mtmf.identity_role_assignment ira
+        WHERE ira.tenant_id = group_tenant AND ira.identity_id = OLD.identity_id
+          AND ira.role_urn = tenant_admin_urn AND ira.organization_id IS NULL
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM mtmf.identity_group_membership igm
+        JOIN mtmf.group_role_assignment gra
+          ON gra.group_id = igm.group_id AND gra.tenant_id = group_tenant
+        JOIN mtmf.group g
+          ON g.id = igm.group_id AND g.deletion_status = 2
+        WHERE igm.identity_id = OLD.identity_id
+          AND igm.group_id <> OLD.group_id
+          AND gra.role_urn = tenant_admin_urn
+          AND gra.organization_id IS NULL
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'MT032',
+            MESSAGE = 'the designated steward final Tenant Administrator group membership cannot be removed';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER identity_group_membership_steward_guard
+    BEFORE DELETE ON mtmf.identity_group_membership
+    FOR EACH ROW EXECUTE FUNCTION mtmf.guard_steward_group_membership();
+
+-- 11. An authorizing Group cannot be deactivated/deleted while it is the
+--     designated steward's final Tenant Administrator source.
+CREATE OR REPLACE FUNCTION mtmf.guard_steward_group()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+    tenant_admin_urn constant text := 'urn:mtmf:iam:roles:system:tenant-administrator';
+BEGIN
+    IF TG_OP = 'UPDATE' AND NOT (NEW.deletion_status = 1 AND OLD.deletion_status = 2) THEN
+        RETURN NEW;
+    END IF;
+    -- Serialize against a concurrent designation of any Group member.
+    PERFORM 1 FROM mtmf.identity i
+    WHERE i.id IN (
+        SELECT igm.identity_id
+        FROM mtmf.identity_group_membership igm
+        WHERE igm.group_id = OLD.id
+    )
+    ORDER BY i.id
+    FOR UPDATE;
+    IF NOT EXISTS (
+        SELECT 1 FROM mtmf.group_role_assignment gra
+        WHERE gra.group_id = OLD.id AND gra.tenant_id = OLD.tenant_id
+          AND gra.role_urn = tenant_admin_urn AND gra.organization_id IS NULL
+    ) THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM mtmf.identity_group_membership igm
+        JOIN mtmf.stewardship_designation d
+          ON d.tenant_id = OLD.tenant_id AND d.designated_identity_id = igm.identity_id
+        WHERE igm.group_id = OLD.id
+          AND NOT EXISTS (
+              SELECT 1 FROM mtmf.identity_role_assignment ira
+              WHERE ira.tenant_id = OLD.tenant_id AND ira.identity_id = igm.identity_id
+                AND ira.role_urn = tenant_admin_urn AND ira.organization_id IS NULL
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM mtmf.identity_group_membership igm2
+              JOIN mtmf.group_role_assignment gra2
+                ON gra2.group_id = igm2.group_id AND gra2.tenant_id = OLD.tenant_id
+              JOIN mtmf.group g2
+                ON g2.id = igm2.group_id AND g2.deletion_status = 2
+              WHERE igm2.identity_id = igm.identity_id
+                AND igm2.group_id <> OLD.id
+                AND gra2.role_urn = tenant_admin_urn
+                AND gra2.organization_id IS NULL
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'MT032',
+            MESSAGE = 'the designated steward final Tenant Administrator group cannot be deactivated or deleted';
+    END IF;
+    RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+CREATE TRIGGER steward_group_guard
+    BEFORE UPDATE OR DELETE ON mtmf.group
+    FOR EACH ROW EXECUTE FUNCTION mtmf.guard_steward_group();

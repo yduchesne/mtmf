@@ -54,12 +54,16 @@ AS $$
                   AND ira.organization_id IS NULL
             )
             OR EXISTS (
-                SELECT 1 FROM mtmf.identity_group_membership igm
+                SELECT 1
+                FROM mtmf.identity_group_membership igm
                 JOIN mtmf.group_role_assignment gra
                   ON gra.group_id = igm.group_id AND gra.tenant_id = tenant_id_value
+                JOIN mtmf.group g
+                  ON g.id = igm.group_id AND g.tenant_id = tenant_id_value
                 WHERE igm.identity_id = identity_id_value
                   AND gra.role_urn = 'urn:mtmf:iam:roles:system:tenant-administrator'
                   AND gra.organization_id IS NULL
+                  AND g.deletion_status = 2
             )
         );
 $$;
