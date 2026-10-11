@@ -1,6 +1,6 @@
 # PR 14 — Service Authentication and Verified Acting-User Security Decisions
 
-> **STATUS: D1 v0.1 ARCHITECTURE SELECTED; FULL PR 14 APPROVAL PENDING. IMPLEMENTATION STOP.**
+> **STATUS: D1 ARCHITECTURE SELECTED; KEYCLOAK DEVELOPMENT PROFILE CONDITIONALLY APPROVED; FULL PR 14 APPROVAL PENDING. IMPLEMENTATION STOP.**
 >
 > This register records the PR 14 security decisions proposed in the
 > detailed implementation plan and the Phase 0/Phase 0-refinement
@@ -902,6 +902,25 @@ version/configuration that will replace it. This follow-up records **no
 approval**; the approval log below is unchanged and every entry remains
 PENDING.
 
+## 14B. Human review disposition — Keycloak 26.8.0 D1 development profile (2026-10-11)
+
+**CONDITIONALLY APPROVED FOR DEVELOPMENT PROFILE ONLY.** Following the D1 follow-up report at commit `aa09b219afe96b4496b1d101f7e81fe1b826b8c5`, the reviewer authorized recording conditional acceptance of the pinned **Keycloak 26.8.0 development issuer profile** described in [PR14_KEYCLOAK_EVIDENCE.md](PR14_KEYCLOAK_EVIDENCE.md) §6A. This is a narrow **issuer-profile decision**, **not** approval of the production issuer, A14-01–A14-10 collectively, root authentication, or PR 14 implementation.
+
+**Accepted basis:** In Keycloak 26.8.0 source, access-token `azp` maps to `issuedFor`, initialized from the authenticated token-request client; both client-credentials and authorization-code+PKCE paths were traced. DC01, DC02, DC03, DC04, DC06, and DC08 support the configured/observed behavior. This is **version-specific source-supported implementation behavior**, not a standards-level delegation guarantee.
+
+**Binding conditions:**
+
+1. Pin the exact Keycloak issuer version and immutable image digest for the development fixture; re-review source behavior, issuance evidence, and mapper configuration on upgrades or issuer changes.
+2. For the D1 profile, require one registered confidential OAuth client with both service-account and authorization-code+PKCE flows enabled, with no `azp` override, token exchange, or preview actor delegation.
+3. Validate service and user JWTs **independently** for allowed asymmetric algorithm/key, trusted issuer, distinct required audiences, access-token class, `exp` (zero positive leeway), `iat`, and `nbf` if present, then compare signed, unambiguous client identities. Reject absent/malformed/ambiguous claims and token swaps.
+4. Authenticate the Application from the service client and resolve the user through protected `(issuer, sub)` Identity binding. Tenant, membership, subscription, and policy authorization are independent checks. D1 is **client-bound user context**, not consent, cross-client delegation, or an RFC 8693 actor chain.
+5. DC05 (signed token missing `azp`) and DC07 (real MTMF domain binding) remain **NOT EXECUTED**; require fail-closed verifier and integration tests before feature acceptance. Harness-only checks are not sufficient.
+6. Document and accept residual bearer replay, separate-session token acquisition, and client-credential compromise risks; this approval does not claim proof of same request/session.
+
+**Outstanding reviewer decisions (do not infer approval):** production issuer/version and configuration; production audience/class profile; A14-01–A14-10 and §§7–10 as a whole; ordinary-user IdentityOrigin rule; dependency/ownership reconciliation; root Option A vs explicit separation/defer, plus phishing-resistant root assurance. The root Option A architecture remains a target, **not a production authentication approval**.
+
+**Gate:** PR 14 production code, migration `0011`, API changes, and root authentication remain **STOPPED**. An explicitly scoped, separately approved implementation gate is required.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
@@ -914,12 +933,12 @@ All rows are **PENDING HUMAN REVIEW**. No decision is approved.
 | A14-04 | PENDING HUMAN REVIEW | — | — | — |
 | A14-05 | PENDING HUMAN REVIEW / SCOPE OPEN | — | — | — |
 | A14-06 | PENDING HUMAN REVIEW | — | — | — |
-| A14-07 | D1 ARCHITECTURE SELECTED; ISSUER CONTRACT PROPOSED (SOURCE-SUPPORTED), NOT APPROVED; IMPLEMENTATION BLOCKED | — | — | — |
+| A14-07 | D1 SELECTED; KEYCLOAK DEVELOPMENT CLIENT-BINDING PROFILE CONDITIONALLY APPROVED; PRODUCTION/IMPLEMENTATION BLOCKED | Human reviewer (conversation) | 2026-10-11 | §§14A–14B |
 | A14-08 | PENDING HUMAN REVIEW / BLOCKED ON ROOT ASSURANCE | — | — | — |
 | A14-09 | PENDING HUMAN REVIEW | — | — | — |
 | A14-10 | PENDING HUMAN REVIEW | — | — | — |
-| §7 claim profiles | PENDING HUMAN REVIEW / PARTIALLY UNVERIFIED | — | — | — |
-| §8 delegation contract | PENDING HUMAN REVIEW / BLOCKED | — | — | — |
+| §7 claim profiles | KEYCLOAK 26.8.0 DEVELOPMENT D1 PROFILE CONDITIONALLY APPROVED; PRODUCTION PROFILE PENDING | Human reviewer (conversation) | 2026-10-11 | §14B; PR14_KEYCLOAK_EVIDENCE §6A |
+| §8 delegation contract | D1 DEVELOPMENT PROFILE CONDITIONALLY APPROVED; PRODUCTION CONTRACT AND IMPLEMENTATION PENDING | Human reviewer (conversation) | 2026-10-11 | §§14A–14B |
 | §9 root model | PENDING HUMAN REVIEW / BLOCKED ON ASSURANCE | — | — | — |
 | §10 dependency/ownership | PENDING HUMAN REVIEW / RECONCILIATION OPEN | — | — | — |
 
