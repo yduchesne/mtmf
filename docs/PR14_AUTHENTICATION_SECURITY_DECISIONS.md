@@ -937,6 +937,17 @@ PENDING.
 
 The human reviewer approved the narrow v0.1 T1 amendment recorded in `PR12_INTEGRATION_SECURITY_DECISIONS.md` (commit `db470bebc4968a897bc30d10875a1611dfbf7109`). Constrained D1 may supply issuer-bound same-client user context without an RFC 8693 actor chain, subject to independent verification of both tokens, explicit issuer client-binding semantics, cross-client rejection, and independent Application, Identity, Tenant membership, subscription and policy gates. This is not consent, cross-client delegation, or a per-request actor-chain proof. The prohibition on arbitrary service-signed identity assertions remains. Distinct-client delegation requires a separately approved standards-based mechanism. Root remains excluded and fail-closed. **Production issuer, full non-root approval, and implementation remain PENDING.**
 
+## 14E. Human decision — development-first PR 14 scope (2026-10-11)
+
+**APPROVED SCOPE ONLY; IMPLEMENTATION AUTHORIZATION NOT YET GRANTED.** The reviewer selected a development-first PR 14 implementation targeting the pinned, conditionally approved **Keycloak 26.8.0 local development issuer profile**. A separately specified and validated production issuer profile is deferred. This does not imply that development fixture settings, loopback issuer URL, TLS material, audience values, or client secrets are suitable for production.
+
+- Design the trust-profile configuration and verifier boundaries to accommodate a separately approved production issuer later; do not invent production issuer settings or implicitly allow arbitrary issuers.
+- Only the exact configured development issuer and approved signed service/user access-token profiles are eligible. Fail closed for unknown issuer, audience, token class, algorithm, client binding, or trust configuration.
+- Before production authentication code is authorized, close the outstanding **non-root** A14 security decisions, §7 token-class predicates (including reliable issuer-backed service-account vs human-user discrimination), §10 ownership/dependency rules, and any remaining approval conditions. A development-first scope decision is **not** a blanket waiver of these gates.
+- Retain the amended PR 12 T1 constrained D1 model: independently verified same-client service and user tokens, plus independent MTMF Application, Identity, Tenant, subscription and policy gates; no cross-client delegation.
+- Root authentication remains deferred and fail-closed. DC05/DC07 and all applicable non-root AUTH acceptance scenarios must be completed before declaring the feature accepted.
+- **Deployment gate:** no production rollout or production issuer trust may be enabled until its issuer-specific profile, configuration, key-management and security evidence receive separate human approval.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
