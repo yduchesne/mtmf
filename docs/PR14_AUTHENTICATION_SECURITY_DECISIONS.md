@@ -3,22 +3,24 @@
 > **STATUS: PROPOSED — PENDING HUMAN REVIEW. NOT APPROVED.**
 >
 > This register records the PR 14 security decisions proposed in the
-> detailed implementation plan and the Phase 0 review. It is **not** an
-> approval. Per the PR 14 execution contract and `AGENTS.md`, no
-> security-sensitive implementation (token verifier, trust contracts,
-> `0011` persistence, actor-context composition) may begin until a human
-> reviewer records explicit approval of `A14-01`–`A14-10`, the issuer
-> claim profiles in §5, the delegation contract in §6, the root model in
-> §7, and the dependency/ownership split in §8 — or an explicitly narrower
-> scope.
+> detailed implementation plan and the Phase 0/Phase 0-refinement
+> evidence review. It is **not** an approval. Per the PR 14 execution
+> contract and `AGENTS.md`, no security-sensitive implementation (token
+> verifier, trust contracts, `0011` persistence, actor-context
+> composition) may begin until a human reviewer records explicit
+> approval of `A14-01`–`A14-10`, the issuer claim profiles in §7, the
+> delegation contract in §8, the root model in §9, and the dependency/
+> ownership split in §10 — or an explicitly narrower scope.
 >
 > Do not infer approval from the existence of this document, the
 > implementation plan, `PR12_INTEGRATION_SECURITY_DECISIONS.md`,
-> `PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md`, an implementation request,
-> a coding-agent report, or successful documentation checks. Every
-> unresolved value is marked unresolved and must STOP rather than be
-> assumed. Review recommendations in §9 are **recommendations only**, not
-> approvals.
+> `PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md`, an implementation
+> request, a coding-agent report, successful documentation checks, or
+> the fact that some requirements below are marked “supportable for
+> approval”. Every unresolved value is marked **UNRESOLVED** or
+> **BLOCKED**, and implementation must STOP rather than assume it.
+> Recommendations in §11 are **recommendations only**, not approvals.
+> The approval log in §14 is untouched and remains PENDING.
 
 Owner documentation: [SECURITY_MODEL.md](SECURITY_MODEL.md),
 [DOMAIN_MODEL.md](DOMAIN_MODEL.md), [AUTHORIZATION.md](AUTHORIZATION.md),
@@ -57,54 +59,116 @@ issuance, token-exchange server, client-side token acquisition/renewal,
 root recovery CLI, refresh-token handling, or privilege expansion. Those
 belong to PR 15–20 and a separate recovery PR.
 
-## 2. Phase 0 baseline recorded before this register
+## 2. Reconciled baseline and inspected sources
 
-Observed on the working tree when this register was drafted:
+This section separates **repository facts** (inspected locally) from
+**externally documented issuer behavior** (verified against official
+documentation) from **MTMF configuration/observed evidence** (absent).
 
-- Branch `dev/service-auth` at `HEAD == origin/main ==
-  1924143ea504a9c291d695d154e9537cdb61969e`, clean, no delta against
-  `main`.
-- Alembic migration head: `0010_pr13_application_registry`.
-- Reviewed runtime `EXECUTE` allowlist through `0010`: exactly **75**
-  signatures — 6 membership-removal entry points, 44 repository
-  functions (v004), 8 typed Role-assignment functions (v005), 9
-  TenantManagementGroup/root-registry reads (v009), and 8
-  Application-registry reads (v010). Source:
-  `mtmf_core.persistence.postgres.roles._*_FUNCTION_ARGUMENTS` /
-  `expected_runtime_signatures()`.
-- `mtmf-api`, `mtmf-client`, and `mtmf-service` are empty `__version__`
-  stubs. There is no FastAPI app, HTTP route, public DTO, or existing
-  authentication, token, JWKS, or external-subject binding code.
-- Installed/locked crypto dependencies: `cryptography==50.0.1` and
-  `pyjwt==2.13.0` (both currently transitive, not declared by any MTMF
-  package). `PyJWT` exposes `PyJWKClient`/`PyJWKSet` and asymmetric
-  algorithms and uses stdlib HTTP for JWKS retrieval.
-- Existing reuse seams (do not duplicate): one provider-neutral
-  `MtmfSpi`, `UnitOfWork`, typed repositories, `PostgresMtmfSpi`
-  (runtime-only), `ApplicationTenantEligibilityService`, versioned
-  `sql/v0NN` + additive Alembic migrations, `Identity`/`Principal`/
-  `Tenant`/typed memberships, `IdentityOrigin` (`LOCAL`/`FEDERATED`),
-  `TenantLifecycle`, `SecurityScope`, and the `root_registry` protected
-  canonical root binding.
-- The root `LOCAL` Identity vs external OIDC binding semantic gate is
-  **unresolved** in the authoritative docs; see `A14-08` and §7.
+### 2.1 Repository facts (inspected)
+
+| Fact | Value |
+| --- | --- |
+| Branch | `dev/service-auth` |
+| `origin/main` base | `1924143ea504a9c291d695d154e9537cdb61969e` |
+| Initial Phase 0 register commit | `2ed39bb` (“PR 1 phase 0”) |
+| Published finalized register | `cea99d144b8df164defae99ef6f32d2bca1377c0` |
+| Refinement base | `cea99d1` (clean working tree at start) |
+| Alembic migration head | `0010_pr13_application_registry` |
+| Runtime EXECUTE allowlist | exactly **75** signatures (6 removal + 44 repository + 8 role-assignment + 9 TenantManagementGroup/root + 8 Application-registry), from `expected_runtime_signatures()` |
+| `mtmf-api`/`mtmf-client`/`mtmf-service` | empty `__version__` stubs |
+| Existing auth/JWT/JWKS code | none |
+| `compose.yaml` services | PostgreSQL 18 only |
+| Keycloak version/config in repo | **none** (no realm, client, audience, ACR/AMR, or dev-issuer configuration) |
+| PR 14 implementation plan on branch | **absent** from `.plans/` |
+| Locked crypto libs | `cryptography==50.0.1`, `pyjwt==2.13.0` (both transitive, not declared by any MTMF package) |
+
+Reuse seams confirmed: one provider-neutral `MtmfSpi`, `UnitOfWork`, typed
+repositories, `PostgresMtmfSpi` (runtime-only),
+`ApplicationTenantEligibilityService`, versioned `sql/v0NN` + additive
+Alembic migrations, `Identity`/`Principal`/`Tenant`/typed memberships,
+`IdentityOrigin` (`LOCAL`/`FEDERATED`), `TenantLifecycle`,
+`SecurityScope`, and the `root_registry` protected canonical root binding.
+
+### 2.2 Externally verified issuer/library evidence (official docs)
+
+Accessed 2026-10-11. These are **documented capabilities**, not proof of
+any MTMF-configured profile, and not observed runtime tokens.
+
+| Source | URL | Relevance |
+| --- | --- | --- |
+| Keycloak Server Administration Guide (release **26.8.0**) | `https://www.keycloak.org/docs/latest/server_admin/` | client_credentials/service accounts, audience mappers, ACR→LoA, AMR mapper, `azp` presence, Standard Token Exchange client option |
+| Keycloak “Configuring and using token exchange” (release **26.8.0**) | `https://www.keycloak.org/securing-apps/token-exchange` | Standard Token Exchange V2, delegation (`may_act`/`act`) preview status |
+| OpenID Connect Core 1.0 | `https://openid.net/specs/openid-connect-core-1_0.html` | normative `azp` definition (ID Token) |
+| RFC 8693 (OAuth 2.0 Token Exchange) | `https://www.rfc-editor.org/rfc/rfc8693.txt` | `act` (§4.1) and `may_act` (§4.4) claims |
+| PyJWT 2.13.0 (installed) | local `.venv` source | `decode`, `PyJWKClient`, leeway semantics |
+
+### 2.3 What the evidence does and does not prove
+
+- **Proves (documented capability):** Keycloak 26.8.0 documents the
+  OAuth 2.0 Client Credentials grant via a client service account;
+  Audience/Audience-Resolve protocol mappers that add audiences to the
+  **access token only**; a realm (and per-client) ACR→Level-of-
+  Authentication mapping whose `acr` value is included in access and ID
+  tokens; an AMR protocol mapper (RFC 8176); the presence of `azp` in
+  access tokens; and a fully supported Standard Token Exchange V2.
+- **Does not prove (MTMF-specific):** no MTMF Keycloak realm/client
+  configuration exists, so no service/user/root **token-class predicate**,
+  audience value, `acr`/`amr` profile, or observed claim set can be
+  asserted. Those remain **UNVERIFIED / NOT EXECUTED**.
+- **Does not prove (delegation):** Keycloak documents that its
+  `may_act`/`act` delegation is **Preview, disabled by default**, and
+  requires explicit feature enablement plus FGAP V2. Standard Token
+  Exchange V2 (fully supported) only exchanges a Keycloak token for a
+  token targeted at a different client in the same realm; it is not, by
+  itself, a guarantee that a direct user access token proves
+  client-to-user delegation.
+- **Does not prove (root assurance):** Keycloak documents ACR→LoA and AMR
+  mapping, but generic `mfa`/`otp`/unspecified `acr` values do not prove
+  phishing resistance. No MTMF root realm policy exists.
+
+### 2.4 Evidence taxonomy used below
+
+Repository facts; official-doc documented capabilities; proposed MTMF
+configuration; and observed runtime claim evidence are kept distinct. No
+observed claim evidence exists (no live issuer test was run:
+**NOT EXECUTED**). Prior 1357-test QA is baseline/regression evidence
+only and does not validate issuer claim semantics.
 
 ## 3. Approval gate and conventions
 
 Implementation may not begin until a reviewer approves each of
-`A14-01`–`A14-10` in §4 and the profiles/contracts in §5–§8, or an
-explicitly narrower scope. The approval log in §11 must be completed with
+`A14-01`–`A14-10` in §6 and the profiles/contracts in §7–§10, or an
+explicitly narrower scope. The approval log in §14 must be completed with
 reviewer identity, date, and reference.
 
 Status vocabulary:
 
-- **PROPOSED** — the stated contract; pending review.
-- **RECOMMENDED FOR APPROVAL** — the Phase 0 recommendation; still not
-  approved.
-- **UNRESOLVED** — a required value not yet settled; STOP if it blocks
-  implementation.
+- **PROPOSED** — stated contract; pending review.
+- **RECOMMENDED FOR APPROVAL** — Phase 0/refinement recommendation; still not approved.
+- **SUPPORTABLE FOR APPROVAL** — evidence exists to review it now; not approved.
+- **UNRESOLVED** — required value not settled; STOP if it blocks implementation.
+- **BLOCKED** — missing evidence/guarantee prevents a safe contract; STOP.
 
-## 4. Proposed decisions
+## 4. Executed scope control
+
+This refinement changed documentation only. No production Python/Rust,
+migrations (`0011` or older), SQL, grants, `pyproject.toml`, lockfiles,
+container/Podman orchestration, Keycloak deployment, secrets, tokens, new
+endpoints, JWT verifier code, identity-mapping implementation, root
+recovery, or test code was changed. No decision is marked APPROVED.
+
+## 5. Phase 0 refinement method
+
+1. Reconciled branch, `origin/main`, and docs (§2.1).
+2. Collected PyJWT evidence from the installed 2.13.0 source (§10.2).
+3. Reviewed official Keycloak 26.8.0 and OIDC/RFC documentation (§2.2).
+4. Distinguished documented capability from MTMF configuration and
+   observed evidence (§2.3–§2.4).
+5. Refined A14-02/05/07/08 and §7–§10; added the reviewer decision table
+   (§12) and decision-ready summary (§13). Approval log remains §14.
+
+## 6. Proposed decisions
 
 ### A14-01 — Token trust model (resource server)
 
@@ -114,54 +178,51 @@ Status vocabulary:
    access tokens; it does not issue them.
 2. Accept only asymmetric, signed JWT **access tokens** from explicitly
    allowlisted `(issuer, audience)` pairs.
-3. Reject: `alg=none`; symmetric shared-secret JWTs (`HS256`/`HS384`/
-   `HS512`); any algorithm or key type not in the profile's fixed
-   allowlist; ID tokens (`token_use`/`typ` indicating ID); refresh
-   tokens; and opaque tokens with no verifiable signature.
+3. Reject `alg=none`; symmetric shared-secret JWTs (`HS*`); any algorithm
+   or key type not in the profile’s fixed allowlist; ID tokens
+   (`token_use`/`typ` indicating ID); refresh tokens; and opaque tokens
+   with no verifiable signature.
 4. Never perform implicit discovery of an arbitrary issuer, `jwks_uri`,
    `jku`, or `x5u`. Only configured trust anchors are used.
 5. A token that merely parses is not accepted; signature, issuer,
    audience, token class, and time must all verify.
 
-**Rationale.** Bounded trust surface; PR 12 `T1`; PR 14 security
-invariants 1, 5, 6.
+**Rationale.** Bounded trust surface; PR 12 `T1`; PR 14 invariants.
 
-**Alternatives considered.** Symmetric HMAC (rejected: shared secret
-between issuer and MTMF broadens trust and enables key confusion);
-opaque introspection (rejected for v0.1: adds a live network dependency
-and an `introspection_endpoint`, and is not required by T1); OIDC
-discovery (rejected: unbounded trust surface).
+**Refinement.** The expiry/time semantics are now evidence-backed in
+§10.2; the recommended PyJWT constraint is §10.1.
 
-**Recommendation.** Adopt as written. Status: **PROPOSED**. Approval:
-reviewer `_pending_`, date `_pending_`, reference `_pending_`.
+**Recommendation.** Adopt as written. Status: **PROPOSED /
+SUPPORTABLE FOR APPROVAL**. Approval: reviewer `_pending_`, date
+`_pending_`, reference `_pending_`.
 
 ### A14-02 — Distinct service and user validation profiles
 
 **Normative requirement (proposed).**
 
 1. Two distinct, immutable trust profiles exist: **service** and
-   **end-user**.
-2. They MUST have **different expected audiences** (no shared audience
-   alias).
+   **end-user** (plus **root**, §9).
+2. They MUST have **different expected audiences** (no shared alias).
 3. Each profile defines explicit, non-empty token-class predicates.
 4. Service profile requires configured client-credentials evidence
-   (`azp`/`client_id` or an approved issuer-specific equivalent) and
-   MUST NOT accept a human subject.
+   (`azp`/`client_id` or an approved issuer-specific equivalent) and MUST
+   NOT accept a human subject.
 5. User profile requires `sub` and approved user-token predicates.
 6. Missing, ambiguous, or contradictory class evidence is rejected.
-7. A service token is never accepted where a user token is required,
-   and vice versa.
+7. A service token is never accepted where a user token is required, and
+   vice versa.
 
-**Rationale.** Token-confusion / cross-token-swap prevention; PR 14
-invariants 1, 5.
+**Rationale.** Token-confusion prevention.
 
-**Alternatives considered.** A single profile with a `token_use` switch
-(rejected: one predicate bug collapses both classes); audience-only
-separation (insufficient alone; retained as a necessary condition, not
-sufficient).
+**Refinement.** Keycloak 26.8.0 documents that Audience mappers add
+audiences to the **access token only**; this supports distinct profile
+audiences but does not by itself define the token-class predicate. The
+exact predicates remain **UNRESOLVED** until an MTMF issuer profile is
+configured and its claim shape confirmed (see §7 and §13/Q4).
 
-**Recommendation.** Adopt as written. Status: **PROPOSED**. Approval:
-reviewer `_pending_`, date `_pending_`, reference `_pending_`.
+**Status: PROPOSED / PARTIALLY BLOCKED (predicate + audience evidence
+missing)**. Approval: reviewer `_pending_`, date `_pending_`, reference
+`_pending_`.
 
 ### A14-03 — Service credential → exactly one Application
 
@@ -174,21 +235,21 @@ reviewer `_pending_`, date `_pending_`, reference `_pending_`.
 3. Multiple active credentials MAY map to one Application.
 4. One credential MUST NOT map to two Applications — not in place and
    not historically.
-5. Deactivation/revocation blocks subsequent verification; terminal
-   rows are retained as history and must not block a *new distinct*
-   credential.
+5. Deactivation/revocation blocks subsequent verification; terminal rows
+   are history and must not block a new distinct credential.
 6. The credential identifier is never the Application UUID and is never
    inferred from a mutable name or Tenant.
-7. Duplicate/ambiguous active rows fail closed as an integrity failure;
-   never select an arbitrary `LIMIT 1`.
+7. Duplicate/ambiguous active rows fail closed; never select an
+   arbitrary `LIMIT 1`.
 
-**Rationale.** PR 12 `T6`; no spoofing; PR 14 invariants 2, 4.
+**Rationale.** PR 12 `T6`; no spoofing.
 
-**Alternatives considered.** Mutable name/keyed mapping (rejected);
-credential-as-Application-ID (rejected); many-to-many (rejected: violates
-T6).
+**Refinement.** Keycloak documents the `client_id`/service-account
+concept, but the exact claim used to carry the credential identity in an
+access token is profile-specific and remains part of §7/A14-02.
 
-**Recommendation.** Adopt as written. Status: **PROPOSED**. Approval:
+**Recommendation.** Adopt as written. Status: **PROPOSED / SUPPORTABLE
+FOR APPROVAL** (subject to §7 claim-name confirmation). Approval:
 reviewer `_pending_`, date `_pending_`, reference `_pending_`.
 
 ### A14-04 — External subject → exactly one MTMF Identity
@@ -199,159 +260,169 @@ reviewer `_pending_`, date `_pending_`, reference `_pending_`.
 2. Each current binding maps to exactly one MTMF Identity.
 3. No email/name/`preferred_username` matching; no implicit or JIT
    Identity creation; no self-service mapping.
-4. Binding mutations are operator/installation-only and never granted
-   to `mtmf_runtime`.
-5. Identity-origin compatibility is explicitly verified (see §7 for
-   root; ordinary users are expected `FEDERATED`, and a reviewer must
-   confirm the exact rule for each issuer).
-6. Zero, multiple, inactive, inconsistent, or cross-Tenant mappings
-   fail closed.
+4. Binding mutations are operator/installation-only and never granted to
+   `mtmf_runtime`.
+5. Ordinary (non-root) external users bind to a **`FEDERATED`** MTMF
+   Identity; the root binding is the sole protected exception (§9).
+6. Zero, multiple, inactive, inconsistent, or cross-Tenant mappings fail
+   closed.
 7. One `(issuer, sub)` never maps to two Identities, and one Identity
-   never claims two current `(issuer, sub)` bindings, unless the
-   reviewer explicitly approves a multiple-binding model.
+   never claims two current `(issuer, sub)` bindings unless the reviewer
+   explicitly approves a multiple-binding model.
 
 **Rationale.** PR 12 `T1`; account-takeover resistance.
 
-**Alternatives considered.** Email matching (rejected:
-reassignment/ takeover); JIT provisioning (rejected: unmanaged
-principals); runtime self-service linking (rejected).
+**Refinement.** Re-checked `IdentityOrigin` and membership contracts in
+`mtmf_core.domain.identity_entity`/`memberships`: origin is immutable
+`LOCAL`/`FEDERATED`, and Tenant usability is explicit through
+`IdentityTenantMembership` plus the matching `PrincipalTenantMembership`.
+A `FEDERATED` ordinary binding is compatible with those contracts; this
+does **not** assert an issuer rule (which remains a reviewer choice, §13/Q5).
 
-**Recommendation.** Adopt as written, with the ordinary-user origin rule
-recorded at approval. Status: **PROPOSED**. Approval: reviewer
-`_pending_`, date `_pending_`, reference `_pending_`.
+**Recommendation.** Adopt as written. Status: **PROPOSED /
+SUPPORTABLE FOR APPROVAL**. Approval: reviewer `_pending_`, date
+`_pending_`, reference `_pending_`.
 
 ### A14-05 — Acting-user propagation mode (SCOPE GATE)
 
-**Normative requirement (proposed).**
+**Recommended interpretation of PR 12 `T1` for review.**
 
-1. The mandatory supported v0.1 path is a **signed, externally issued
-   end-user access token** verified per §5.3.
-2. RFC 8693 token exchange is **deferred** unless required to establish
-   verifiable delegation (see A14-07 / §6).
-3. If token exchange is implemented, the exchanged access token is
-   validated exactly like any other user token, including actor/delegation
-   chain; the exchange request/response is never trusted unverified, and
-   no ad-hoc assertion format is invented.
-4. A full token-exchange HTTP client is not added silently.
+1. The mandatory v0.1 mechanism is an **externally issued, signed,
+   validated end-user access token**, verified independently of the OAuth
+   2.0 Client Credentials service token.
+2. RFC 8693 exchange is **not mandatory merely because PR 12 lists it as
+   an alternative**. It becomes a dependency only **if the selected
+   issuer cannot establish the required client-to-user delegation binding
+   through its signed direct-token profile**.
+3. If direct tokens cannot demonstrate delegation under a documented
+   issuer guarantee, mark A14-05/A14-07 **BLOCKED**, propose RFC 8693 as
+   an alternative for human approval, and STOP.
+4. Never implement an exchange endpoint, an exchange client, or an ad-hoc
+   service-signed assertion in PR 14.
+5. Any exchanged token that is later approved is validated exactly like
+   any other user token, including its actor/delegation chain; the
+   exchange request/response is never trusted unverified.
 
-**Rationale.** Narrow implementation; PR 12 `T1`; plan §5.2.
+**Evidence.** Keycloak 26.8.0 documents a fully supported Standard Token
+Exchange V2, but also documents that the `may_act`/`act` **delegation**
+feature is **Preview, disabled by default**, requiring
+`--features=preview` or `--features=token-exchange-delegation` and FGAP
+V2. A preview feature is not an acceptable mandatory security dependency.
 
-**Alternatives considered.** (a) Signed tokens only (recommended).
-(b) Signed tokens plus executable RFC 8693 exchange in PR 14 (larger
-scope; requires explicit approval). (c) Exchange-only (rejected: depends
-on an exchange endpoint that may not exist).
+**Recommendation.** Signed external-issuer end-user access tokens are the
+mandatory v0.1 path; RFC 8693 exchange is a contingency, not a baseline.
 
-**Recommendation (not an approval).** Signed externally issued end-user
-access tokens are the mandatory v0.1 path; token exchange is deferred
-unless required to establish verifiable delegation.
+**Open scope question Q1.** If the reviewer interprets `T1` as requiring
+**both** modes to be executable in PR 14, STOP and obtain explicit scope
+approval.
 
-**Open scope question.** PR 12 `T1` approved "signed end-user access
-tokens **or** standards-based token exchange". If the reviewer interprets
-`T1` as requiring **both modes to be executable in PR 14**, implementation
-must STOP and obtain explicit scope approval first.
-
-**Status: PROPOSED / SCOPE PARTIALLY UNRESOLVED.** Approval: reviewer
+**Status: PROPOSED / SCOPE PARTIALLY UNRESOLVED**. Approval: reviewer
 `_pending_`, date `_pending_`, reference `_pending_`.
 
 ### A14-06 — Verified actor eligibility
 
 **Normative requirement (proposed).**
 
-1. The acting user MUST be an **ACTIVE** Identity (not soft-deleted)
-   with an eligible/ACTIVE Principal (not soft-deleted).
-2. There must be an explicit `PrincipalTenantMembership` and
-   `IdentityTenantMembership` for the Identity/Principal and the
-   **selected** Tenant.
-3. The selected Tenant MUST be `ACTIVE` (not `PROVISIONING`/
-   `SUSPENDED`, not soft-deleted) and MUST be an **ordinary** Tenant
-   (`SecurityScope.TENANT`). The SYSTEM/root Tenant and `SecurityScope.ROOT`
-   are rejected as consumer context, even if fabricated registration or
-   subscription rows exist.
-4. The Application MUST be `ACTIVE` and separately, currently registered
-   (`ACTIVE` registration) for that exact Tenant.
+1. The acting user MUST be an **ACTIVE** Identity (not soft-deleted) with
+   an ACTIVE Principal (not soft-deleted).
+2. Explicit `PrincipalTenantMembership` and `IdentityTenantMembership`
+   must exist for the Identity/Principal and the **selected** Tenant.
+3. The selected Tenant MUST be `ACTIVE` (not `PROVISIONING`/`SUSPENDED`,
+   not soft-deleted) and **ordinary** (`SecurityScope.TENANT`). The
+   SYSTEM/root Tenant (`SecurityScope.ROOT`) is rejected as consumer
+   context even if fabricated registration/subscription rows exist.
+4. The Application MUST be `ACTIVE` and currently `ACTIVE`-registered for
+   that exact Tenant.
 5. Tenant subscription eligibility is checked by the existing PR 13
-   `ApplicationTenantEligibilityService` **separately** and is not used
-   as authentication.
-6. The selected Tenant is a request context, never proof of membership.
+   `ApplicationTenantEligibilityService` **separately**; it is never
+   authentication.
+6. The selected Tenant is request context, never proof of membership.
 7. Missing/inconsistent context fails closed.
 
-**Rationale.** Verified context / Tenant isolation; PR 12 `T5`
-precedence.
+**Rationale.** Verified context / Tenant isolation; PR 12 `T5`.
 
-**Alternatives considered.** Using the subscription as the auth gate
-(rejected: conflates commercial fact with authentication); allowing
-SYSTEM/root consumer context (rejected: PR 12 §3B).
+**Refinement.** Confirmed against the in-repo `Tenant`/`SecurityScope`/
+`TenantLifecycle` and typed-membership contracts.
 
-**Recommendation.** Adopt as written. Status: **PROPOSED**. Approval:
-reviewer `_pending_`, date `_pending_`, reference `_pending_`.
+**Recommendation.** Adopt as written. Status: **PROPOSED / SUPPORTABLE
+FOR APPROVAL**. Approval: reviewer `_pending_`, date `_pending_`,
+reference `_pending_`.
 
 ### A14-07 — Delegation / confused-deputy prevention
 
-**Normative requirement (proposed).** The full delegation contract is
-§6. In summary:
+**Normative requirement (proposed).** The detailed contract is §8. In
+summary:
 
 1. The acting-user token alone does not grant the Application delegation
    rights.
-2. A user token MUST present issuer-validated evidence that the verified
-   calling OAuth client is authorized to act for the subject.
+2. A user token MUST present **issuer-validated** evidence that the
+   verified calling OAuth client is authorized to act for the subject.
 3. Two independently valid tokens with no verifiable relationship MUST
    fail.
-4. Absent/ambiguous delegation evidence fails closed.
+4. `act` is accepted only under a separately approved, issuer-specific
+   RFC 8693 exchanged-token profile; no generic `act` fallback.
+5. Absent/ambiguous delegation evidence fails closed.
 
-**Original proposal (preserved, differs from the §9 recommendation).**
-The first draft accepted either `azp == verified client_id` under a
-deployment convention that the same client is used for service and user
-flows, **or** an `act` claim under token exchange.
+**Evidence and verdict.**
 
-**Reviewer-recommended refinement (recorded, NOT approved).** An `azp`
-claim **alone does not automatically establish delegation authority**;
-`azp` typically identifies the client that obtained the token and may be
-a different or shared client. An `act` claim is accepted **only** under
-an explicitly defined trusted token-exchange profile. Delegation must be
-issuer-validated, not inferred.
+- OIDC Core defines `azp` for **ID Tokens** and states that in practice
+  `azp` “only occurs when extensions beyond the scope of this
+  specification are used”; validation SHOULD follow the extension.
+  Keycloak does emit `azp` in access tokens, but the reviewed Keycloak
+  documentation does **not** guarantee that the access-token `azp` is the
+  client that obtained the user's authorization in a way that establishes
+  MTMF delegation. Therefore `azp == client_id` alone is **insufficient**
+  and the same-client direct-token design is **BLOCKED — UNVERIFIED**
+  pending an explicit issuer guarantee and configured profile.
+- RFC 8693 §4.1 defines the `act` claim. Keycloak’s `act`/`may_act`
+  delegation is **Preview/disabled-by-default** (26.8.0); it is not an
+  assured fallback.
 
-**Discrepancy to resolve.** The two positions differ on whether
-`azp == client_id` can ever be sufficient. §6 records the stricter
-recommended contract as the working proposal and preserves the original
-as an explicitly flagged alternative. Do not implement either until the
-reviewer chooses.
+**Required reviewer question Q2.** Can one confidential OAuth client
+safely serve both client-credentials and interactive user flows under the
+selected Keycloak profile, and does the issuer guarantee the signed user
+token was issued to that exact client? If not, describe the
+distinct-client + exchange alternative and mark the direct-token design
+**BLOCKED**, not approved.
 
-**Rationale.** Confused-deputy prevention; PR 12 `T1`/`T6`.
-
-**Status: PROPOSED / CLAIM CONTRACT UNRESOLVED.** Approval: reviewer
-`_pending_`, date `_pending_`, reference `_pending_`.
+**Status: PROPOSED / BLOCKED (issuer guarantee missing)**. Approval:
+reviewer `_pending_`, date `_pending_`, reference `_pending_`.
 
 ### A14-08 — Protected root binding (`LOCAL` origin gate)
 
-**Normative requirement (proposed).** The root model is §7. In summary:
+**Normative requirement (proposed).** The root model is §9. In summary:
 
-1. The canonical root Identity remains origin `LOCAL`; it is never
-   reclassified as `FEDERATED`.
-2. A **separate**, protected, installation-only authentication binding
-   maps the verified external `(issuer, sub)` to the designated root
-   Identity.
+1. The canonical root Identity remains origin `LOCAL`; never reclassified
+   as `FEDERATED`.
+2. A **dedicated protected root-authentication-binding** record maps the
+   verified external `(issuer, sub)` exclusively to
+   `root_registry.root_identity_id`; installation-only creation/repair,
+   never ordinary runtime mutation, no recovery implementation here.
 3. The binding is unique among active rows, auditable, immutable except
-   under a separately approved protected operator procedure, and never
-   runtime-editable.
-4. Root assurance (MFA/`acr`/`amr`) is required and must be sufficient.
+   under a separately approved protected operator procedure.
+4. Phishing-resistant MFA is required, attested by an issuer **policy**
+   and a validated assurance signal. Generic `mfa`/`otp`/unspecified
+   `acr` is insufficient.
 5. Root authentication is never accepted as ordinary Application/
-   SYSTEM-Tenant consumer authorization, and no root recovery is
-   implemented here.
+   SYSTEM-Tenant consumer authorization.
+6. Option B (split/block root work) remains the explicit fallback.
+
+**Evidence and verdict.** Keycloak 26.8.0 documents ACR→LoA mapping and
+the AMR protocol mapper, but no MTMF root realm policy is configured and
+no ACR value mapping to a phishing-resistant (WebAuthn/passkey-only)
+policy has been evidenced. Root assurance is therefore **BLOCKED —
+UNRESOLVED**; the smallest decision is an issuer-admin–documented realm
+flow policy for the root account and the exact `acr`/`amr` value(s) it
+emits, with evidence.
+
+**Recommendation.** Prefer option A (keep root Identity `LOCAL`,
+dedicated protected binding); do not reclassify as `FEDERATED`.
 
 **Alternate disposition (option B).** Split root authentication/binding
-out of PR 14; PR 14 is reported `BLOCKED` on root and does not claim
-completion. The reviewer must choose option A or option B and record it
-in §11.
+out of PR 14; report `BLOCKED` on root and do not claim completion.
 
-**Rationale.** PR 10 root design gate;
-`HTTP_INTEGRATION_BATCH_AUTHORIZATION.md` §12A.
-
-**Recommendation (not an approval).** Prefer option A: retain the
-canonical root Identity as `LOCAL` with a separate protected
-`(issuer, subject)` binding; do not reclassify as `FEDERATED`.
-
-**Status: PROPOSED / ROOT SEMANTICS UNRESOLVED.** Approval: reviewer
-`_pending_`, date `_pending_`, reference `_pending_`.
+**Status: PROPOSED / BLOCKED (assurance evidence missing)**. Approval:
+reviewer `_pending_`, date `_pending_`, reference `_pending_`.
 
 ### A14-09 — No public trust route; typed internal API
 
@@ -359,21 +430,18 @@ canonical root Identity as `LOCAL` with a separate protected
 
 1. PR 14 exposes a typed **internal** verifier and actor-context
    composition interface consumed by PR 17.
-2. It adds no public HTTP endpoint, route, public DTO, or token issuance.
-3. It returns only sanitized error categories; PR 15 owns external HTTP
-   error mapping.
+2. No public HTTP endpoint, route, public DTO, or token issuance.
+3. Only sanitized error categories; PR 15 owns external HTTP error
+   mapping.
 4. Raw tokens, client secrets, and token bytes never appear in returned
    objects, `repr`, exceptions, or logs.
 5. Errors must not reveal account existence to untrusted callers.
 
-**Rationale.** PR 15/17 boundary; sanitized failure surface.
+**Rationale.** PR 15/17 boundary.
 
-**Alternatives considered.** A public `/authenticate` route (rejected:
-belongs to PR 17); returning provider exceptions (rejected: leak/reveal
-risk).
-
-**Recommendation.** Adopt as written. Status: **PROPOSED**. Approval:
-reviewer `_pending_`, date `_pending_`, reference `_pending_`.
+**Recommendation.** Adopt as written. Status: **PROPOSED / SUPPORTABLE
+FOR APPROVAL**. Approval: reviewer `_pending_`, date `_pending_`,
+reference `_pending_`.
 
 ### A14-10 — Privilege posture for mapping persistence
 
@@ -386,293 +454,355 @@ reviewer `_pending_`, date `_pending_`, reference `_pending_`.
    DEFINER` **read** functions with fixed empty `search_path` and
    schema-qualified identifiers.
 3. No runtime table `SELECT`/DML, no mapping-mutation `EXECUTE`, no
-   elevated membership, and no unreviewed `SECURITY DEFINER` function.
+   elevated membership, no unreviewed `SECURITY DEFINER` function.
 4. Persistence changes are **additive** migration `0011`; never edit
    `0001`–`0010` or `sql/v001`–`v010`.
 5. The runtime `EXECUTE` manifest is updated with only the exact new
-   reviewed read signatures, and the post-upgrade verifier must pass
-   against the actual `mtmf_runtime` login.
-6. Root-binding mutation must be denied to the runtime credential.
+   reviewed read signatures; the post-upgrade verifier must pass against
+   the actual `mtmf_runtime` login.
+6. Root-binding mutation is denied to the runtime credential.
 
 **Rationale.** Preserve the PR 10/13 privilege model; `DATABASE.md`.
 
-**Alternatives considered.** Runtime mutation grants (rejected: recreates
-the shared-runtime trust problem); granting direct table reads (rejected:
-bypasses reviewed reads).
+**Recommendation.** Adopt as written. Status: **PROPOSED / SUPPORTABLE
+FOR APPROVAL**. Approval: reviewer `_pending_`, date `_pending_`,
+reference `_pending_`.
 
-**Recommendation.** Adopt as written. Status: **PROPOSED**. Approval:
-reviewer `_pending_`, date `_pending_`, reference `_pending_`.
+## 7. Proposed JWT claim-validation profiles (evidence-backed status)
 
-## 5. Proposed JWT claim-validation profiles
+Each field records its evidence status. **None** of the MTMF-specific
+values is observed. `UNVERIFIED` means no MTMF issuer profile/config
+exists; `DOCUMENTED` means Keycloak 26.8.0 documents the capability but
+not an MTMF value.
 
-Profiles are **proposed** and must be confirmed against current official
-issuer/JWT-library contracts before implementation. Local Keycloak is a
-development **profile**, not the mandatory production provider. Do not
-invent a universal `grant_type` JWT claim; token-class evidence is
-issuer-specific.
+### 7.1 Common checks (all profiles)
 
-### 5.1 Common checks (all profiles)
+| Check | Proposed contract | Evidence status |
+| --- | --- | --- |
+| `iss` | Exact match against one configured canonical issuer; no path/case/alias normalization. | Proposed; MTMF value **UNVERIFIED** |
+| `aud` | Must contain the profile’s configured expected audience. | Keycloak audience mappers documented; distinct MTMF audiences **UNVERIFIED** |
+| `exp` | Required. Reject at/after `exp` with **no positive leeway** (see §10.2). | PyJWT behavior verified |
+| `nbf` | Validated; future value beyond an explicit cap rejected. Presence rule per profile. | PyJWT behavior verified; presence rule **UNRESOLVED** |
+| `iat` | Required (service/user/root); future value beyond an explicit cap rejected. | PyJWT behavior verified; requirement proposed |
+| `alg` | Fixed asymmetric allowlist (`RS256`/`ES256`/`PS256`, or approved subset). `none`/`HS*` rejected; key type must match. | PyJWT supports; allowlist proposed |
+| `kid` | Selects only among trusted keys; never a network URL. Duplicate `kid` rejected. | PyJWT first-match verified; duplicate rejection proposed |
+| `jku`/`x5u`/`jwk` | Never fetched/trusted. | PyJWT rejects non-http(s) JWKS schemes; URL trust policy proposed |
+| `typ`/token class | Profile-specific predicate; reject ID/refresh tokens. | Keycloak documents `typ` presence but not the access-token value; predicate **UNVERIFIED** |
+| Size/parse bounds | Bound raw-JWT bytes, claim count, JSON nesting. | Proposed |
+| JWKS | Only configured `jwks_uri`; bounded size/TTL/timeout/redirects; unknown-`kid` refresh throttled; stale/failed refresh cannot authorize. | PyJWT `PyJWKClient` partial (see §10.2) |
+| Clock | One captured UTC time per resolution; skew reduces, never extends, validity. | Proposed |
 
-| Check | Proposed contract |
-| --- | --- |
-| `iss` | Exact string match against one configured canonical issuer. No path stripping, case folding, or alias acceptance. |
-| `aud` | Must contain the profile's configured expected audience (string or array membership). |
-| `exp` | Required. Reject at/after `exp` plus configured skew. |
-| `nbf` | Validated with configured bounded skew; a future value beyond skew is rejected. Missing `nbf` handling is profile-defined. |
-| `iat` | Validated with configured bounded skew; a future `iat` beyond skew is rejected. Required for the service and user profiles (exact requirement pending). |
-| `alg` | Fixed asymmetric allowlist (`RS256`/`ES256`/`PS256`, or an approved subset). `none` and `HS*` rejected. Key type must match algorithm. |
-| `kid` | Selects only among trusted keys already loaded for that issuer. Never causes a network fetch of an attacker-supplied URL. |
-| `jku`/`x5u`/`jwk` | Never fetched or trusted; if a key cannot be resolved from the configured JWKS set, reject. |
-| `typ` / token class | Profile-specific predicate (below). Reject ID tokens and refresh tokens. |
-| Size/parse bounds | Bound raw-JWT bytes, claim count, and JSON nesting before unbounded parsing. |
-| JWKS | Only the configured `jwks_uri`; bound response size, cache TTL, timeout, and redirects; unknown-`kid` refresh throttled; stale/failed refresh cannot authorize a new key. |
-| Clock | One captured UTC time per resolution; skew reduces, never extends, validity. |
+### 7.2 Service profile (OAuth 2.0 client credentials)
 
-### 5.2 Service profile (OAuth 2.0 client credentials)
+| Field | Required documentation | Status |
+| --- | --- | --- |
+| Issuer/version | Actual Keycloak version/profile examined | **UNVERIFIED** (no MTMF config) |
+| Token endpoint / grant | `client_credentials` via a client service account | DOCUMENTED (Keycloak 26.8.0) |
+| `iss`, `aud` | Configured issuer; **distinct service audience** | **UNVERIFIED** (placeholders only) |
+| Token class | Concrete predicate distinguishing a client-credentials token | **UNVERIFIED / NOT EXECUTED** |
+| `sub` | Service-account subject; never a human Identity | DOCUMENTED (service account); MTMF rule proposed |
+| Client identity | Exact claim (`azp`/`client_id`) and issuer semantics | **UNVERIFIED**; OIDC Core does not normatively define `azp` for access tokens |
+| `exp`,`nbf`,`iat` | Presence + bounded policy | Proposed; `exp`/`iat` required; `nbf` rule unresolved |
+| `typ`/`act` | Supported meaning, if any | `typ` value **UNVERIFIED**; `act` not applicable to service tokens |
+| JWKS | Trusted issuer config, key selection/rotation/failure | Proposed; MTMF config **UNVERIFIED** |
+| Evidence | Official docs/redacted observed example | Docs **DOCUMENTED**; observed **NOT EXECUTED** |
 
-| Claim | Proposed requirement |
-| --- | --- |
-| `aud` | Configured **service** audience. |
-| Credential identity | `azp` (or approved `client_id`-equivalent claim) — the credential key `(issuer, client_id)` that maps to exactly one Application. |
-| `sub` | MAY exist but is **not** a human Identity and is never used for user resolution. |
-| Class predicate | Must prove a client-credentials access token and must be disjoint from the user profile's predicate. Must not be accepted where a user token is required. |
-| Delegation | None at service level; delegation is established by the user profile (A14-07/§6). |
+### 7.3 End-user profile
 
-### 5.3 End-user profile
+| Field | Required documentation | Status |
+| --- | --- | --- |
+| Issuer/version | Actual Keycloak version/profile examined | **UNVERIFIED** (no MTMF config) |
+| Token endpoint / grant | Interactive flow (e.g. authorization code + PKCE) obtains the user token | DOCUMENTED (Keycloak 26.8.0); MTMF binding **UNVERIFIED** |
+| `iss`, `aud` | Configured issuer; **distinct user audience** | **UNVERIFIED** |
+| Token class | Predicate distinguishing a user access token from service/ID/refresh | **UNVERIFIED / NOT EXECUTED** |
+| `sub` | Subject mapping `(issuer, sub)` → one Identity | Proposed; **UNVERIFIED** |
+| Client identity | `azp`/`act` delegation evidence | `azp` documented-present but semantics **not guaranteed**; `act` preview |
+| `azp` | Authority to act for the subject | **BLOCKED — no issuer guarantee** |
+| `act` | RFC 8693 actor chain | RFC 8693 defines it; Keycloak delegation **Preview/disabled** |
+| `exp`,`nbf`,`iat` | Presence + bounded policy | Proposed; `exp`/`iat` required; `nbf` rule unresolved |
+| `typ`/`token_use` | Supported meaning, if any | **UNVERIFIED** |
+| JWKS | Trusted issuer config, rotation/failure | Proposed; **UNVERIFIED** |
+| Evidence | Official docs/redacted observed example | Observed **NOT EXECUTED** |
 
-| Claim | Proposed requirement |
-| --- | --- |
-| `aud` | Configured **user** audience, distinct from the service audience. |
-| `sub` | Required. Maps to exactly one Identity via `(issuer, sub)`. |
-| `azp` | The authorized party; recorded, but **not sufficient alone** as delegation (A14-07/§6). |
-| `act` | Accepted **only** under an explicitly approved trusted token-exchange profile; validated as part of the trusted issuer's signed token. |
-| Class predicate | Must prove a user access token (not ID, not refresh, not client credentials). |
-| Delegation | Must satisfy §6 against the verified calling `client_id`. |
+### 7.4 Root profile (only if A14-08 option A is approved)
 
-### 5.4 Root profile (only if A14-08 option A is approved)
+| Field | Required documentation | Status |
+| --- | --- | --- |
+| Account | Dedicated privileged external account | Proposed |
+| `iss`, `aud` | Configured issuer; distinct root audience | **UNVERIFIED** |
+| `sub` | Maps to the single protected root binding | Proposed |
+| Assurance | Exact `acr`/`amr` mapping to a phishing-resistant policy | ACR→LoA and AMR **DOCUMENTED**; exact values/policy **BLOCKED** |
+| Class predicate | Root interactive token, not service/ID/refresh | **UNVERIFIED** |
+| Isolation | Never ordinary Application/SYSTEM-Tenant authorization | Proposed |
 
-| Claim | Proposed requirement |
-| --- | --- |
-| Account | Dedicated privileged external account; not an ordinary member/identity. |
-| `aud` | Configured **root** audience. |
-| `sub` | Maps to the single protected root binding. |
-| Assurance | Configured MFA/assurance claim (`acr` and/or `amr`) present and sufficient (exact values require approval). |
-| Class predicate | Root interactive access token; not service, ID, or refresh. |
-| Isolation | Never accepted as an ordinary Application/SYSTEM-Tenant consumer authorization. |
+## 8. Proposed delegation contract (refined)
 
-## 6. Proposed delegation contract
+Working contract for A14-07. The stricter position is recorded here; the
+earlier `azp`-sufficiency draft is preserved as an explicitly flagged
+alternative.
 
-This is the working proposal for A14-07. It records the stricter
-recommended position; the original `azp`-sufficiency alternative is
-preserved in A14-07 and must be resolved by the reviewer.
+1. **Calling client.** The verified service token establishes the
+   credential identity `(issuer, client_id)` (via an issuer-documented
+   claim), mapping to exactly one Application. This `client_id` is the
+   delegation principal.
+2. **Same-client model (proposed v0.1 target).** A verified user
+   **access** token must identify the **same** client by a documented
+   issuer claim whose semantics the configured issuer/profile
+   **explicitly guarantees**. A bare `azp == client_id` comparison
+   **without that guarantee** is insufficient.
+3. **Independent validation.** Both JWTs must independently pass issuer,
+   distinct-audience, token-class, signature, temporal, and key checks.
+4. **Trust-pair compatibility.** Both tokens must be compatible with the
+   selected configured issuer trust pair. Neither may authorize a
+   different Application or Tenant. The user’s verified `(issuer, sub)`
+   must resolve through the protected MTMF binding and memberships.
+5. **Fail closed.** A user token issued to a different client; a
+   missing/ambiguous client claim; coincidental text only; or a service
+   token presented as a user token **fails closed**.
+6. **`act` path.** `act` is accepted only under a separately approved,
+   issuer-specific RFC 8693 exchanged-token profile; no generic `act`
+   fallback. The exchange request/response is never trusted unverified.
+7. **Evidence limitation.** Keycloak 26.8.0 documents that it emits
+   `azp` and that Standard Token Exchange V2 is supported, but it does
+   **not** document that access-token `azp` establishes delegation; its
+   `act`/`may_act` delegation is Preview/disabled-by-default. Therefore
+   the direct-token design is **BLOCKED** pending the issuer guarantee in
+   Q2.
 
-1. **Calling client.** The verified service token establishes the calling
-   credential identity `(issuer, client_id)`, which maps to exactly one
-   Application. This `client_id` is the delegation principal.
-2. **Trusted issuer.** The user token (or exchanged token) must be
-   issued/attested by the same trusted issuer as the service token, or by
-   an explicitly configured trusted issuer pair for an approved token
-   exchange. Cross-issuer delegation without an approved profile is
-   rejected.
-3. **Delegation evidence (must be issuer-validated, not inferred):**
-   - **Preferred — RFC 8693 exchanged token `act` claim.** The user
-     token is an exchanged access token from the trusted exchange
-     endpoint, containing an `act` claim whose acting subject/client
-     equals the verified `client_id` (nested `act` chains handled per the
-     approved profile). The `act` claim is inside the issuer-signed token
-     and is validated as part of the token.
-   - **Alternative — explicitly approved issuer authorized-party
-     contract.** A specific claim that the issuer itself uses to attest
-     the client→user delegation, equal to the verified `client_id`. The
-     exact claim name/shape is per-issuer and requires approval.
-   - **`azp`.** Recorded but **not sufficient alone**. `azp == client_id`
-     is never treated as automatic delegation authority; it may be
-     accepted only as an additional condition within an explicitly
-     approved issuer profile.
-4. **Audience.** The user/exchanged token must contain the configured
-   MTMF **user** audience; a service-audience or unknown-audience token
-   is rejected.
-5. **Issuer.** Exact configured issuer match; no alias/URL
-   normalization.
-6. **Bidirectionality.** The delegation binds one exact Application
-   (from the service token), one exact acting subject Identity (from the
-   user token), and one exact Tenant context. No cross-Application or
-   cross-Tenant substitution.
-7. **Fail closed.** Missing, ambiguous, unsupported, or contradictory
-   delegation evidence → `delegation_denied`; never inferred from the
-   mere possession of two independently valid tokens.
+**Preserved earlier proposal (differs).** The first Phase 0 draft
+accepted `azp == client_id` under a shared-client deployment convention.
+That is not adopted; it is retained here for reviewer comparison.
 
-**Unresolved:** the exact claim name(s) and whether the same OAuth client
-is used for both service and user flows, or an explicit delegation
-relation must be configured. STOP if no verifiable binding exists.
-
-## 7. Proposed root authentication model and `LOCAL` reconciliation
+## 9. Proposed root authentication model and `LOCAL` reconciliation (refined)
 
 Working proposal for A14-08 option A. Not approved.
 
-1. **Origin preserved.** The canonical root Identity created by PR 10
-   remains origin `LOCAL`. MTMF does not reclassify it, does not store a
-   password for it, and does not create a second root.
-2. **Separate protected binding.** A dedicated protected
-   authentication-binding record maps the verified external
-   `(issuer, sub)` to the designated root Identity. Proposed storage
-   options:
-   - **(i) Dedicated table (recommended):** e.g.
-     `root_authentication_binding`, separate from the ordinary
-     external-subject binding table, with installation-only mutation and
-     runtime read-only access (or no runtime access at all).
-   - **(ii) Protected flag on the ordinary binding table:** simpler but
-     risks accidental treatment as a generic editable binding.
-   The reviewer must choose; (i) is recommended.
-3. **Structural reconciliation with PR 10.** The binding target must
-   equal `root_registry.root_identity_id`; the root Identity must remain
-   `LOCAL`, not soft-deleted, and its Principal/Tenant membership and
-   protected root chain must remain intact. The binding cannot target a
-   non-root Identity, and adding it cannot create, move, or demote root.
-4. **Assurance.** Normal root login requires a dedicated privileged
-   external OIDC account with phishing-resistant MFA. The approved
-   assurance claim (`acr`/`amr` or equivalent) must be present and
-   sufficient; absent/insufficient assurance → reject.
+1. **Origin preserved.** The canonical root Identity remains `LOCAL`; no
+   reclassification, no password, no second root.
+2. **Dedicated protected binding.** A separate protected
+   root-authentication-binding table (recommended) maps verified
+   `(issuer, sub)` exclusively to `root_registry.root_identity_id`.
+   (Alternate: protected flag on the ordinary binding table — not
+   recommended.)
+3. **PR 10 reconciliation.** Binding target must equal
+   `root_registry.root_identity_id`; the root Identity must remain
+   `LOCAL`, not soft-deleted, with its Principal/Tenant membership and
+   protected root chain intact. The binding cannot target a non-root
+   Identity and cannot create/move/demote root.
+4. **Assurance.** Phishing-resistant MFA backed by a documented and
+   configured issuer policy **and** a validated assurance signal. Generic
+   `mfa`/`otp`/unspecified `acr` is insufficient. No exact assurance
+   contract can be proposed until the issuer-admin policy and ACR/AMR
+   value(s) are evidenced → **UNRESOLVED — STOP**.
 5. **Uniqueness/immutability.** At most one active root binding;
    installation-only provisioning; immutable except under a separately
    approved protected operator procedure; auditable.
-6. **Isolation.** A root token is never accepted as an ordinary
-   Application/SYSTEM-Tenant consumer authorization. Root management and
-   emergency recovery remain separate (no recovery CLI, no runtime
-   recovery grant, no fabricated root session).
-7. **Option B.** If the reviewer does not approve this reconciliation,
-   split root work out of PR 14 and report `BLOCKED` for the root gate
-   rather than claiming completion.
+6. **Isolation.** A root token is never ordinary Application/SYSTEM-Tenant
+   consumer authorization. No recovery implementation here.
+7. **Option B.** If option A is not approved, split root work out of
+   PR 14 and report `BLOCKED`.
 
-**Unresolved:** option A vs option B; storage option (i) vs (ii); the
-exact assurance claim values; and the ordinary/root Identity-origin rule
-for each issuer.
+**Fallback.** Option B is explicit. No root password, recovery API,
+synthetic root session, or unverified assurance claim is added.
 
-## 8. Proposed dependency and module ownership
+## 10. Dependency and ownership
 
-**Working proposal.** Provider-neutral trust and identity-resolution
-logic belongs in `mtmf-core`; only HTTP-specific integration belongs in
-`mtmf-service`.
+### 10.1 JWT dependency (proposed, not added)
 
-- **JWT dependency:** make `pyjwt[crypto]` an explicit,
-  version-constrained dependency (proposed constraint `>=2.13,<3`,
-  matching the locked `2.13.x`), using explicit asymmetric algorithm
-  allowlists and a controlled JWKS client (bounded cache lifespan,
-  timeout, no untrusted-URL following) or a reviewed equivalent.
-  `python-jose` is not proposed (maintenance posture). No dependency is
-  added until approved.
-- **`mtmf-core` (provider-neutral trust/identity logic):**
-  immutable trusted value types (verified service credential, verified
-  acting user, verified actor context); the claim-validation profiles
-  and delegated-verification logic; the `ExternalTokenVerifier` and
-  `ExternalSubjectIdentityResolver` / `CredentialApplicationResolver`
-  ports and implementations that do not perform HTTP; and
-  `AuthenticatedActorContextService` orchestration over the existing
-  SPI/UnitOfWork and PR 13 eligibility seam. Core stays free of
-  transport frameworks.
-- **`mtmf-service` (HTTP/transport-specific integration only):** the
-  HTTP JWKS retrieval transport/adapter wiring and any future FastAPI
-  request-binding (PR 17). No business or authorization logic.
-- **Configuration:** trusted issuer allowlist, service/user/root
-  audiences, `jwks_uri`, algorithm allowlists, bounded skew, JWKS TTL/
-  timeouts, and an optional development issuer profile; strict startup
-  validation and secret redaction.
+- Make `pyjwt[crypto]` an explicit, version-constrained dependency
+  (proposed `>=2.13,<3`, matching the locked `2.13.x`; `[crypto]` pulls
+  `cryptography` for asymmetric verification).
+- `python-jose` is not proposed (maintenance posture).
+- No dependency is added by this documentation change.
 
-**Discrepancy to resolve.** The initial Phase 0 draft placed the
-PyJWT-based verifier adapter in `mtmf-service`. The recommended position
-places provider-neutral trust/identity-resolution logic in `mtmf-core`
-and reserves `mtmf-service` for HTTP-specific integration. The two
-differ on where the cryptographic verifier and claim profiles live;
-preserve both, and resolve at approval. The PR 12 ownership matrix
-("`mtmf-service` owns token/user verification") must be reconciled with
-this placement in the same approval.
+### 10.2 PyJWT 2.13.0 evidence (installed source, verified)
 
-## 9. Recommendations and open questions (not approvals)
+| API | Verified behavior |
+| --- | --- |
+| `jwt.decode(jwt, key, algorithms, options, verify, audience, issuer, leeway, ...)` | Supports `issuer`, `audience`, `algorithms`; docstring warns not to derive `algorithms` from the token. |
+| `_validate_exp` | Rejects when `exp <= now - leeway`. **Positive `leeway` extends acceptance past `exp`** — forbidden by the proposed contract. |
+| `_validate_nbf` / `_validate_iat` | Reject future values beyond `now + leeway`. The same single `leeway` also relaxes `exp`. |
+| `PyJWKClient.__init__` | Defaults `cache_keys=False`, `cache_jwk_set=True`, `lifespan=300`, `timeout=30`; rejects non-http(s) schemes. |
+| Tier-2 key cache | If `cache_keys=True`, per-`kid` keys are cached with **no time-based expiration** — keep disabled. |
+| `get_signing_key_from_jwt` / `get_signing_key` | Reads unverified `kid`; refreshes once on unknown `kid` with **no built-in throttle**. |
+| `fetch_data` | Uses stdlib `urllib`; **follows redirects and has no response-size limit** — requires a wrapper/transport policy. |
+| `match_kid` | Returns the **first** matching key; duplicate `kid` is not rejected by the library. |
+
+**Proposed expiry policy (for approval).** Reject any token at/after its
+signed `exp` using the authoritative validation clock; do **not** use
+positive leeway to extend acceptance past `exp`. If tolerance is needed
+for `nbf`/future `iat`, cap it explicitly and apply it only in the
+non-expiry-extending direction. Because PyJWT applies one `leeway` to
+`exp`, `nbf`, and `iat`, the contract must set `leeway=0` for the `exp`
+check and implement any `nbf`/`iat` tolerance either by disabling those
+two built-in checks and re-adding capped checks, or by accepting no
+tolerance. Require `exp` and `iat`; make `nbf` presence explicit per
+profile. Include JWKS timeouts, response-size limits, cache bounds,
+unknown-`kid` refresh throttling, and no attacker-controlled key URL.
+
+### 10.3 Package ownership reconciliation
+
+- **`mtmf-core` (proposed):** immutable verified-token/actor contracts;
+  profile and claim validation; provider-neutral cryptographic
+  verification; identity/Application binding resolution; trusted actor
+  composition; SPI/UoW integration; **no HTTP framework dependency**.
+- **`mtmf-service` (proposed):** JWKS network transport and future HTTP
+  request/response binding only; no duplicate identity/policy semantics.
+- External IdP is not part of `MtmfSpi`; database reads use existing
+  repositories/UoW and versioned stored functions only.
+
+**Reconciliation vs. approved docs.** `HTTP_INTEGRATION_BATCH_AUTHORIZATION.md`
+§2 states that `mtmf-service` owns the “authenticated HTTP trust
+boundary, token/user verification, DTO mapping, subscription gate, …
+(PRs 14/17)”, and `ARCHITECTURE.md` calls `mtmf-service` the
+“authenticated service and end-user trust boundary (PR 14)”. Proposed
+reading: **`mtmf-service` owns the deployed authentication boundary and
+composition; `mtmf-core` owns reusable verification policy and
+cryptographic logic.** Because this could change the apparent normative
+ownership, it is **flagged for reviewer approval** and is not a silent
+edit of the earlier documents.
+
+**Status: PROPOSED / RECONCILIATION REQUIRES REVIEWER APPROVAL**. Do not
+implement either placement until the reviewer decides. Approval:
+reviewer `_pending_`, date `_pending_`, reference `_pending_`.
+
+## 11. Recommendations and open questions (not approvals)
 
 **Recommendations recorded for review:**
 
 1. **A14-05:** Signed, externally issued end-user access tokens are the
-   mandatory v0.1 path; RFC 8693 token exchange is deferred unless
-   required to establish verifiable delegation.
-2. **A14-07:** Explicit, issuer-validated delegation to the authenticated
-   Application is mandatory. `azp` alone does not establish delegation
-   authority; `act` is accepted only under an explicitly defined trusted
-   token-exchange profile.
+   mandatory v0.1 path; RFC 8693 exchange is deferred unless required for
+   verifiable delegation.
+2. **A14-07:** Explicit, issuer-validated delegation is mandatory; `azp`
+   alone is never sufficient; `act` only under an approved trusted
+   exchange profile.
 3. **A14-08:** Retain the canonical root Identity as `LOCAL` with a
-   separate protected `(issuer, subject)` authentication binding; do not
-   reclassify as `FEDERATED`.
-4. **Dependencies/ownership:** Explicit, version-constrained
-   `pyjwt[crypto]`; provider-neutral trust/identity-resolution logic in
-   `mtmf-core`; HTTP-specific integration in `mtmf-service`.
+   separate protected `(issuer, subject)` binding; never reclassify as
+   `FEDERATED`.
+4. **Dependencies/ownership:** explicit `pyjwt[crypto]`; provider-neutral
+   verification in `mtmf-core`, HTTP integration in `mtmf-service`
+   (subject to §10.3 reconciliation).
 
 **Open questions requiring reviewer disposition:**
 
 | # | Question | Blocks |
 | --- | --- | --- |
 | Q1 | Does PR 12 `T1` require both signed-token and executable RFC 8693 modes in PR 14? | A14-05 scope |
-| Q2 | Exact delegation claim contract; is `azp == client_id` ever sufficient? Is the same OAuth client used for both flows? | A14-07/§6 |
-| Q3 | Root option A vs option B; dedicated root-binding table vs protected flag; assurance claim values. | A14-08/§7 |
-| Q4 | Exact issuer class predicates and supported audiences (Keycloak dev profile), confirmed against current issuer contracts. | A14-02/§5 |
-| Q5 | Ordinary-user `IdentityOrigin` rule per issuer (`FEDERATED` expected). | A14-04/A14-06 |
-| Q6 | JWT library/version confirmation. | §8 |
-| Q7 | Module-ownership split (`mtmf-core` vs `mtmf-service`) and reconciliation with the PR 12 ownership matrix. | §8 |
-| Q8 | Approval of `A14-01`–`A14-10` overall. | all |
+| Q2 | Issuer guarantee: can one confidential client serve both flows, and does the issuer guarantee the user token was issued to that client? | A14-05/A14-07/§8 |
+| Q3 | Root option A vs B; dedicated table vs protected flag; and the issuer-admin–documented phishing-resistant ACR/AMR policy and exact value(s). | A14-08/§9 |
+| Q4 | Exact per-issuer token-class predicates and distinct service/user/root audiences, with configured-profile evidence. | A14-02/§7 |
+| Q5 | Ordinary-user `IdentityOrigin` rule per issuer (`FEDERATED` proposed). | A14-04/A14-06 |
+| Q6 | JWT library/version confirmation (`pyjwt[crypto]>=2.13,<3`). | §10.1 |
+| Q7 | Module-ownership reconciliation (`mtmf-core` vs `mtmf-service`) and whether the PR 12 ownership text must be amended. | §10.3 |
+| Q8 | Approval of A14-01–A14-10 and §7–§10 overall. | all |
+| Q9 | Exact `nbf` presence/tolerance rule and the `exp`-leeway prohibition confirmation. | §7/§10.2 |
 
-## 10. STOP conditions
+## 12. Reviewer decision table
 
-STOP and report before further coding if any of the following holds (from
-the implementation plan §10, unchanged):
+Approval is required for every row. “Evidence source” distinguishes
+repository facts, official docs, and unverified items.
 
-1. `A14-01`–`A14-10` lack explicit human approval, or approved issuer
-   claim profiles are unavailable.
+| ID | Proposed disposition | Evidence source | Remaining uncertainty | Approval required |
+| --- | --- | --- | --- | --- |
+| A14-01 | Adopt asymmetric resource-server validation; `leeway=0` at `exp` | Repo + PyJWT source + Keycloak docs | Algorithm subset; parse bounds | Yes |
+| A14-02 | Distinct service/user profiles with distinct audiences | Keycloak audience mappers (docs) | Exact class predicates/audiences | Yes |
+| A14-03 | `(issuer, client_id)` → one Application; unique, immutable | PR 12 T6; repo persistence seams | Exact client-identity claim | Yes |
+| A14-04 | `(issuer, sub)` → one `FEDERATED` Identity; operator-only | Repo identity/membership contracts | Per-issuer origin rule | Yes |
+| A14-05 | Signed external user token mandatory; exchange contingency | Keycloak token-exchange guide (V2 supported; delegation preview) | Whether T1 demands both modes | Yes |
+| A14-06 | ACTIVE actor + explicit memberships + ordinary ACTIVE Tenant + ACTIVE registration | Repo domain/lifecycle contracts | None material | Yes |
+| A14-07 | Issuer-validated same-client delegation; `azp` alone insufficient | OIDC Core (`azp` ID-token only); Keycloak docs | **Issuer guarantee missing → BLOCKED** | Yes |
+| A14-08 | Root stays `LOCAL`; dedicated protected binding; phishing-resistant assurance | PR 10 invariants; Keycloak ACR/AMR docs | **Assurance policy/value missing → BLOCKED** | Yes |
+| A14-09 | Typed internal verifier/composer; sanitized errors; no public route | Plan/architecture | None material | Yes |
+| A14-10 | Operator-only mutation; runtime read-only `SECURITY DEFINER`; additive `0011` | Repo privilege model (75-signature manifest) | New read signatures | Yes |
+| §7 profiles | Claim matrices with per-field evidence status | Official docs + PyJWT | MTMF config absent → many UNVERIFIED | Yes |
+| §8 delegation | Refined same-client + `act` contingency | OIDC/RFC/Keycloak docs | **Blocked pending issuer guarantee** | Yes |
+| §9 root model | Option A dedicated binding; option B fallback | PR 10 invariants; Keycloak docs | **Assurance blocked** | Yes |
+| §10 dependency | `pyjwt[crypto]>=2.13,<3`; core/service split | Installed PyJWT; PR 12 text | Ownership reconciliation | Yes |
+
+## 13. Decision-ready summary
+
+**(a) Supportable for approval now (evidence sufficient; still not
+approved).**
+
+- A14-01 (trust model; `exp`-leeway prohibition from verified PyJWT
+  behavior).
+- A14-03 (credential → one Application), A14-04 (subject → one
+  `FEDERATED` Identity), A14-06 (actor eligibility), A14-09 (internal
+  API only), A14-10 (privilege posture).
+- §10.1 dependency constraint; §10.2 PyJWT/JWKS/time constraints.
+
+**(b) Blocked by missing evidence (do not implement).**
+
+- A14-02/§7: exact token-class predicates and distinct service/user/root
+  audiences (no MTMF issuer profile; observed evidence NOT EXECUTED).
+- A14-05/A14-07/§8: same-client direct-token delegation lacks an
+  issuer guarantee; `act` delegation is a Keycloak preview feature.
+- A14-08/§9: phishing-resistant root assurance policy/values unverified.
+
+**(c) Exact minimal choices required from the reviewer.**
+
+1. Q1: confirm the v0.1 propagation scope (signed-only vs both modes).
+2. Q2: provide either a documented issuer guarantee for same-client
+   direct tokens, or approve the distinct-client + exchange alternative
+   (and accept or reject the preview-feature dependency).
+3. Q3: choose root option A vs B and supply the issuer-admin–documented
+   phishing-resistant policy + ACR/AMR value(s), or confirm BLOCKED.
+4. Q4/Q5: approve the per-issuer class predicates/audiences and the
+   ordinary-user origin rule (requires a configured dev issuer profile).
+5. Q6/Q7/Q9: confirm the JWT dependency, resolve the core/service
+   ownership reconciliation, and confirm the `exp`/`nbf` policy.
+
+## 14. STOP conditions
+
+STOP and report before further coding if any of the following holds:
+
+1. A14-01–A14-10, §7, §8, §9, or §10 lack explicit human approval.
 2. Root `LOCAL` origin and external OIDC binding cannot be reconciled
-   without changing PR 10 security invariants, or root MFA/assurance
-   requirements are unspecified.
-3. Secure client-to-user delegation proof cannot be derived from
-   verified issuer claims.
-4. The chosen JWT library cannot enforce algorithm/key-type/issuer/
-   audience/time and safe JWKS behavior with verified current APIs.
-5. Required membership/Principal/Identity lifecycle semantics are
-   ambiguous or incompatible with the proposed mapping.
-6. A design requires giving `mtmf_runtime` mapping writes, root/recovery
-   mutation, raw table access, or unreviewed `SECURITY DEFINER`
-   privileges.
-7. A design requires editing shipped migrations `0001`–`0010`,
-   implementing an HTTP endpoint, minting tokens, building a
-   token-exchange server, or adding Keycloak runtime orchestration.
-8. A security-critical case cannot be tested against the prescribed real
-   PostgreSQL topology.
-9. `main` has advanced with conflicting identity/authentication work;
-   reconcile before implementation.
+   without changing PR 10 invariants, or root assurance is unspecified
+   (currently **BLOCKED**).
+3. Secure client-to-user delegation cannot be derived from verified
+   issuer claims (currently **BLOCKED**).
+4. The JWT library cannot enforce algorithm/key-type/issuer/audience/time
+   and safe JWKS behavior.
+5. Membership/Principal/Identity lifecycle semantics are ambiguous or
+   incompatible with the proposed mapping.
+6. A design requires runtime mapping writes, root/recovery mutation, raw
+   table access, or unreviewed `SECURITY DEFINER` privileges.
+7. A design requires editing migrations `0001`–`0010`, an HTTP endpoint,
+   token minting, a token-exchange server, or Keycloak runtime
+   orchestration.
+8. A security-critical case cannot be tested against the real PostgreSQL
+   topology.
+9. `main` advanced with conflicting identity/authentication work.
 10. Any mandatory gate fails without proven resolution.
 
-## 11. Approval log
+## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
 
 | ID | Status | Approved by | Date | Reference |
 | --- | --- | --- | --- | --- |
 | A14-01 | PENDING HUMAN REVIEW | — | — | — |
-| A14-02 | PENDING HUMAN REVIEW | — | — | — |
+| A14-02 | PENDING HUMAN REVIEW / PREDICATE EVIDENCE MISSING | — | — | — |
 | A14-03 | PENDING HUMAN REVIEW | — | — | — |
 | A14-04 | PENDING HUMAN REVIEW | — | — | — |
 | A14-05 | PENDING HUMAN REVIEW / SCOPE OPEN | — | — | — |
 | A14-06 | PENDING HUMAN REVIEW | — | — | — |
-| A14-07 | PENDING HUMAN REVIEW / CLAIM CONTRACT OPEN | — | — | — |
-| A14-08 | PENDING HUMAN REVIEW / ROOT SEMANTICS OPEN | — | — | — |
+| A14-07 | PENDING HUMAN REVIEW / BLOCKED ON ISSUER GUARANTEE | — | — | — |
+| A14-08 | PENDING HUMAN REVIEW / BLOCKED ON ROOT ASSURANCE | — | — | — |
 | A14-09 | PENDING HUMAN REVIEW | — | — | — |
 | A14-10 | PENDING HUMAN REVIEW | — | — | — |
-| §5 claim profiles | PENDING HUMAN REVIEW | — | — | — |
-| §6 delegation contract | PENDING HUMAN REVIEW | — | — | — |
-| §7 root model | PENDING HUMAN REVIEW | — | — | — |
-| §8 dependency/ownership | PENDING HUMAN REVIEW | — | — | — |
+| §7 claim profiles | PENDING HUMAN REVIEW / PARTIALLY UNVERIFIED | — | — | — |
+| §8 delegation contract | PENDING HUMAN REVIEW / BLOCKED | — | — | — |
+| §9 root model | PENDING HUMAN REVIEW / BLOCKED ON ASSURANCE | — | — | — |
+| §10 dependency/ownership | PENDING HUMAN REVIEW / RECONCILIATION OPEN | — | — | — |
 
-## 12. Post-approval implementation outline (not started)
+## 16. Post-approval implementation outline (not started)
 
-Only after §11 is approved: immutable trust contracts (Part 1); trusted
+Only after §15 is approved: immutable trust contracts (Part 1); trusted
 token verifier with bounded JWKS (Part 2); additive `0011` mapping
 persistence, stored functions, and restricted runtime reads (Part 3);
 verified actor composition reusing PR 13 (Part 4); configuration and
 composition seam (Part 5); documentation and final gates (Part 6). The
-mandatory deterministic acceptance matrix `AUTH-01`–`AUTH-36` and the
-real-PostgreSQL privilege gates in the implementation plan apply.
+mandatory acceptance matrix `AUTH-01`–`AUTH-36` and the real-PostgreSQL
+privilege gates apply.
