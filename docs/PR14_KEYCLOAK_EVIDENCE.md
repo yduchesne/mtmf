@@ -273,6 +273,18 @@ from interactive user tokens. Full detail:
   mapper-profile lockdown + attestation, distinct clients, or issuer
   introspection) is a reviewer decision in the G0 report §2.5/§7.
 
+## 6C. G0-A mapper-lockdown attestation (evidence)
+
+Following the §14F conditional direction, a canonical configuration manifest
+and an independent preflight attestation checker were added; see
+[PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md](PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md).
+The R01-R12 matrix shows that `client_id`/`azp`/`typ`/`sub`/audience/grant/scope
+mutations are detected and fail closed, that the G0-T09 spoof is reproduced
+and detected, and that a clean recreate yields the identical manifest hash
+`9e9bb847e35060b2aab18c876d52c23648c137668c08fa6766c69a30dbc6fed5`. The G0-T09
+FAIL is retained; the conditional predicate and attestation controls remain
+unapproved pending human review.
+
 ## 7. Root assurance disposition
 
 - Option A (canonical `LOCAL` root Identity + dedicated protected

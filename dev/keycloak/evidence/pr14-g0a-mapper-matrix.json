@@ -1,0 +1,121 @@
+[
+  {
+    "detail": {
+      "drift_count": 0,
+      "expected_hash": "9e9bb847e35060b2aab18c876d52c23648c137668c08fa6766c69a30dbc6fed5",
+      "observed_hash": "9e9bb847e35060b2aab18c876d52c23648c137668c08fa6766c69a30dbc6fed5"
+    },
+    "evidence": "expected and observed canonical manifest agree",
+    "id": "R01",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "service_class": true,
+      "user_class": false
+    },
+    "evidence": "genuine service token accepted by the service predicate only",
+    "id": "R02",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "service_class": false,
+      "user_class": true
+    },
+    "evidence": "genuine user token accepted by the user predicate only",
+    "id": "R03",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "aud": [
+        "mtmf-user-api",
+        "mtmf-service-api",
+        "account"
+      ],
+      "service_class": false
+    },
+    "evidence": "user token with the service audience rejected by the service predicate",
+    "id": "R04",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "aud": [
+        "mtmf-service-api",
+        "mtmf-user-api",
+        "account"
+      ],
+      "user_class": false
+    },
+    "evidence": "service token with the user audience rejected by the user predicate",
+    "id": "R05",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "attestation_detected_drift": true,
+      "claim_only_predicate_spoofed": true,
+      "drift_count": 1
+    },
+    "evidence": "hardcoded mapper spoofs the claim predicate but attestation detects the drift",
+    "id": "R06",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "attestation_detected_drift": true,
+      "drift_count": 2
+    },
+    "evidence": "direct and scope-level security-critical claim overrides are detected",
+    "id": "R07",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "attestation_detected_drift": true,
+      "client_id_present": false,
+      "service_class_after_removal": false
+    },
+    "evidence": "removing the built-in Client ID mapper is detected and the service token fails class checks",
+    "id": "R08",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "attestation_detected_drift": true,
+      "drift_count": 1
+    },
+    "evidence": "audience and grant-setting changes are detected",
+    "id": "R09",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "bad_admin_credentials": true,
+      "missing_expected_manifest": true,
+      "stale_attestation_record": true
+    },
+    "evidence": "unavailable credentials, missing baseline and stale attestation all fail closed",
+    "id": "R10",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "expected_hash": "9e9bb847e35060b2aab18c876d52c23648c137668c08fa6766c69a30dbc6fed5",
+      "observed_hash": "9e9bb847e35060b2aab18c876d52c23648c137668c08fa6766c69a30dbc6fed5"
+    },
+    "evidence": "attestation recovers after restoring canonical configuration",
+    "id": "R11",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "note": "clean recreate is performed separately; see PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md"
+    },
+    "evidence": "operator clean-recreate step",
+    "id": "R12",
+    "status": "NOT EXECUTED"
+  }
+]

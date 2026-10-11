@@ -127,6 +127,19 @@ Recommendation: present decision 1 (with the mapper-lockdown precondition) as
 the minimal change for development-first D1, and record decisions 2/3 as
 alternatives. This report records **no approval**.
 
+**G0-A remediation status (2026-10-11, evidence only).** Following the §14F
+conditional approval of decision 1, a mapper-lockdown and attestation
+remediation was executed; see
+[PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md](PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md).
+It adds a canonical configuration manifest, an independent preflight
+attestation checker, and the R01–R12 adversarial matrix: drift from
+`client_id`/`azp`/`typ`/`sub`/audience/grant/scope mutations is detected and
+fails closed, and R12 confirms a deterministic manifest across clean
+recreates. The G0-T09 negative result is retained. G0-A remains
+**conditionally supported pending explicit human approval of the conditional
+A14-02/§7 predicate contract and attestation controls**; this report's
+original BLOCKED-for-unconditional verdict is unchanged.
+
 ## 3. G0-B — approval-readiness matrix (no self-approval)
 
 | ID | Normative contract (unchanged) | Evidence status | Disposition proposed |

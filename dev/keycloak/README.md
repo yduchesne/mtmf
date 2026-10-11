@@ -123,6 +123,30 @@ limits (DC07), and clean-recreate reproducibility (DC08). `DC05` and
 The fixture includes a short-lived (`access.token.lifespan=1`)
 `mtmf-evidence-expiry` client used only for the expired-token negative case.
 
+## Mapper attestation (G0-A)
+
+The canonical, security-relevant issuer configuration is committed as
+`dev/keycloak/expected-config-manifest.json`. The independent preflight checker
+compares the live realm against it and fails closed on drift or unreadable
+inputs:
+
+```bash
+# Regenerate the canonical manifest (review before committing any change)
+uv run --no-sync python scripts/pr14-g0a-mapper-attestation.py manifest \
+  --out dev/keycloak/expected-config-manifest.json
+
+# Compare the live realm against the committed baseline
+uv run --no-sync python scripts/pr14-g0a-mapper-attestation.py attest \
+  --expected dev/keycloak/expected-config-manifest.json
+
+# Run the R01-R11 adversarial matrix against the live fixture
+uv run --no-sync python scripts/pr14-g0a-mapper-attestation.py matrix \
+  --expected dev/keycloak/expected-config-manifest.json \
+  --report dev/keycloak/evidence/pr14-g0a-mapper-matrix.json
+```
+
+See [`docs/PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md`](../../docs/PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md).
+
 ## Manual-only cases
 
 - **Root phishing-resistant assurance (K15–K17).** Enrolling a WebAuthn/passkey

@@ -985,6 +985,19 @@ A follow-up **G0-A remediation evidence gate** must:
 
 **Unchanged:** development-first only; production issuer deferred; root authentication deferred and fail-closed; §10 ownership reconciliation and remaining non-root approvals pending.
 
+### G0-A remediation evidence (status only, 2026-10-11)
+
+The §14F conditional direction was executed as fixture-hardening and evidence
+work: [PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md](PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md).
+It adds a canonical mapper/scope/grant manifest, an independent preflight
+attestation checker that fails closed on drift or unreadable inputs, and the
+R01–R12 adversarial matrix (mapper injection/override detected; R12 clean
+recreate deterministic). The G0-T09 negative result is preserved.
+
+**This is evidence, not approval.** `A14-02`/§7 remains **conditional and
+unapproved** pending human approval of the conditional predicate contract and
+attestation controls (report §5/§7). The approval log below is unchanged.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
