@@ -1,0 +1,483 @@
+[
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "claims": {
+        "_claim_names": [
+          "acr",
+          "aud",
+          "azp",
+          "clientAddress",
+          "clientHost",
+          "client_id",
+          "email_verified",
+          "exp",
+          "iat",
+          "iss",
+          "jti",
+          "preferred_username",
+          "realm_access",
+          "resource_access",
+          "scope",
+          "sub",
+          "typ"
+        ],
+        "acr": "1",
+        "aud": [
+          "mtmf-service-api",
+          "account"
+        ],
+        "azp": "mtmf-evidence-service",
+        "exp": true,
+        "iat": true,
+        "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+        "jti": "ef68055ee91b47ce",
+        "preferred_username": "5c8ac914671d3ba4",
+        "scope": "profile email",
+        "sub": "1d448f0a1966a69a",
+        "typ": "Bearer"
+      },
+      "header": {
+        "_header_names": [
+          "alg",
+          "kid",
+          "typ"
+        ],
+        "alg": "RS256",
+        "kid": "11d5b225f13edad9",
+        "typ": "JWT"
+      },
+      "signature_verified": true
+    },
+    "id": "K01",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "claims": {
+        "_claim_names": [
+          "acr",
+          "aud",
+          "auth_time",
+          "azp",
+          "email",
+          "email_verified",
+          "exp",
+          "family_name",
+          "given_name",
+          "iat",
+          "iss",
+          "jti",
+          "name",
+          "preferred_username",
+          "realm_access",
+          "resource_access",
+          "scope",
+          "sid",
+          "sub",
+          "typ"
+        ],
+        "acr": "1",
+        "aud": [
+          "mtmf-evidence-exchange",
+          "mtmf-user-api",
+          "account"
+        ],
+        "auth_time": "35acfb2a575ac4ac",
+        "azp": "mtmf-evidence-user",
+        "email": "c5e66a0ceb831356",
+        "exp": true,
+        "iat": true,
+        "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+        "jti": "402ef92f40af089e",
+        "preferred_username": "8ee4b5c2bbf4367c",
+        "scope": "openid profile email",
+        "sid": "7df7705da654e67c",
+        "sub": "86beabbf9aee686a",
+        "typ": "Bearer"
+      },
+      "has_id_token": true,
+      "has_refresh_token": true,
+      "header": {
+        "_header_names": [
+          "alg",
+          "kid",
+          "typ"
+        ],
+        "alg": "RS256",
+        "kid": "11d5b225f13edad9",
+        "typ": "JWT"
+      },
+      "signature_verified": true
+    },
+    "id": "K02",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "note": "service token lacks the user audience; proposed user profile rejects it",
+      "service_aud": [
+        "mtmf-service-api",
+        "account"
+      ]
+    },
+    "id": "K03",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "note": "user token lacks the service audience; proposed service profile rejects it",
+      "user_aud": [
+        "mtmf-evidence-exchange",
+        "mtmf-user-api",
+        "account"
+      ]
+    },
+    "id": "K04",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "claims": {
+        "_claim_names": [
+          "acr",
+          "at_hash",
+          "aud",
+          "auth_time",
+          "azp",
+          "email",
+          "email_verified",
+          "exp",
+          "family_name",
+          "given_name",
+          "iat",
+          "iss",
+          "jti",
+          "name",
+          "preferred_username",
+          "sid",
+          "sub",
+          "typ"
+        ],
+        "acr": "1",
+        "aud": "mtmf-evidence-user",
+        "auth_time": "35acfb2a575ac4ac",
+        "azp": "mtmf-evidence-user",
+        "email": "c5e66a0ceb831356",
+        "exp": true,
+        "iat": true,
+        "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+        "jti": "95a3bd97495a46ae",
+        "preferred_username": "8ee4b5c2bbf4367c",
+        "sid": "7df7705da654e67c",
+        "sub": "86beabbf9aee686a",
+        "typ": "ID"
+      },
+      "has_user_audience": false,
+      "header": {
+        "_header_names": [
+          "alg",
+          "kid",
+          "typ"
+        ],
+        "alg": "RS256",
+        "kid": "11d5b225f13edad9",
+        "typ": "JWT"
+      }
+    },
+    "id": "K05",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "claims": {
+        "_claim_names": [
+          "aud",
+          "aud_x",
+          "azp",
+          "exp",
+          "iat",
+          "iss",
+          "jti",
+          "prov",
+          "scope",
+          "sid",
+          "sub",
+          "typ"
+        ],
+        "aud": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+        "azp": "mtmf-evidence-user",
+        "exp": true,
+        "iat": true,
+        "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+        "jti": "d7497e364ea255b5",
+        "scope": "openid profile email acr roles web-origins basic",
+        "sid": "7df7705da654e67c",
+        "sub": "86beabbf9aee686a",
+        "typ": "Refresh"
+      },
+      "header": {
+        "_header_names": [
+          "alg",
+          "kid",
+          "typ"
+        ],
+        "alg": "HS512",
+        "kid": "6725fb36b0ac9c3f",
+        "typ": "JWT"
+      },
+      "is_jwt": true,
+      "used_as_evidence": false
+    },
+    "id": "K06",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "service_azp": "mtmf-evidence-service"
+    },
+    "id": "K08",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "azp_equal": true,
+      "note": "azp equality is recorded, not treated as delegation proof",
+      "service_azp": "mtmf-evidence-same-client",
+      "user_azp": "mtmf-evidence-same-client"
+    },
+    "id": "K09",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "service_azp": "mtmf-evidence-service",
+      "user_azp": "mtmf-evidence-user"
+    },
+    "id": "K10",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "note": "two independently valid tokens with different azp are not delegation",
+      "service_azp": "mtmf-evidence-service",
+      "user_azp": "mtmf-evidence-user"
+    },
+    "id": "K11",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED"
+    ],
+    "detail": {
+      "detail": "token request failed: HTTP 400: {\"error\":\"invalid_request\",\"error_description\":\"Requested audience not available: mtmf-evidence-exchange\"}",
+      "error": "IssuerError",
+      "note": "standard token exchange not available"
+    },
+    "id": "K13",
+    "status": "BLOCKED"
+  },
+  {
+    "classifications": [
+      "OFFICIAL-DOC"
+    ],
+    "detail": {
+      "note": "Keycloak act/may_act delegation is preview and disabled by default in 26.8.0; not enabled"
+    },
+    "id": "K14",
+    "status": "BLOCKED"
+  },
+  {
+    "classifications": [
+      "CONFIGURED"
+    ],
+    "detail": {
+      "note": "no issuer-enforced phishing-resistant authentication flow is configured; WebAuthn/passkey enrollment is a manual prerequisite"
+    },
+    "id": "K15",
+    "status": "BLOCKED"
+  },
+  {
+    "classifications": [
+      "CONFIGURED"
+    ],
+    "detail": {
+      "note": "high-assurance WebAuthn login not executed in this environment"
+    },
+    "id": "K16",
+    "status": "NOT EXECUTED"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "claims": {
+        "_claim_names": [
+          "acr",
+          "aud",
+          "auth_time",
+          "azp",
+          "email",
+          "email_verified",
+          "exp",
+          "family_name",
+          "given_name",
+          "iat",
+          "iss",
+          "jti",
+          "name",
+          "preferred_username",
+          "realm_access",
+          "resource_access",
+          "scope",
+          "sid",
+          "sub",
+          "typ"
+        ],
+        "acr": "1",
+        "aud": [
+          "mtmf-root-api",
+          "account"
+        ],
+        "auth_time": "35acfb2a575ac4ac",
+        "azp": "mtmf-evidence-root",
+        "email": "77403f1d8e9bee6d",
+        "exp": true,
+        "iat": true,
+        "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+        "jti": "f6c4900e13300899",
+        "preferred_username": "f77c511aff809b2e",
+        "scope": "openid profile email",
+        "sid": "1abd80bea8ad6104",
+        "sub": "47a52e5b7bbca6bc",
+        "typ": "Bearer"
+      },
+      "header": {
+        "_header_names": [
+          "alg",
+          "kid",
+          "typ"
+        ],
+        "alg": "RS256",
+        "kid": "11d5b225f13edad9",
+        "typ": "JWT"
+      },
+      "note": "password-only root login yields only the generic realm assurance, not phishing resistance"
+    },
+    "id": "K17",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "cross_profile_audience": false,
+      "service_aud": [
+        "mtmf-service-api",
+        "account"
+      ],
+      "service_expected_present": true,
+      "user_aud": [
+        "mtmf-evidence-exchange",
+        "mtmf-user-api",
+        "account"
+      ],
+      "user_expected_present": true
+    },
+    "id": "K18",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "exp_present": true,
+      "leeway_used": 0
+    },
+    "id": "K19",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "iat_present": true,
+      "nbf_present": false
+    },
+    "id": "K20",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "jwks_kid_count": 2,
+      "rotation_observed": false,
+      "token_kid_matched": true
+    },
+    "id": "K21",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "error": "DecodeError",
+      "rejected": true
+    },
+    "id": "K23",
+    "status": "PASS"
+  }
+]

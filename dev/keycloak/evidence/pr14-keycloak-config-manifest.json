@@ -1,0 +1,61 @@
+{
+  "clients": [
+    {
+      "audiences": [
+        "mtmf-service-api"
+      ],
+      "client_id": "mtmf-evidence-service",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "0087b743-ee5b-4e28-a63c-397c51e0ff45"
+    },
+    {
+      "audiences": [
+        "mtmf-user-api"
+      ],
+      "client_id": "mtmf-evidence-user",
+      "service_account": false,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "e432d340-0e8d-4795-8f7a-c0ad1d9d1086"
+    },
+    {
+      "audiences": [
+        "mtmf-same-client-api"
+      ],
+      "client_id": "mtmf-evidence-same-client",
+      "service_account": true,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "6ee03323-c50e-4a04-a01f-417e866816d7"
+    },
+    {
+      "audiences": [
+        "mtmf-root-api"
+      ],
+      "client_id": "mtmf-evidence-root",
+      "service_account": false,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "959bd474-4224-4c35-8327-6a99cc549174"
+    },
+    {
+      "audiences": [
+        "mtmf-exchange-api"
+      ],
+      "client_id": "mtmf-evidence-exchange",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": true,
+      "uuid": "7e5239d0-2dc4-40c4-875d-2d0846c8e33d"
+    }
+  ],
+  "issuer": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+  "realm": "mtmf-pr14-dev",
+  "users": [
+    "mtmf-user-alice",
+    "mtmf-user-bob",
+    "mtmf-root-admin"
+  ]
+}

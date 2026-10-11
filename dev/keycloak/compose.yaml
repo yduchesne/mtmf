@@ -1,0 +1,65 @@
+# MTMF PR 14 Track 2 — isolated Keycloak development issuer fixture.
+#
+# Resource ownership
+# ------------------
+# This is a DEVELOPMENT-ONLY, EVIDENCE-ONLY fixture. It is intentionally a
+# separate file from the repository root `compose.yaml` so it never becomes
+# part of the production/integration Compose project. Always invoke it with
+# an explicit project name and file:
+#
+#   podman-compose -p mtmf-pr14-keycloak -f dev/keycloak/compose.yaml up -d
+#
+# Every resource created here belongs to the explicit project
+# `mtmf-pr14-keycloak` and the `keycloak` service. There is no fixed
+# `container_name`, so podman-compose generates project-scoped names.
+# MTMF tooling must never discover, prune, or otherwise control resources
+# owned by ATI, Digr, Darkula, Hammeridian, or any other application.
+#
+# Host ports
+# ----------
+# MTMF owns local host-port prefix `2`. Container-internal Keycloak HTTP
+# (8080) and HTTPS (8443) are published on loopback as 28080 and 28443.
+# It never uses 25432 (MTMF PostgreSQL) or another project's port.
+#
+# TLS
+# ---
+# The interactive login flow requires Secure cookies, which the pinned
+# issuer emits even over plain HTTP. The fixture therefore serves HTTPS on
+# loopback using an operator-generated self-signed certificate mounted
+# read-only from `MTMF_PR14_KC_TLS_DIR` (default `/tmp/mtmf-pr14-kc-tls`).
+# No certificate or private key is committed.
+#
+# Secrets
+# -------
+# The bootstrap administrator password is supplied at runtime through
+# `MTMF_PR14_KC_ADMIN_PASSWORD` and is never committed. Realm users and
+# client secrets are created by `setup-realm.py` at runtime and are never
+# written into this file or the repository.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0-1
+    command:
+      - start-dev
+      - --http-port=8080
+      - --https-port=8443
+      - --hostname-strict=false
+      - --health-enabled=true
+      - --log-level=INFO
+      - --https-certificate-file=/opt/keycloak/conf/tls/server.crt
+      - --https-certificate-key-file=/opt/keycloak/conf/tls/server.key
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "127.0.0.1:${MTMF_PR14_KC_HTTP_PORT:-28080}:8080"
+      - "127.0.0.1:${MTMF_PR14_KC_HTTPS_PORT:-28443}:8443"
+    volumes:
+      - mtmf-pr14-keycloak-data:/opt/keycloak/data
+      - ${MTMF_PR14_KC_TLS_DIR:-/tmp/mtmf-pr14-kc-tls}:/opt/keycloak/conf/tls:ro
+
+volumes:
+  mtmf-pr14-keycloak-data:
+    name: mtmf-pr14-keycloak-data

@@ -28,6 +28,9 @@ Owner documentation: [SECURITY_MODEL.md](SECURITY_MODEL.md),
 Companion contracts: [PR12_INTEGRATION_SECURITY_DECISIONS.md](PR12_INTEGRATION_SECURITY_DECISIONS.md)
 (T1/T6), [HTTP_INTEGRATION_BATCH_AUTHORIZATION.md](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
 (§2, §3, §3A, §3B, §12A), [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+Track 2 issuer evidence: [PR14_KEYCLOAK_EVIDENCE.md](PR14_KEYCLOAK_EVIDENCE.md) —
+reproducible observations from the isolated Keycloak 26.8.0 dev fixture. The
+evidence does **not** grant approval; see §17.
 
 ## 1. Purpose and boundary
 
@@ -214,15 +217,28 @@ SUPPORTABLE FOR APPROVAL**. Approval: reviewer `_pending_`, date
 
 **Rationale.** Token-confusion prevention.
 
-**Refinement.** Keycloak 26.8.0 documents that Audience mappers add
-audiences to the **access token only**; this supports distinct profile
-audiences but does not by itself define the token-class predicate. The
-exact predicates remain **UNRESOLVED** until an MTMF issuer profile is
-configured and its claim shape confirmed (see §7 and §13/Q4).
+**Refinement (Phase 0).** Keycloak 26.8.0 documents that Audience mappers
+add audiences to the **access token only**.
 
-**Status: PROPOSED / PARTIALLY BLOCKED (predicate + audience evidence
-missing)**. Approval: reviewer `_pending_`, date `_pending_`, reference
-`_pending_`.
+**Track 2 observed refinement (not an approval).** In the isolated
+Keycloak 26.8.0 fixture, the access-token payload `typ` is `Bearer` for
+**both** the client-credentials and interactive-user tokens, so `typ`
+alone does not separate service from user; the profile-specific
+**audience** does. ID tokens use payload `typ=ID` and refresh tokens use
+payload `typ=Refresh`. Therefore the proposed predicate is:
+
+- service profile: audience contains the configured service audience and
+  the token is not a user/ID/refresh token; credential identity from
+  `azp`;
+- user profile: audience contains the configured user audience, payload
+  `typ=Bearer`, and a stable `sub`.
+
+This is observed for the **development** profile only; the production
+issuer profile still requires approval (§17).
+
+**Status: PROPOSED / OBSERVED FOR THE DEV PROFILE (production profile
+still requires approval)**. Approval: reviewer `_pending_`, date
+`_pending_`, reference `_pending_`.
 
 ### A14-03 — Service credential → exactly one Application
 
@@ -309,6 +325,13 @@ feature is **Preview, disabled by default**, requiring
 `--features=preview` or `--features=token-exchange-delegation` and FGAP
 V2. A preview feature is not an acceptable mandatory security dependency.
 
+**Track 2 observed refinement (not an approval).** A live Standard Token
+Exchange V2 attempt in the isolated fixture failed with HTTP 400
+`Requested audience not available`, so V2 availability was **not**
+demonstrated; actor delegation remains a preview feature (§17, K13/K14).
+Signed external-issuer end-user access tokens were issued and verified
+successfully (K02).
+
 **Recommendation.** Signed external-issuer end-user access tokens are the
 mandatory v0.1 path; RFC 8693 exchange is a contingency, not a baseline.
 
@@ -377,6 +400,11 @@ summary:
 - RFC 8693 §4.1 defines the `act` claim. Keycloak’s `act`/`may_act`
   delegation is **Preview/disabled-by-default** (26.8.0); it is not an
   assured fallback.
+- **Track 2 observation (not delegation proof):** in the isolated
+  fixture, the same client obtained both a service token and a user token
+  with equal `azp` (K09), and different clients produced different `azp`
+  (K10). No documented issuer guarantee accompanies that equality. The
+  direct-token design remains **BLOCKED** pending Q2.
 
 **Required reviewer question Q2.** Can one confidential OAuth client
 safely serve both client-credentials and interactive user flows under the
@@ -410,10 +438,13 @@ reviewer `_pending_`, date `_pending_`, reference `_pending_`.
 **Evidence and verdict.** Keycloak 26.8.0 documents ACR→LoA mapping and
 the AMR protocol mapper, but no MTMF root realm policy is configured and
 no ACR value mapping to a phishing-resistant (WebAuthn/passkey-only)
-policy has been evidenced. Root assurance is therefore **BLOCKED —
+policy has been evidenced. **Track 2 observation:** a password-only root
+login in the isolated fixture yielded only `acr=1` with no `amr`
+(generic realm assurance), and no WebAuthn flow was configured or
+exercised (K15–K17). Root assurance is therefore **BLOCKED —
 UNRESOLVED**; the smallest decision is an issuer-admin–documented realm
 flow policy for the root account and the exact `acr`/`amr` value(s) it
-emits, with evidence.
+emits in the **access token**, with evidence.
 
 **Recommendation.** Prefer option A (keep root Identity `LOCAL`,
 dedicated protected binding); do not reclassify as `FEDERATED`.
@@ -470,10 +501,15 @@ reference `_pending_`.
 
 ## 7. Proposed JWT claim-validation profiles (evidence-backed status)
 
-Each field records its evidence status. **None** of the MTMF-specific
-values is observed. `UNVERIFIED` means no MTMF issuer profile/config
-exists; `DOCUMENTED` means Keycloak 26.8.0 documents the capability but
-not an MTMF value.
+Each field records its evidence status. `UNVERIFIED` means no MTMF
+production issuer profile/config exists; `DOCUMENTED` means Keycloak
+26.8.0 documents the capability but not an MTMF value. **Track 2 addendum
+(§17):** the Keycloak 26.8.0 *development* profile values are now
+**OBSERVED** (service/user audiences, payload `typ`, `azp`, `acr`, key
+type) in
+[PR14_KEYCLOAK_EVIDENCE.md](PR14_KEYCLOAK_EVIDENCE.md); those observations
+supersede the per-field `UNVERIFIED` only for the dev profile and are not
+approval of a production profile.
 
 ### 7.1 Common checks (all profiles)
 
@@ -705,18 +741,18 @@ repository facts, official docs, and unverified items.
 | ID | Proposed disposition | Evidence source | Remaining uncertainty | Approval required |
 | --- | --- | --- | --- | --- |
 | A14-01 | Adopt asymmetric resource-server validation; `leeway=0` at `exp` | Repo + PyJWT source + Keycloak docs | Algorithm subset; parse bounds | Yes |
-| A14-02 | Distinct service/user profiles with distinct audiences | Keycloak audience mappers (docs) | Exact class predicates/audiences | Yes |
+| A14-02 | Distinct service/user profiles with distinct audiences | Track 2 observed Keycloak 26.8.0 dev profile (K01–K06, K18) | Production issuer profile/audience names | Yes |
 | A14-03 | `(issuer, client_id)` → one Application; unique, immutable | PR 12 T6; repo persistence seams | Exact client-identity claim | Yes |
 | A14-04 | `(issuer, sub)` → one `FEDERATED` Identity; operator-only | Repo identity/membership contracts | Per-issuer origin rule | Yes |
-| A14-05 | Signed external user token mandatory; exchange contingency | Keycloak token-exchange guide (V2 supported; delegation preview) | Whether T1 demands both modes | Yes |
+| A14-05 | Signed external user token mandatory; exchange contingency | Track 2 (signed token verified K02; exchange K13 blocked) | Whether T1 demands both modes | Yes |
 | A14-06 | ACTIVE actor + explicit memberships + ordinary ACTIVE Tenant + ACTIVE registration | Repo domain/lifecycle contracts | None material | Yes |
-| A14-07 | Issuer-validated same-client delegation; `azp` alone insufficient | OIDC Core (`azp` ID-token only); Keycloak docs | **Issuer guarantee missing → BLOCKED** | Yes |
-| A14-08 | Root stays `LOCAL`; dedicated protected binding; phishing-resistant assurance | PR 10 invariants; Keycloak ACR/AMR docs | **Assurance policy/value missing → BLOCKED** | Yes |
+| A14-07 | Issuer-validated same-client delegation; `azp` alone insufficient | OIDC Core; Track 2 K09/K10 (equality observed, no guarantee) | **Issuer guarantee missing → BLOCKED** | Yes |
+| A14-08 | Root stays `LOCAL`; dedicated protected binding; phishing-resistant assurance | PR 10 invariants; Track 2 K15–K17 (generic `acr=1`, no `amr`) | **Assurance policy/value missing → BLOCKED** | Yes |
 | A14-09 | Typed internal verifier/composer; sanitized errors; no public route | Plan/architecture | None material | Yes |
 | A14-10 | Operator-only mutation; runtime read-only `SECURITY DEFINER`; additive `0011` | Repo privilege model (75-signature manifest) | New read signatures | Yes |
-| §7 profiles | Claim matrices with per-field evidence status | Official docs + PyJWT | MTMF config absent → many UNVERIFIED | Yes |
-| §8 delegation | Refined same-client + `act` contingency | OIDC/RFC/Keycloak docs | **Blocked pending issuer guarantee** | Yes |
-| §9 root model | Option A dedicated binding; option B fallback | PR 10 invariants; Keycloak docs | **Assurance blocked** | Yes |
+| §7 profiles | Claim matrices with per-field evidence status | Track 2 observed dev profile + official docs + PyJWT | Production profile values; K07/K13 not executed | Yes |
+| §8 delegation | Refined same-client + `act` contingency | OIDC/RFC; Track 2 K09/K10/K13/K14 | **Blocked pending issuer guarantee** | Yes |
+| §9 root model | Option A dedicated binding; option B fallback | PR 10 invariants; Track 2 K15–K17 | **Assurance blocked** | Yes |
 | §10 dependency | `pyjwt[crypto]>=2.13,<3`; core/service split | Installed PyJWT; PR 12 text | Ownership reconciliation | Yes |
 
 ## 13. Decision-ready summary
@@ -729,15 +765,20 @@ approved).**
 - A14-03 (credential → one Application), A14-04 (subject → one
   `FEDERATED` Identity), A14-06 (actor eligibility), A14-09 (internal
   API only), A14-10 (privilege posture).
+- A14-02/§7 **for the Keycloak 26.8.0 development profile only**
+  (observed payload `typ` + profile-specific audience; §17).
 - §10.1 dependency constraint; §10.2 PyJWT/JWKS/time constraints.
 
 **(b) Blocked by missing evidence (do not implement).**
 
-- A14-02/§7: exact token-class predicates and distinct service/user/root
-  audiences (no MTMF issuer profile; observed evidence NOT EXECUTED).
 - A14-05/A14-07/§8: same-client direct-token delegation lacks an
-  issuer guarantee; `act` delegation is a Keycloak preview feature.
-- A14-08/§9: phishing-resistant root assurance policy/values unverified.
+  issuer guarantee (observed `azp` equality is not a guarantee); the
+  `act`/V2 exchange was not demonstrated and delegation is a Keycloak
+  preview feature.
+- A14-08/§9: phishing-resistant root assurance policy/values unverified;
+  a password-only root login yielded only generic `acr=1` with no `amr`.
+- A14-02/§7 production profile: the observed values are the development
+  profile, not an approved production issuer profile.
 
 **(c) Exact minimal choices required from the reviewer.**
 
@@ -806,3 +847,28 @@ verified actor composition reusing PR 13 (Part 4); configuration and
 composition seam (Part 5); documentation and final gates (Part 6). The
 mandatory acceptance matrix `AUTH-01`–`AUTH-36` and the real-PostgreSQL
 privilege gates apply.
+
+## 17. Track 2 observed issuer evidence (addendum, no approval)
+
+Full detail: [PR14_KEYCLOAK_EVIDENCE.md](PR14_KEYCLOAK_EVIDENCE.md).
+Isolated Keycloak `26.8.0` (`quay.io/keycloak/keycloak:26.8.0-1`, digest
+`sha256:27b3230f...`), loopback-only, no MTMF database or runtime role.
+
+**Observed and verified (development profile).** Service and interactive
+user access tokens are signed RS256 with payload `typ=Bearer`, distinct
+profile audiences, and `azp` naming the obtaining client. ID tokens use
+`typ=ID`; refresh tokens are HS512 JWTs with payload `typ=Refresh`.
+`exp`/`iat` are present and `nbf` is absent. A malformed token fails
+closed. Clean `down -v` recreate reproduces the results. Only
+`mtmf-pr14-keycloak` resources were touched.
+
+**Still blocked.** Same-client `azp` equality was observed but is not a
+documented delegation guarantee (D1 blocked); Standard Token Exchange V2
+was not demonstrated (D3 blocked); actor delegation is a preview feature;
+root phishing-resistant assurance was not established (generic `acr=1`,
+no `amr`).
+
+**Effect on this register.** Only the evidence statuses in A14-02, A14-05,
+A14-07, A14-08, and §7–§9 are updated. No decision is approved; the
+approval log in §15 remains **PENDING HUMAN REVIEW**, and PR 14
+implementation remains stopped.
