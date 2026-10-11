@@ -972,6 +972,19 @@ service tokens from interactive user tokens. Evidence:
 This note records evidence only. It does not approve any decision; the
 approval log below is unchanged and every entry remains PENDING.
 
+## 14F. Human decision — G0-A option 1 selected (2026-10-11)
+
+**APPROVED ARCHITECTURAL DIRECTION, NOT TOKEN-CLASS ACCEPTANCE OR IMPLEMENTATION AUTHORIZATION.** Preserve D1 same-client propagation and use a locked, attested Keycloak 26.8.0 development issuer mapper configuration. The candidate service predicate (signed access-token `typ=Bearer`, `client_id` present and equal to signed `azp`) is **conditional**, not yet approved as a sufficient authentication predicate. G0-T09 demonstrated that a realm hardcoded-claim mapper can make a user token satisfy it.
+
+A follow-up **G0-A remediation evidence gate** must:
+- Define an exact canonical realm/client/client-scope/protocol-mapper configuration allowlist, including inherited/default/optional scopes and mapper precedence; prohibit any unauthorized override of security-critical claims, including `client_id`, `azp`, `sub`, `typ` and audience.
+- Specify an independently controlled configuration-integrity attestation and deployment/runtime trust gate. An untrusted realm-admin assertion or a hash stored alongside mutable configuration is insufficient by itself. Identify who can mutate issuer configuration and how drift is detected **before authentication is enabled or continued**; if continuous detection cannot be established, document and obtain review of the resulting risk.
+- Execute adversarial issuer tests reproducing G0-T09, demonstrating that forbidden mapper changes are rejected or detected and cause fail-closed behavior; demonstrate genuine service/user token acceptance, wrong-class rejection, and clean fixture recreation.
+- Record the precise evidence and residual administrative-compromise risk; do not claim that JWT signatures alone guarantee grant type.
+- Stop after documentation, fixture hardening and evidence. No production authentication verifier, migration, API, runtime grants or root behavior may be implemented until the remaining security approvals and explicit authorization.
+
+**Unchanged:** development-first only; production issuer deferred; root authentication deferred and fail-closed; §10 ownership reconciliation and remaining non-root approvals pending.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
