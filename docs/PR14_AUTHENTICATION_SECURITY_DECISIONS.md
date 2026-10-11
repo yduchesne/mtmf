@@ -1,6 +1,6 @@
 # PR 14 — Service Authentication and Verified Acting-User Security Decisions
 
-> **STATUS: PROPOSED — PENDING HUMAN REVIEW. NOT APPROVED.**
+> **STATUS: D1 v0.1 ARCHITECTURE SELECTED; FULL PR 14 APPROVAL PENDING. IMPLEMENTATION STOP.**
 >
 > This register records the PR 14 security decisions proposed in the
 > detailed implementation plan and the Phase 0/Phase 0-refinement
@@ -817,6 +817,51 @@ STOP and report before further coding if any of the following holds:
 9. `main` advanced with conflicting identity/authentication work.
 10. Any mandatory gate fails without proven resolution.
 
+## 14A. Human architecture decision — constrained D1 for v0.1 (2026-10-11)
+
+**Decision: D1 SELECTED FOR v0.1 ARCHITECTURE; IMPLEMENTATION STILL BLOCKED.** The human reviewer explicitly selected constrained **same-client end-user access-token propagation**, not generic OAuth delegation, as the v0.1 direction. This supersedes §8's open D1-vs-D2-vs-D3 architecture choice but **does not** turn the observed `azp` equality in K09 into proof of delegation, approve an arbitrary Keycloak claim, or waive the PR 14 implementation gate.
+
+### Exact scope and security semantics
+
+1. A consuming application authenticates itself with a trusted-issuer OAuth 2.0 client-credentials access token. Its immutable `(issuer, client_id)` maps to exactly one MTMF Application.
+2. The same OAuth client obtains a **user access token** through an approved interactive user-authentication flow. MTMF independently verifies its signature, issuer, audience, expiration, issued-at time, token class, and subject. ID tokens, refresh tokens, service tokens masquerading as user tokens, and caller-supplied Identity IDs are rejected.
+3. The trusted issuer profile must **explicitly document and demonstrate** that its configured, signed user-access-token client-identity claim identifies the OAuth client to which the token was issued, and that the verified service-token client identity identifies the same client. MTMF checks these identities for equality **only after independent token validation**. A bare comparison of unqualified `azp` strings is not accepted as evidence of authority.
+4. The D1 contract is **client-bound user context**, not RFC 8693 actor delegation or authority for one independent OAuth client to impersonate a user of another client. Both tokens must be legitimately obtained for the registered client; MTMF must not infer user consent, arbitrary delegation, or cross-client authority from matching text.
+5. The verified `(issuer, sub)` resolves only through an operator-provisioned immutable Identity binding; ordinary user Identity origin remains `FEDERATED`. MTMF validates the active Identity, Principal, selected Tenant, explicit memberships, Application registration/subscription eligibility, and subsequent authorization independently. The calling application remains responsible for resource isolation.
+6. Missing, ambiguous, unverified, or mismatched client identities; mismatched issuers/trust profiles; wrong audience or token class; expired tokens; inactive actors; and unsupported cross-client flows **fail closed**. Neither service credentials nor user tokens alone authorize an acting-user request.
+7. RFC 8693 exchanged-token `act` chains, distinct-client delegation, and Keycloak preview delegation are **outside the v0.1 D1 implementation scope**. A later separately approved profile may introduce them; no silent fallback or preview-feature dependency is permitted.
+
+### Required issuer evidence before D1 implementation
+
+The development Keycloak fixture in `docs/PR14_KEYCLOAK_EVIDENCE.md` observes `azp` equality (K09), but the issuer guarantee and normative client-binding interpretation remain **UNVERIFIED**. Before implementing D1, the reviewer must approve an issuer-specific, signed access-token claim contract, with authoritative issuer documentation or explicit controlled issuer configuration and positive/negative issuer-backed evidence. If that cannot be established, **STOP**; do not substitute equality alone.
+
+### Mandatory integration acceptance scenarios (not yet executed)
+
+| ID | Scenario | Required outcome |
+| --- | --- | --- |
+| D1-01 | Valid client-credentials and user access tokens issued to the same registered client, with verified issuer-specific client-binding semantics | Accepted as authenticated client-bound context; authorization evaluated separately |
+| D1-02 | Independently valid service and user tokens from different OAuth clients | Rejected |
+| D1-03 | Matching client text from unverified/malformed JWT or unsupported claim | Rejected |
+| D1-04 | Missing, multiple, or ambiguous client-identity claims | Rejected |
+| D1-05 | User token used in service slot; service token in user slot; ID/refresh token in user slot | Rejected |
+| D1-06 | Wrong service/user audience, untrusted issuer, bad signature, unknown key, expired token | Rejected |
+| D1-07 | Same client but user binding absent/inactive, Tenant membership absent/inactive, Application registration/subscription ineligible | Rejected independently of token validity |
+| D1-08 | Two valid same-client tokens with unrelated Tenant selection or cross-Tenant actor context | Rejected |
+| D1-09 | Caller-supplied Identity/Principal UUID, service-signed assertion, or cross-client token-exchange substitution | Never accepted as authentication |
+| D1-10 | Keycloak dev fixture re-created from clean state; observed signed claims and negative controls reproduced | Evidence recorded, secrets redacted |
+
+These are **future PR 14 acceptance gates**, not Track 2 PASS claims. Use the actual configured issuer and MTMF production validation path when implementation is authorized; harness-only comparisons are diagnostic, not sufficient feature acceptance.
+
+### Related decisions and outstanding STOPs
+
+- **A14-05:** Signed external-issuer user access tokens are the selected v0.1 mechanism; RFC 8693 actor delegation is deferred. This is a scope choice, not full implementation approval.
+- **A14-07:** D1 architecture selected; issuer-specific binding guarantee and end-to-end tests remain mandatory and currently blocked.
+- **A14-08:** Option A (canonical `LOCAL` root plus protected external authentication binding) remains the target, but root authentication is **BLOCKED** pending verified phishing-resistant MFA policy and exact access-token assurance semantics. Option B (separate/defer root work) remains available by explicit decision.
+- **A14-02/§7:** Profile-specific class predicates and audiences require explicit production-profile approval; observed development values are not automatically production defaults.
+- **§10:** Explicit PyJWT dependency and provider-neutral core/service ownership must be reconciled with approved PR 12 wording before implementation.
+- **JWT time:** `exp` is mandatory with zero positive expiration leeway; `iat` is mandatory; `nbf` is optional if the issuer omits it but must be validated when present, without extending `exp`.
+- **Implementation gate:** No PR 14 authentication, migration, persistence, or HTTP code may be started on the strength of this addendum alone. Other A14 decisions and required contracts remain subject to the recorded approval gate.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
@@ -829,7 +874,7 @@ All rows are **PENDING HUMAN REVIEW**. No decision is approved.
 | A14-04 | PENDING HUMAN REVIEW | — | — | — |
 | A14-05 | PENDING HUMAN REVIEW / SCOPE OPEN | — | — | — |
 | A14-06 | PENDING HUMAN REVIEW | — | — | — |
-| A14-07 | PENDING HUMAN REVIEW / BLOCKED ON ISSUER GUARANTEE | — | — | — |
+| A14-07 | D1 ARCHITECTURE SELECTED; ISSUER CONTRACT/IMPLEMENTATION BLOCKED | — | — | — |
 | A14-08 | PENDING HUMAN REVIEW / BLOCKED ON ROOT ASSURANCE | — | — | — |
 | A14-09 | PENDING HUMAN REVIEW | — | — | — |
 | A14-10 | PENDING HUMAN REVIEW | — | — | — |
