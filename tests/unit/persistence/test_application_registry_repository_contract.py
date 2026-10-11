@@ -16,6 +16,7 @@ from helpers import make_id
 from mtmf_core import (
     Application,
     ApplicationLifecycle,
+    ApplicationRegistryInvariantError,
     ApplicationTenantRegistration,
     DuplicatePersistenceIdentityError,
     MtmfSpi,
@@ -254,3 +255,135 @@ def test_multi_repository_failed_transaction_leaves_no_partial_state(spi: MtmfSp
         assert (
             spi.create_application_tenant_registration_repository(uow).get(registration.id) is None
         )
+
+
+# --- PR 13-1 A1 in-memory parity (Phase 3) ---------------------------------
+
+
+def _committed_subscription(
+    spi: MtmfSpi,
+) -> tuple[Application, object, TenantApplicationSubscription]:
+    application = _application()
+    tenant_id = make_id()
+    subscription = _subscription(application, tenant_id)
+    with spi.create_unit_of_work() as uow:
+        spi.create_application_repository(uow).add(application)
+        spi.create_tenant_application_subscription_repository(uow).add(subscription)
+        uow.commit()
+    return application, tenant_id, subscription
+
+
+def test_a1_repository_accepts_and_persists_restrictive_shortening(spi: MtmfSpi) -> None:
+    application, tenant_id, subscription = _committed_subscription(spi)
+    assert subscription.ends_at is not None
+    shortened = subscription.ends_at - timedelta(hours=1)
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_tenant_application_subscription_repository(uow)
+        current = repository.find_by_application_and_tenant(application.id, tenant_id)[0]
+        current.shorten_end_to(shortened)
+        repository.save(current)
+        uow.commit()
+    with spi.create_unit_of_work() as uow:
+        stored = spi.create_tenant_application_subscription_repository(
+            uow
+        ).find_by_application_and_tenant(application.id, tenant_id)[0]
+        assert stored.ends_at == shortened
+
+
+def test_a1_repository_rejects_extension_and_preserves_original(spi: MtmfSpi) -> None:
+    application, tenant_id, subscription = _committed_subscription(spi)
+    assert subscription.ends_at is not None
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_tenant_application_subscription_repository(uow)
+        current = repository.find_by_application_and_tenant(application.id, tenant_id)[0]
+        # Bypass the validated domain method to simulate a mutable-field caller.
+        current.ends_at = current.ends_at + timedelta(days=1)
+        with pytest.raises(ApplicationRegistryInvariantError):
+            repository.save(current)
+    with spi.create_unit_of_work() as uow:
+        stored = spi.create_tenant_application_subscription_repository(
+            uow
+        ).find_by_application_and_tenant(application.id, tenant_id)[0]
+        assert stored.ends_at == subscription.ends_at
+
+
+def test_a1_repository_rejects_clearing_finite_end(spi: MtmfSpi) -> None:
+    application, tenant_id, subscription = _committed_subscription(spi)
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_tenant_application_subscription_repository(uow)
+        current = repository.find_by_application_and_tenant(application.id, tenant_id)[0]
+        current.ends_at = None
+        with pytest.raises(ApplicationRegistryInvariantError):
+            repository.save(current)
+    with spi.create_unit_of_work() as uow:
+        stored = spi.create_tenant_application_subscription_repository(
+            uow
+        ).find_by_application_and_tenant(application.id, tenant_id)[0]
+        assert stored.ends_at == subscription.ends_at
+
+
+def test_a1_repository_rejects_terminal_subscription_update(spi: MtmfSpi) -> None:
+    application = _application()
+    tenant_id = make_id()
+    subscription = _subscription(application, tenant_id)
+    with spi.create_unit_of_work() as uow:
+        spi.create_application_repository(uow).add(application)
+        repository = spi.create_tenant_application_subscription_repository(uow)
+        repository.add(subscription)
+        subscription.transition_to(SubscriptionLifecycle.CANCELLED)
+        repository.save(subscription)
+        uow.commit()
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_tenant_application_subscription_repository(uow)
+        terminal = repository.find_by_application_and_tenant(application.id, tenant_id)[0]
+        with pytest.raises(ApplicationRegistryInvariantError):
+            repository.save(terminal)
+
+
+def test_a1_repository_rejects_terminal_registration_update(spi: MtmfSpi) -> None:
+    application = _application()
+    tenant_id = make_id()
+    registration = _registration(application, tenant_id)
+    with spi.create_unit_of_work() as uow:
+        spi.create_application_repository(uow).add(application)
+        repository = spi.create_application_tenant_registration_repository(uow)
+        repository.add(registration)
+        registration.transition_to(RegistrationLifecycle.REVOKED)
+        repository.save(registration)
+        uow.commit()
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_application_tenant_registration_repository(uow)
+        terminal = repository.get(registration.id)
+        assert terminal is not None
+        with pytest.raises(ApplicationRegistryInvariantError):
+            repository.save(terminal)
+
+
+def test_a1_repository_rejects_terminal_application_update(spi: MtmfSpi) -> None:
+    application = _application()
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_application_repository(uow)
+        repository.add(application)
+        application.transition_to(ApplicationLifecycle.RETIRED)
+        repository.save(application)
+        uow.commit()
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_application_repository(uow)
+        terminal = repository.get(application.id)
+        assert terminal is not None
+        with pytest.raises(ApplicationRegistryInvariantError):
+            repository.save(terminal)
+
+
+def test_a1_reads_are_detached_from_provider_state(spi: MtmfSpi) -> None:
+    application, tenant_id, subscription = _committed_subscription(spi)
+    with spi.create_unit_of_work() as uow:
+        repository = spi.create_tenant_application_subscription_repository(uow)
+        read = repository.find_by_application_and_tenant(application.id, tenant_id)[0]
+        # Mutating a detached read must not touch durable provider state.
+        read.ends_at = read.ends_at - timedelta(days=1) if read.ends_at else None
+    with spi.create_unit_of_work() as uow:
+        stored = spi.create_tenant_application_subscription_repository(
+            uow
+        ).find_by_application_and_tenant(application.id, tenant_id)[0]
+        assert stored.ends_at == subscription.ends_at

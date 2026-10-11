@@ -897,8 +897,9 @@ Privileged bootstrap/root recovery uses separately controlled installation autho
 ## 25. Application/Tenant Eligibility Gate (PR 13)
 
 PR 13 implements the trusted internal prerequisite gate that the future HTTP
-integration boundary consumes. The approved decisions are recorded in
-[PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+integration boundary consumes. The decisions and their provenance are recorded
+in [PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md);
+the PR 13-1 `A1` refinement hardens subscription mutation.
 
 The following are **two independent security facts**:
 
@@ -931,12 +932,31 @@ The gate is fail-closed:
   next evaluation; there is no cache, and no instantaneous-invalidation
   promise is made for a decision already handed to a caller.
 
+The PR 13-1 `A1` mutation refinement is itself fail-closed:
+
+- a subscription's `ends_at` is **restrictive only**: it may be shortened or
+  set on an open-ended subscription for a nonterminal lifecycle, but never
+  extended, replaced with a later instant, or cleared to `NULL`, so no
+  mutation can broaden eligibility;
+- a lifecycle transition and a shortening may be combined only when both are
+  independently valid and the source is nonterminal;
+- `CANCELLED`/`EXPIRED` subscriptions and `RETIRED` Applications /
+  `REVOKED` registrations are terminal and reject every update, including a
+  same-state update;
+- the database guard is authoritative for concurrent writers: it compares the
+  proposed end instant to the locked persisted row's current value for both
+  the stored function and a direct owner `UPDATE`, so a lost restrictive
+  update can never silently restore a later bound;
+- any `ends_at` change is operator/installation-only and is never granted to
+  the restricted `mtmf_runtime` login, which cannot execute a mutation
+  function or directly update a table.
+
 The evaluator returns a typed eligibility result and a stable internal reason
 taxonomy. It never returns an `AuthorizationDecision`, never evaluates a
 Permission or Action, and never constructs a synthetic acting Identity.
 
 Application/registration/subscription mutation is operator/installation-
-privileged only in PR 13 (decisions `S5`/`S8`). The restricted `mtmf_runtime`
+privileged only in PR 13 (decisions `S5`/`S8`, refined by `A1`). The restricted `mtmf_runtime`
 login receives a read-only eligibility surface and no management mutation
 grant: possessing or calling any registry repository/function confers no
 domain authority, and an Application UUID or a caller-supplied identifier is

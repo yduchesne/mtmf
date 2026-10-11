@@ -8,6 +8,7 @@ from mtmf_core.domain.application import (
     normalize_application_key,
     validate_application_transition,
     validate_registration_transition,
+    validate_subscription_end_change,
     validate_subscription_transition,
     validate_subscription_window,
 )
@@ -178,6 +179,7 @@ __all__ = [
     "validate_root_bootstrap_record",
     "validate_session_context",
     "validate_stewardship_designation",
+    "validate_subscription_end_change",
     "validate_subscription_transition",
     "validate_subscription_window",
     "validate_tenant_lifecycle_transition",

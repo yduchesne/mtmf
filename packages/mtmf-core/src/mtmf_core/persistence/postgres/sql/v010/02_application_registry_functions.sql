@@ -6,12 +6,14 @@
 -- DEFINER entry points with a fixed empty search_path; they return
 -- detached JSON only.
 --
--- Guard triggers enforce immutability and lifecycle-transition legality
--- independently of the application, so an accidental direct owner UPDATE
--- cannot silently overwrite a security-relevant transition (decision S2).
--- Time-based expiry is enforced by the pure eligibility evaluator plus the
--- ``ends_at`` window; no asynchronous status transition is required
--- (decision S7).
+-- Guard triggers enforce immutability, lifecycle-transition legality, and
+-- the PR 13-1 A1 end-date amendment policy independently of the application,
+-- so an accidental direct owner UPDATE cannot silently overwrite a
+-- security-relevant transition (decision S2). This is the authoritative
+-- last line of defense for concurrent writers: the trigger compares
+-- ``NEW.ends_at`` to the locked row's ``OLD.ends_at``. Time-based expiry is
+-- enforced by the pure eligibility evaluator plus the ``ends_at`` window; no
+-- asynchronous status transition is required (decision S7).
 
 -- ---------------------------------------------------------------------------
 -- Structural immutability + lifecycle transition guards.
@@ -30,6 +32,11 @@ BEGIN
             RAISE EXCEPTION USING
                 ERRCODE = 'MT043',
                 MESSAGE = 'application: immutable identity/key/provenance columns cannot be updated';
+        END IF;
+        IF OLD.lifecycle = 3 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = 'MT040',
+                MESSAGE = 'application: a RETIRED Application is terminal and cannot be updated';
         END IF;
         IF NEW.lifecycle IS DISTINCT FROM OLD.lifecycle
            AND NOT (
@@ -65,6 +72,11 @@ BEGIN
                 ERRCODE = 'MT043',
                 MESSAGE = 'application_tenant_registration: immutable columns cannot be updated';
         END IF;
+        IF OLD.lifecycle = 2 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = 'MT041',
+                MESSAGE = 'application_tenant_registration: a REVOKED registration is terminal and cannot be updated';
+        END IF;
         IF NEW.lifecycle IS DISTINCT FROM OLD.lifecycle
            AND NOT (OLD.lifecycle = 1 AND NEW.lifecycle = 2) THEN
             RAISE EXCEPTION USING
@@ -97,6 +109,11 @@ BEGIN
                 ERRCODE = 'MT043',
                 MESSAGE = 'tenant_application_subscription: immutable columns cannot be updated';
         END IF;
+        IF OLD.lifecycle IN (3, 4) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = 'MT042',
+                MESSAGE = 'tenant_application_subscription: a terminal subscription cannot be updated';
+        END IF;
         IF NEW.lifecycle IS DISTINCT FROM OLD.lifecycle
            AND NOT (
                (OLD.lifecycle = 0 AND NEW.lifecycle IN (1, 3))
@@ -106,6 +123,26 @@ BEGIN
             RAISE EXCEPTION USING
                 ERRCODE = 'MT042',
                 MESSAGE = 'tenant_application_subscription: illegal lifecycle transition';
+        END IF;
+        -- A1: ``ends_at`` is restrictive only. It may be shortened or set on
+        -- an open-ended subscription, but never extended, replaced with a
+        -- later instant, or cleared to NULL.
+        IF NEW.ends_at IS DISTINCT FROM OLD.ends_at THEN
+            IF NEW.ends_at IS NULL THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = 'MT042',
+                    MESSAGE = 'tenant_application_subscription: a finite ends_at cannot be cleared';
+            END IF;
+            IF NEW.ends_at <= OLD.starts_at THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = 'MT042',
+                    MESSAGE = 'tenant_application_subscription: an amended ends_at must be after starts_at';
+            END IF;
+            IF OLD.ends_at IS NOT NULL AND NEW.ends_at >= OLD.ends_at THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = 'MT042',
+                    MESSAGE = 'tenant_application_subscription: ends_at may only be shortened to a strictly earlier instant';
+            END IF;
         END IF;
     END IF;
     RETURN NEW;

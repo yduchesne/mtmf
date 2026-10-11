@@ -16,10 +16,14 @@ this register and another document differ on a security question,
 `docs/SECURITY_MODEL.md` takes precedence; when this register and a
 later explicit PR conflict, the later explicit decision wins.
 
-**Approval status:** these decisions were requested and approved as the
-implementation contract for PR 13. A change to any of `S1`–`S8` changes
-a security boundary and requires explicit human approval; it must not be
-made as an implementation convenience.
+**Approval provenance:** `S1`–`S8` were **proposed and implemented in
+PR 13**; a prior human approval was **not recorded**. Do not treat their
+presence in this register, or the PR 13 implementation, as human
+approval. PR 13-1 reviewer approval, if granted, adopts the `S1`–`S8`
+architecture and the separately specified `A1` mutation refinement. A
+change to any of `S1`–`S8` changes a security boundary and requires
+explicit human approval; it must not be made as an implementation
+convenience.
 
 ## 2. Decisions
 
@@ -33,6 +37,51 @@ made as an implementation convenience.
 | S6 | No implicit entitlement: creating a registration never creates or activates a subscription; creating a subscription never registers the Application; positive eligibility requires an `ACTIVE` Application, an `ACTIVE` tenant, an `ACTIVE` registration, and an eligible in-window `ACTIVE` subscription. The ROOT tenant receives no automatic exception. | No fact substitutes for another. |
 | S7 | Subscription expiry is **time-derived**: a subscription is ineligible immediately at `ends_at` without waiting for an asynchronous status transition. `EXPIRED` remains an optional terminal administrative state and is not required for expiry enforcement. | No stale grants due to a delayed background job. |
 | S8 | Global Application creation/transition and Tenant registration/subscription creation/transition are operator-controlled writes for PR 13. There is no runtime public management route. | Later verified-actor management use cases require an explicit Action-policy review and the PR 14 trusted boundary. |
+
+### A1 — Subscription mutation hardening (PR 13-1)
+
+**Status:** `ADOPTED FOR IMPLEMENTATION` by the PR 13-1 implementation
+request on 2026-10-11; an explicit reviewer approval reference/date is to
+be recorded when PR #44 is reviewed. `A1` refines `S3`/`S7` for the
+mutation boundary only; it does not rewrite their recorded history.
+
+`A1` is a security-sensitive refinement to `S3`/`S7`. It defines the
+**only** legal way an existing subscription's end date may change, and it
+makes terminal rows fully immutable:
+
+- `starts_at` is immutable after creation.
+- `ends_at` may be supplied at creation as a timezone-aware instant
+  strictly later than `starts_at`, or be absent (open-ended).
+- For a **nonterminal** subscription (`PENDING`, `ACTIVE`, `SUSPENDED`),
+  an operator may **shorten** an existing finite end date or set a finite
+  end date on an open-ended subscription, provided the new value is
+  strictly after `starts_at` and strictly earlier than the existing finite
+  end date, if any. This is a restrictive change only.
+- **Never extend** a finite end date, **never clear** a finite end date to
+  `NULL`, and never replace a finite end date with a later instant.
+- A `CANCELLED` or `EXPIRED` subscription is terminal: no update of any
+  column, including a same-state update or `ends_at`. An Application
+  `RETIRED` or registration `REVOKED` is likewise terminal; its same-state
+  updates must not mutate any field.
+- A lifecycle transition and a shortening may be combined atomically
+  **only if** both are independently valid and the source state is
+  nonterminal. A same-state operation may shorten the window but must not
+  be used to bypass lifecycle rules, and a true no-op must not fabricate a
+  transition or change eligibility.
+- Any change to `ends_at` is operator-only and never available to
+  `mtmf_runtime`. Existing committed revocations and expirations continue
+  to deny fresh eligibility evaluations.
+- Renewal or replacement with a later/absent end date is **out of scope
+  for PR 13-1**. To renew, create a new subscription only after the prior
+  current subscription becomes terminal, subject to the existing
+  unique-current-row constraint. The old row is never silently forced
+  terminal.
+
+The database guard is the authoritative last line of defense: it compares
+`NEW.ends_at` to the locked current row's `OLD.ends_at` for both the
+stored function and a direct owner `UPDATE`. The Python domain exposes the
+same rules through `transition_to`, `shorten_end_to`, and
+`transition_and_shorten_to`.
 
 ## 3. Consequences
 
@@ -72,6 +121,17 @@ made as an implementation convenience.
   `tenant_application_subscription` where `lifecycle IN (PENDING, ACTIVE,
   SUSPENDED)`) so terminal rows accumulate as history while at most one
   current row exists per pair.
+- **The end-date mutation contract is shared by the domain and the
+database.** The pure validator `validate_subscription_end_change`
+  governs creation-adjacent amendments; the `guard_tenant_application_subscription`
+  trigger governs persisted updates (including direct owner `UPDATE`)
+  against the locked row. The in-memory provider mirrors the same
+  terminal/lifecycle/end-date rules so the two providers stay
+  behaviorally equivalent.
+- **Migration safety.** Revision `0010` and packaged `sql/v010` remained
+  unmerged and were the only consumer of these guard bodies when PR 13-1
+  hardened them, so they were edited in place rather than superseded by an
+  additive revision. No `v001`–`v009` resource was modified.
 
 ## 5. Deferred to later PRs
 

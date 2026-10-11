@@ -630,10 +630,21 @@ A **TenantApplicationSubscription** records the time-bounded commercial fact
 that a Tenant subscribes to an Application. Its lifecycle is `PENDING` /
 `ACTIVE` / `SUSPENDED` / `CANCELLED` / `EXPIRED`; `CANCELLED` and `EXPIRED`
 are terminal. The validity window is the UTC half-open interval
-`[starts_at, ends_at)`; `starts_at` is required and `ends_at` is optional.
-Expiry is time-derived: a subscription is ineligible immediately at
-`ends_at` without any asynchronous status transition. An Organization does
-not independently subscribe in v0.1.
+`[starts_at, ends_at)`; `starts_at` is required and `ends_at` is optional
+(open-ended when absent). Expiry is time-derived: a subscription is
+ineligible immediately at `ends_at` without any asynchronous status
+transition. An Organization does not independently subscribe in v0.1.
+
+Under the PR 13-1 `A1` refinement, `starts_at` is immutable and the end date
+is **restrictive only**: a nonterminal subscription may shorten a finite
+`ends_at` or set a finite `ends_at` on an open-ended row, but may never
+extend it, replace it with a later instant, or clear it to `NULL`. A
+lifecycle transition and a shortening may be combined atomically only when
+both are independently valid. `CANCELLED`/`EXPIRED` subscriptions and
+`RETIRED` Applications / `REVOKED` registrations are terminal and accept no
+update at all, including same-state updates. Renewal with a later or absent
+end date is not part of PR 13-1: create a new subscription after the prior
+current row becomes terminal, subject to the current-row uniqueness rule.
 
 ### 20.4 Eligibility is not authorization
 
@@ -651,6 +662,9 @@ authorization pipeline.
 
 Application/registration/subscription mutation is operator/installation-
 privileged only in PR 13; the restricted runtime login has a read-only
-eligibility surface. PR 14 owns authenticated service-to-Application
+eligibility surface. The `A1` end-date/terminal rules are enforced both in
+the pair of the domain methods and by the PostgreSQL guard against the
+locked persisted row. PR 14 owns authenticated service-to-Application
 identity mapping; PRs 15–18 own the batch API and client enforcement. See
-[HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
+[HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
+and [PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).

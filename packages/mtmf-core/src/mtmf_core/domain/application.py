@@ -52,6 +52,7 @@ __all__ = [
     "normalize_application_key",
     "validate_application_transition",
     "validate_registration_transition",
+    "validate_subscription_end_change",
     "validate_subscription_transition",
     "validate_subscription_window",
 ]
@@ -96,6 +97,12 @@ _SUBSCRIPTION_TRANSITIONS: frozenset[tuple[SubscriptionLifecycle, SubscriptionLi
             (SubscriptionLifecycle.SUSPENDED, SubscriptionLifecycle.EXPIRED),
         }
     )
+)
+
+#: Subscription lifecycle states with no outgoing transition. A terminal
+#: subscription cannot be updated at all (PR 13-1 decision A1).
+_TERMINAL_SUBSCRIPTION_LIFECYCLES: frozenset[SubscriptionLifecycle] = frozenset(
+    {SubscriptionLifecycle.CANCELLED, SubscriptionLifecycle.EXPIRED}
 )
 
 
@@ -187,9 +194,10 @@ def validate_subscription_transition(
 def validate_subscription_window(starts_at: datetime, ends_at: datetime | None) -> None:
     """Validate a subscription's ``[starts_at, ends_at)`` window.
 
-    ``starts_at`` is required and timezone-aware. When present,
-    ``ends_at`` must be timezone-aware and strictly greater than
-    ``starts_at`` so the half-open interval is non-empty.
+    This is the **creation** rule. ``starts_at`` is required and
+    timezone-aware. When present, ``ends_at`` must be timezone-aware and
+    strictly greater than ``starts_at`` so the half-open interval is
+    non-empty.
 
     :raises ApplicationRegistryInvariantError: on an invalid window.
     """
@@ -200,6 +208,43 @@ def validate_subscription_window(starts_at: datetime, ends_at: datetime | None) 
             raise ApplicationRegistryInvariantError(
                 "a subscription ends_at must be strictly after starts_at"
             )
+
+
+def validate_subscription_end_change(
+    old_end: datetime | None,
+    new_end: datetime,
+    starts_at: datetime,
+) -> None:
+    """Validate a **restrictive** subscription end-date amendment (A1).
+
+    ``starts_at`` is immutable, so this only ever narrows the eligibility
+    window:
+
+    - ``new_end`` must be timezone-aware;
+    - ``new_end`` must be strictly after ``starts_at``;
+    - when a finite ``old_end`` already exists, ``new_end`` must be
+      strictly earlier than it (a shortening); extension and equality are
+      rejected;
+    - when ``old_end`` is absent (open-ended), setting a finite ``new_end``
+      is accepted.
+
+    Clearing a finite end date is rejected because a bare ``None`` is not a
+    valid ``new_end``: the domain API never expresses "clear" and the
+    database guard rejects a finite-to-``NULL`` update independently.
+
+    :raises ApplicationRegistryInvariantError: on a non-restrictive or
+        invalid amendment.
+    """
+    _require_aware_utc(new_end, "ends_at")
+    if new_end <= starts_at:
+        raise ApplicationRegistryInvariantError(
+            "a subscription ends_at amendment must be strictly after starts_at"
+        )
+    if old_end is not None and new_end >= old_end:
+        raise ApplicationRegistryInvariantError(
+            "a subscription ends_at may only be shortened to a strictly earlier instant; "
+            "extension, replacement with a later instant, and clearing are not permitted"
+        )
 
 
 @dataclass(slots=True)
@@ -216,7 +261,9 @@ class Application(ImmutableFieldGuard):
     An Application is not a Principal or Identity and carries no OAuth
     ``client_id`` or credential subject; the future credential mapping is
     owned by PR 14 and must never reuse :attr:`id` as proof of
-    authentication.
+    authentication. ``RETIRED`` is terminal: a retired Application accepts
+    no further update (PR 13-1 decision A1), and the database guard
+    enforces the same rule.
     """
 
     _immutable_fields: ClassVar[frozenset[str]] = frozenset(
@@ -262,7 +309,9 @@ class ApplicationTenantRegistration(ImmutableFieldGuard):
     association; :attr:`created_by_identity_id` is immutable creation
     provenance (not authentication and not authorization);
     :attr:`created_at` is the immutable creation instant; :attr:`lifecycle`
-    is the mutable, validated lifecycle.
+    is the mutable, validated lifecycle. ``REVOKED`` is terminal: a revoked
+    registration accepts no further update (PR 13-1 decision A1), and the
+    database guard enforces the same rule.
     """
 
     _immutable_fields: ClassVar[frozenset[str]] = frozenset(
@@ -311,9 +360,15 @@ class TenantApplicationSubscription(ImmutableFieldGuard):
     :attr:`application_id` and :attr:`tenant_id` are the immutable
     association; :attr:`created_by_identity_id` is immutable creation
     provenance; :attr:`starts_at` and :attr:`created_at` are immutable
-    instants; :attr:`ends_at` is the optional mutable end instant (it may
-    be set or extended but never inverted); :attr:`lifecycle` is the
-    mutable, validated lifecycle.
+    instants; :attr:`ends_at` is the optional mutable end instant; and
+    :attr:`lifecycle` is the mutable, validated lifecycle.
+
+    Under PR 13-1 decision A1 the end-date field is **restrictive only**:
+    it may be shortened or set on an open-ended subscription, but never
+    extended, replaced with a later instant, or cleared to ``None``. A
+    ``CANCELLED`` or ``EXPIRED`` subscription is terminal and accepts no
+    update at all. The SQL guard enforces the same rules against the locked
+    persisted row, so it remains authoritative for concurrent writers.
 
     A subscription is a commercial/fact relationship. It is never an
     authorization, never a Role or Permission, and never proof of an
@@ -352,26 +407,57 @@ class TenantApplicationSubscription(ImmutableFieldGuard):
         ):
             raise DomainInvariantError("a subscription lifecycle is not a legal value")
 
-    def transition_to(
-        self,
-        target: SubscriptionLifecycle,
-        *,
-        ends_at: datetime | None = None,
-    ) -> None:
-        """Apply a validated subscription lifecycle transition in place.
+    def _require_nonterminal(self) -> None:
+        """Reject any mutation of a terminal subscription (A1)."""
+        if self.lifecycle in _TERMINAL_SUBSCRIPTION_LIFECYCLES:
+            raise ApplicationRegistryInvariantError(
+                f"a terminal subscription ({self.lifecycle.name}) cannot be updated"
+            )
 
-        ``ends_at`` may be supplied to set or extend the end instant in
-        the same operation; it must always leave a non-empty half-open
-        window.
+    def transition_to(self, target: SubscriptionLifecycle) -> None:
+        """Apply a validated lifecycle-only transition in place.
 
-        :raises ApplicationRegistryInvariantError: on an illegal
-            transition or invalid resulting window.
+        The end-date window is not changed. A terminal source and an
+        illegal or same-state transition are rejected and leave the
+        subscription untouched.
+
+        :raises ApplicationRegistryInvariantError: on a terminal source or
+            an illegal transition.
         """
+        self._require_nonterminal()
         validate_subscription_transition(self.lifecycle, target)
-        candidate_end = self.ends_at if ends_at is None else ends_at
-        validate_subscription_window(self.starts_at, candidate_end)
         self.lifecycle = target
-        self.ends_at = candidate_end
+
+    def shorten_end_to(self, new_end: datetime) -> None:
+        """Apply a validated restrictive end-date amendment in place.
+
+        ``new_end`` must be strictly after ``starts_at`` and, when a finite
+        end already exists, strictly earlier than it. Extension, replacing
+        with a later instant, and clearing are rejected; the lifecycle is
+        unchanged.
+
+        :raises ApplicationRegistryInvariantError: on a terminal source or
+            a non-restrictive amendment.
+        """
+        self._require_nonterminal()
+        validate_subscription_end_change(self.ends_at, new_end, self.starts_at)
+        self.ends_at = new_end
+
+    def transition_and_shorten_to(self, target: SubscriptionLifecycle, new_end: datetime) -> None:
+        """Apply a legal transition and a restrictive shortening atomically.
+
+        Both changes are validated against the pre-change state **before**
+        either field is assigned, so a rejected operation leaves both the
+        lifecycle and the end date unchanged (matrix M07/M08/M09).
+
+        :raises ApplicationRegistryInvariantError: on a terminal source, an
+            illegal transition, or a non-restrictive amendment.
+        """
+        self._require_nonterminal()
+        validate_subscription_transition(self.lifecycle, target)
+        validate_subscription_end_change(self.ends_at, new_end, self.starts_at)
+        self.lifecycle = target
+        self.ends_at = new_end
 
     def describes_pair(self, application_id: DomainId, tenant_id: DomainId) -> bool:
         """Whether this subscription is exactly the ``(application, tenant)`` pair."""

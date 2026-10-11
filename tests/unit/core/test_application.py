@@ -30,6 +30,7 @@ from mtmf_core import (
     normalize_application_key,
     validate_application_transition,
     validate_registration_transition,
+    validate_subscription_end_change,
     validate_subscription_transition,
     validate_subscription_window,
 )
@@ -192,13 +193,135 @@ def test_illegal_subscription_transitions(
         validate_subscription_transition(source, target)
 
 
-def test_subscription_transition_can_extend_the_window() -> None:
-    subscription = _subscription(_application(), make_id())
-    new_end = _NOW + timedelta(days=30)
-    subscription.transition_to(SubscriptionLifecycle.SUSPENDED, ends_at=new_end)
-    assert subscription.ends_at == new_end
-    subscription.transition_to(SubscriptionLifecycle.ACTIVE)
-    assert subscription.ends_at == new_end
+# --- PR 13-1 A1 subscription end-date mutation contract (M01-M13/M17-M20) --
+
+_T0 = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)  # starts_at
+_T1 = _T0 + timedelta(hours=1)  # valid, strictly earlier than _T2
+_T2 = _T0 + timedelta(hours=2)  # existing finite end
+_T3 = _T0 + timedelta(hours=3)  # a later instant (extension target)
+
+
+def _windowed(
+    lifecycle: SubscriptionLifecycle = SubscriptionLifecycle.ACTIVE,
+    *,
+    ends_at: datetime | None = _T2,
+) -> TenantApplicationSubscription:
+    return _subscription(_application(), make_id(), lifecycle, starts_at=_T0, ends_at=ends_at)
+
+
+def test_a1_m01_shortening_a_finite_end_is_accepted() -> None:
+    subscription = _windowed(ends_at=_T3)
+    subscription.shorten_end_to(_T2)
+    assert subscription.ends_at == _T2
+    assert subscription.lifecycle is SubscriptionLifecycle.ACTIVE
+
+
+def test_a1_m02_setting_a_finite_end_on_an_open_ended_row_is_accepted() -> None:
+    subscription = _windowed(ends_at=None)
+    subscription.shorten_end_to(_T2)
+    assert subscription.ends_at == _T2
+
+
+def test_a1_m03_extension_is_rejected_and_leaves_the_end_unchanged() -> None:
+    subscription = _windowed(ends_at=_T2)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        subscription.shorten_end_to(_T3)
+    assert subscription.ends_at == _T2
+
+
+def test_a1_m04_clearing_a_finite_end_is_not_expressible() -> None:
+    subscription = _windowed(ends_at=_T2)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        subscription.shorten_end_to(None)  # type: ignore[arg-type]
+    assert subscription.ends_at == _T2
+    with pytest.raises(ApplicationRegistryInvariantError):
+        validate_subscription_end_change(_T2, None, _T0)  # type: ignore[arg-type]
+
+
+def test_a1_m05_same_state_transition_is_rejected_without_mutation() -> None:
+    subscription = _windowed(ends_at=_T2)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        subscription.transition_to(SubscriptionLifecycle.ACTIVE)
+    assert subscription.lifecycle is SubscriptionLifecycle.ACTIVE
+    assert subscription.ends_at == _T2
+
+
+def test_a1_m06_amendment_at_or_before_starts_at_is_rejected() -> None:
+    subscription = _windowed(ends_at=_T2)
+    for invalid in (_T0, _T0 - timedelta(seconds=1)):
+        with pytest.raises(ApplicationRegistryInvariantError):
+            subscription.shorten_end_to(invalid)
+    assert subscription.ends_at == _T2
+
+
+def test_a1_m07_legal_transition_with_restrictive_shortening_is_atomic() -> None:
+    subscription = _windowed(SubscriptionLifecycle.PENDING, ends_at=_T3)
+    subscription.transition_and_shorten_to(SubscriptionLifecycle.ACTIVE, _T2)
+    assert subscription.lifecycle is SubscriptionLifecycle.ACTIVE
+    assert subscription.ends_at == _T2
+
+
+def test_a1_m08_illegal_transition_with_shortening_leaves_both_unchanged() -> None:
+    subscription = _windowed(ends_at=_T3)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        subscription.transition_and_shorten_to(SubscriptionLifecycle.PENDING, _T2)
+    assert subscription.lifecycle is SubscriptionLifecycle.ACTIVE
+    assert subscription.ends_at == _T3
+
+
+def test_a1_m09_terminal_transition_with_shortening_is_atomic() -> None:
+    subscription = _windowed(ends_at=_T3)
+    subscription.transition_and_shorten_to(SubscriptionLifecycle.CANCELLED, _T2)
+    assert subscription.lifecycle is SubscriptionLifecycle.CANCELLED
+    assert subscription.ends_at == _T2
+
+
+def test_a1_m10_m11_m12_terminal_subscriptions_reject_all_updates() -> None:
+    for terminal in (SubscriptionLifecycle.CANCELLED, SubscriptionLifecycle.EXPIRED):
+        subscription = _windowed(terminal, ends_at=_T2)
+        with pytest.raises(ApplicationRegistryInvariantError):
+            subscription.shorten_end_to(_T1)
+        with pytest.raises(ApplicationRegistryInvariantError):
+            subscription.transition_to(SubscriptionLifecycle.ACTIVE)
+        with pytest.raises(ApplicationRegistryInvariantError):
+            subscription.transition_to(terminal)
+        assert subscription.lifecycle is terminal
+        assert subscription.ends_at == _T2
+
+
+def test_a1_validate_subscription_end_change_accepts_only_restrictive_changes() -> None:
+    # Open-ended -> finite.
+    validate_subscription_end_change(None, _T2, _T0)
+    # Finite -> strictly earlier finite.
+    validate_subscription_end_change(_T3, _T2, _T0)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        validate_subscription_end_change(_T2, _T2, _T0)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        validate_subscription_end_change(_T2, _T3, _T0)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        validate_subscription_end_change(None, _T0, _T0)
+
+
+def test_a1_m17_m18_terminal_application_and_registration_reject_transitions() -> None:
+    application = _application(ApplicationLifecycle.RETIRED)
+    with pytest.raises(ApplicationRegistryInvariantError):
+        application.transition_to(ApplicationLifecycle.ACTIVE)
+    registration = ApplicationTenantRegistration(
+        make_id(),
+        application.id,
+        make_id(),
+        make_id(),
+        _NOW,
+        RegistrationLifecycle.REVOKED,
+    )
+    with pytest.raises(ApplicationRegistryInvariantError):
+        registration.transition_to(RegistrationLifecycle.REVOKED)
+
+
+def test_a1_m19_active_application_metadata_edit_remains_composable() -> None:
+    application = _application()
+    application.name = "Renamed"
+    assert application.lifecycle is ApplicationLifecycle.ACTIVE
 
 
 def test_subscription_window_requires_aware_instants() -> None:
