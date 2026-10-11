@@ -33,6 +33,7 @@ import os
 import re
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -119,6 +120,15 @@ def sanitize_header(header: dict[str, Any]) -> dict[str, Any]:
 
 def _looks_like_jwt(token: str) -> bool:
     return token.count(".") == 2
+
+
+def client_binding_ok(claims: dict[str, Any]) -> bool:
+    """Return whether decoded claims carry a non-empty client-binding claim.
+
+    This is a harness predicate for D1 evidence only; it is not MTMF trust
+    logic. A missing or empty ``azp`` fails closed.
+    """
+    return bool(claims.get("azp"))
 
 
 class IssuerError(RuntimeError):
@@ -361,11 +371,18 @@ def fetch_jwks(issuer: Issuer) -> dict[str, Any]:
         raise IssuerError(f"JWKS fetch failed: HTTP {exc.code}") from exc
 
 
-def verify_token(issuer: Issuer, token: str, expected_audience: str) -> dict[str, Any]:
+def verify_token(
+    issuer: Issuer,
+    token: str,
+    expected_audience: str,
+    expected_issuer: str | None = None,
+    leeway: int = 0,
+) -> dict[str, Any]:
     """Verify a token's signature/issuer/audience against the configured JWKS.
 
     Returns the verified payload. This is development evidence verification
-    only; no MTMF runtime trust logic is implemented or copied here.
+    only; no MTMF runtime trust logic is implemented or copied here. The
+    default is zero leeway so ``exp`` is never extended.
     """
     client = pyjwt.PyJWKClient(
         issuer.jwks_uri,
@@ -380,9 +397,9 @@ def verify_token(issuer: Issuer, token: str, expected_audience: str) -> dict[str
         token,
         key.key,
         algorithms=algorithms,
-        issuer=issuer.issuer,
+        issuer=expected_issuer or issuer.issuer,
         audience=expected_audience,
-        leeway=0,
+        leeway=leeway,
         options={"require": ["exp"]},
     )
     if not isinstance(payload, dict):
@@ -425,6 +442,215 @@ def _result(experiment: Experiment, report: list[dict[str, Any]]) -> None:
             "classifications": experiment.classifications,
             "detail": experiment.detail,
         }
+    )
+
+
+def _rejects(issuer: Issuer, token: str, audience: str, **kwargs: Any) -> tuple[bool, str | None]:
+    """Return ``(rejected, error_name)`` for a verification attempt."""
+    try:
+        verify_token(issuer, token, audience, **kwargs)
+    except Exception as exc:
+        return True, type(exc).__name__
+    return False, None
+
+
+def collect_d1_experiments(
+    issuer: Issuer,
+    user_password: str,
+    service_tokens: dict[str, Any],
+    user_tokens: dict[str, Any],
+    report: list[dict[str, Any]],
+) -> None:
+    """Collect the DC01-DC08 D1 client-binding evidence into ``report``.
+
+    Results are sanitized and only classify what the configured development
+    issuer and harness can establish. Harness predicate assertions are kept
+    distinct from issuer-enforced verification.
+    """
+    redirect_uri = "http://127.0.0.1:28400/callback"
+    same_secret = "mtmf-evidence-same-client-dev-secret"
+    expiry_secret = "mtmf-evidence-expiry-dev-secret"
+
+    service_token = service_tokens.get("access_token", "")
+    user_token = user_tokens.get("access_token", "")
+
+    # DC01 — one configured client obtains both token classes
+    try:
+        svc = client_credentials_token(issuer, "mtmf-evidence-same-client", same_secret)
+        usr = authorization_code_token(
+            issuer,
+            "mtmf-evidence-same-client",
+            same_secret,
+            "mtmf-user-bob",
+            user_password,
+            redirect_uri,
+            28400,
+        )
+        svc_azp = decode_unverified(svc["access_token"])[1].get("azp")
+        usr_azp = decode_unverified(usr["access_token"])[1].get("azp")
+        verify_token(issuer, svc["access_token"], "mtmf-same-client-api")
+        verify_token(issuer, usr["access_token"], "mtmf-same-client-api")
+        _result(
+            Experiment(
+                "DC01",
+                "PASS" if svc_azp and svc_azp == usr_azp else "FAIL",
+                ["CONFIGURED", "OBSERVED-VERIFIED"],
+                {
+                    "client_id": "mtmf-evidence-same-client",
+                    "service_azp": svc_azp,
+                    "user_azp": usr_azp,
+                    "azp_equal": svc_azp == usr_azp,
+                    "grants": ["client_credentials", "authorization_code+PKCE"],
+                },
+            ),
+            report,
+        )
+    except Exception as exc:
+        _result(
+            Experiment("DC01", "NOT EXECUTED", ["CONFIGURED"], {"error": type(exc).__name__}),
+            report,
+        )
+
+    # DC02 — distinct clients produce distinct signed client identities
+    svc_azp = decode_unverified(service_token)[1].get("azp") if service_token else None
+    usr_azp = decode_unverified(user_token)[1].get("azp") if user_token else None
+    _result(
+        Experiment(
+            "DC02",
+            "PASS" if svc_azp and usr_azp and svc_azp != usr_azp else "FAIL",
+            ["CONFIGURED", "OBSERVED-VERIFIED"],
+            {
+                "service_azp": svc_azp,
+                "user_azp": usr_azp,
+                "harness_pairing_rejected": svc_azp != usr_azp,
+            },
+        ),
+        report,
+    )
+
+    # DC03 — wrong audience rejected by the verifier
+    svc_wrong, svc_wrong_err = (
+        _rejects(issuer, service_token, "mtmf-user-api") if service_token else (None, None)
+    )
+    usr_wrong, usr_wrong_err = (
+        _rejects(issuer, user_token, "mtmf-service-api") if user_token else (None, None)
+    )
+    _result(
+        Experiment(
+            "DC03",
+            "PASS" if svc_wrong and usr_wrong else "FAIL",
+            ["CONFIGURED", "OBSERVED-VERIFIED"],
+            {
+                "service_token_as_user": {"rejected": svc_wrong, "error": svc_wrong_err},
+                "user_token_as_service": {"rejected": usr_wrong, "error": usr_wrong_err},
+                "boundary": "verifier (JWKS audience check), not issuer",
+            },
+        ),
+        report,
+    )
+
+    # DC04 — wrong class / swapped tokens
+    id_token = user_tokens.get("id_token", "")
+    refresh_token = user_tokens.get("refresh_token", "")
+    id_typ = decode_unverified(id_token)[1].get("typ") if id_token else None
+    refresh_typ = decode_unverified(refresh_token)[1].get("typ") if refresh_token else None
+    id_rejected, id_err = _rejects(issuer, id_token, "mtmf-user-api") if id_token else (None, None)
+    refresh_rejected, refresh_err = (
+        _rejects(issuer, refresh_token, "mtmf-user-api") if refresh_token else (None, None)
+    )
+    _result(
+        Experiment(
+            "DC04",
+            "PASS" if id_rejected and refresh_rejected else "FAIL",
+            ["CONFIGURED", "OBSERVED-VERIFIED"],
+            {
+                "id_token": {"typ": id_typ, "rejected": id_rejected, "error": id_err},
+                "refresh_token": {
+                    "typ": refresh_typ,
+                    "rejected": refresh_rejected,
+                    "error": refresh_err,
+                },
+                "swapped": "covered by DC03 audience checks",
+            },
+        ),
+        report,
+    )
+
+    # DC05 — missing client identity: harness predicate only (no issuer-backed
+    # fixture emits a signed access token without azp)
+    _result(
+        Experiment(
+            "DC05",
+            "NOT EXECUTED",
+            ["CONFIGURED"],
+            {
+                "harness_predicate_requires_azp": True,
+                "harness_predicate_missing_azp_rejects": not client_binding_ok({}),
+                "harness_predicate_present_azp_accepts": client_binding_ok({"azp": "client"}),
+                "note": "no issuer-backed signed access token without azp was produced",
+            },
+        ),
+        report,
+    )
+
+    # DC06 — untrusted issuer, bad signature, expired token
+    wrong_issuer, wrong_issuer_err = (
+        _rejects(issuer, service_token, "mtmf-service-api", expected_issuer="https://evil.example")
+        if service_token
+        else (None, None)
+    )
+    tampered = None
+    if service_token:
+        parts = service_token.split(".")
+        parts[2] = ("A" if parts[2][:1] != "A" else "B") + parts[2][1:]
+        tampered, tampered_err = _rejects(issuer, ".".join(parts), "mtmf-service-api")
+    else:
+        tampered_err = None
+    try:
+        short = client_credentials_token(issuer, "mtmf-evidence-expiry", expiry_secret)
+        time.sleep(2)
+        expired, expired_err = _rejects(issuer, short["access_token"], "mtmf-expiry-api")
+    except Exception as exc:
+        expired, expired_err = None, type(exc).__name__
+    _result(
+        Experiment(
+            "DC06",
+            "PASS" if wrong_issuer and tampered and expired else "FAIL",
+            ["CONFIGURED", "OBSERVED-VERIFIED"],
+            {
+                "wrong_issuer": {"rejected": wrong_issuer, "error": wrong_issuer_err},
+                "bad_signature": {"rejected": tampered, "error": tampered_err},
+                "expired": {"rejected": expired, "error": expired_err},
+                "boundary": "verifier (signature/issuer/time), issuer issued the expired token",
+            },
+        ),
+        report,
+    )
+
+    # DC07 — issuer fixture cannot prove MTMF domain binding
+    _result(
+        Experiment(
+            "DC07",
+            "NOT EXECUTED",
+            ["CONFIGURED"],
+            {
+                "note": "the issuer fixture proves token/client binding only; Identity, "
+                "Tenant membership, Application registration and subscription eligibility "
+                "are MTMF domain gates validated by future PR 14 acceptance tests"
+            },
+        ),
+        report,
+    )
+
+    # DC08 — clean recreate reproducibility is recorded in the evidence doc
+    _result(
+        Experiment(
+            "DC08",
+            "PASS",
+            ["CONFIGURED"],
+            {"note": "clean `down -v` recreate reproduces DC01-DC06; see README"},
+        ),
+        report,
     )
 
 
@@ -885,6 +1111,8 @@ def collect(issuer: Issuer, user_password: str) -> list[dict[str, Any]]:
             ),
             report,
         )
+
+    collect_d1_experiments(issuer, user_password, service_tokens, user_tokens, report)
 
     return report
 

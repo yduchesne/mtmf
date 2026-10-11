@@ -57,6 +57,7 @@ class ClientSpec:
     redirect_uris: tuple[str, ...] = ()
     token_exchange: bool = False
     client_audiences: tuple[str, ...] = ()
+    access_token_lifespan: int | None = None
 
 
 CLIENTS = (
@@ -96,6 +97,13 @@ CLIENTS = (
         service_account=True,
         standard_flow=False,
         token_exchange=True,
+    ),
+    ClientSpec(
+        client_id="mtmf-evidence-expiry",
+        audiences=("mtmf-expiry-api",),
+        service_account=True,
+        standard_flow=False,
+        access_token_lifespan=1,
     ),
 )
 
@@ -232,6 +240,8 @@ def ensure_client(api: AdminApi, realm: str, spec: ClientSpec) -> dict[str, Any]
         payload["secret"] = f"{spec.client_id}-dev-secret"
     if spec.token_exchange:
         payload["attributes"]["standard.token.exchange.enabled"] = "true"
+    if spec.access_token_lifespan is not None:
+        payload["attributes"]["access.token.lifespan"] = str(spec.access_token_lifespan)
 
     existing = api.get(f"/admin/realms/{realm}/clients?clientId={spec.client_id}")
     if existing:

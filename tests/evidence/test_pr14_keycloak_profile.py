@@ -110,6 +110,8 @@ def test_issuer_ssl_context_is_none_without_ca_file():
 
 def test_evidence_artifact_is_secret_free():
     """The committed sanitized artifact must not contain secrets or raw tokens."""
+    import json
+
     artifact = (
         Path(__file__).resolve().parents[2]
         / "dev"
@@ -120,14 +122,28 @@ def test_evidence_artifact_is_secret_free():
     if not artifact.exists():
         pytest.skip("sanitized evidence artifact not present")
     text = artifact.read_text()
-    for marker in (
-        '"access_token":',
-        '"refresh_token":',
-        '"client_secret":',
-        "BEGIN PRIVATE KEY",
-        "BEGIN RSA PRIVATE KEY",
-    ):
-        assert marker not in text
+    assert "BEGIN PRIVATE KEY" not in text
+    assert "BEGIN RSA PRIVATE KEY" not in text
+    secret_keys = {"access_token", "refresh_token", "id_token", "client_secret", "password"}
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in secret_keys:
+                    # A non-empty scalar would be a leaked credential/token.
+                    assert not isinstance(value, str) or not value, f"leaked {key}"
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(json.loads(text))
+
+
+def test_client_binding_ok_fails_closed_without_azp():
+    assert evidence.client_binding_ok({"azp": "client"}) is True
+    assert evidence.client_binding_ok({}) is False
+    assert evidence.client_binding_ok({"azp": ""}) is False
 
 
 @pytest.mark.skipif(

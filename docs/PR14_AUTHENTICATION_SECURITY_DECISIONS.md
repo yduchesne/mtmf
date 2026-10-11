@@ -862,6 +862,46 @@ These are **future PR 14 acceptance gates**, not Track 2 PASS claims. Use the ac
 - **JWT time:** `exp` is mandatory with zero positive expiration leeway; `iat` is mandatory; `nbf` is optional if the issuer omits it but must be validated when present, without extending `exp`.
 - **Implementation gate:** No PR 14 authentication, migration, persistence, or HTTP code may be started on the strength of this addendum alone. Other A14 decisions and required contracts remain subject to the recorded approval gate.
 
+### D1 issuer-specific client-binding contract (follow-up evidence, proposed)
+
+**Evidence status: SOURCE-SUPPORTED + OBSERVED (development profile); NOT APPROVED.**
+
+A D1 follow-up established whether a specific, configured Keycloak issuer
+profile provides a defensible, verifiable contract binding a
+client-credentials access token and an interactive user access token to the
+same OAuth client. Full detail and exact source citations are in
+[PR14_KEYCLOAK_EVIDENCE.md](PR14_KEYCLOAK_EVIDENCE.md) §6A.
+
+- **Source-supported behavior (Keycloak 26.8.0):** the access-token `azp`
+  claim is `JsonWebToken.issuedFor` and is set by
+  `TokenManager.initToken` from `client.getClientId()`, where `client` is
+  the **authenticated** OAuth client of the token request in both the
+  client-credentials and authorization-code+PKCE flows. It is not a
+  normative published issuer guarantee and must be revalidated on upgrade
+  or for another issuer.
+- **Observed and verified (development fixture):** DC01 same-client pair
+  yields equal signature-verified `azp`; DC02 distinct clients differ;
+  DC03/DC04/DC06 reject wrong audience, ID/refresh/swapped tokens, wrong
+  issuer, bad signature, and an expired token; DC08 clean recreate
+  reproduces the results. DC05 and DC07 are **NOT EXECUTED**.
+- **Proposed contract:** independently verify both tokens (issuer,
+  signature, algorithm/key, distinct audience, access-token class,
+  `exp`/`iat`, `nbf` when present, zero positive expiry leeway), then
+  require the verified service `azp` and user `azp` to name the same
+  registered client, with no `azp`-overriding mapper and no token exchange
+  or preview delegation. `(issuer, sub)` Identity binding and all MTMF
+  domain gates remain separate.
+- **Not delegation:** D1 remains client-bound user context. It does not
+  prove user consent, RFC 8693 actor delegation, or cross-client authority.
+  Bearer replay, separate-session acquisition, and client-credential trust
+  remain residual risks.
+
+**Reviewer decision requested:** approve, reject, or amend this specific
+Keycloak 26.8.0 development D1 profile and the production issuer
+version/configuration that will replace it. This follow-up records **no
+approval**; the approval log below is unchanged and every entry remains
+PENDING.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
@@ -874,7 +914,7 @@ All rows are **PENDING HUMAN REVIEW**. No decision is approved.
 | A14-04 | PENDING HUMAN REVIEW | — | — | — |
 | A14-05 | PENDING HUMAN REVIEW / SCOPE OPEN | — | — | — |
 | A14-06 | PENDING HUMAN REVIEW | — | — | — |
-| A14-07 | D1 ARCHITECTURE SELECTED; ISSUER CONTRACT/IMPLEMENTATION BLOCKED | — | — | — |
+| A14-07 | D1 ARCHITECTURE SELECTED; ISSUER CONTRACT PROPOSED (SOURCE-SUPPORTED), NOT APPROVED; IMPLEMENTATION BLOCKED | — | — | — |
 | A14-08 | PENDING HUMAN REVIEW / BLOCKED ON ROOT ASSURANCE | — | — | — |
 | A14-09 | PENDING HUMAN REVIEW | — | — | — |
 | A14-10 | PENDING HUMAN REVIEW | — | — | — |

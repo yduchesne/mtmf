@@ -8,7 +8,7 @@
       "service_account": true,
       "standard_flow": false,
       "token_exchange": false,
-      "uuid": "0087b743-ee5b-4e28-a63c-397c51e0ff45"
+      "uuid": "b9f10551-10bc-4090-b8d9-8c4f1c0f407a"
     },
     {
       "audiences": [
@@ -18,7 +18,7 @@
       "service_account": false,
       "standard_flow": true,
       "token_exchange": false,
-      "uuid": "e432d340-0e8d-4795-8f7a-c0ad1d9d1086"
+      "uuid": "b6493b43-c4ad-406c-9642-05b5f49a561e"
     },
     {
       "audiences": [
@@ -28,7 +28,7 @@
       "service_account": true,
       "standard_flow": true,
       "token_exchange": false,
-      "uuid": "6ee03323-c50e-4a04-a01f-417e866816d7"
+      "uuid": "ceae5c09-f002-4ada-ba02-0cee9fe73f45"
     },
     {
       "audiences": [
@@ -38,7 +38,7 @@
       "service_account": false,
       "standard_flow": true,
       "token_exchange": false,
-      "uuid": "959bd474-4224-4c35-8327-6a99cc549174"
+      "uuid": "4fba7e6f-1d57-4400-beed-6a0a62108212"
     },
     {
       "audiences": [
@@ -48,7 +48,17 @@
       "service_account": true,
       "standard_flow": false,
       "token_exchange": true,
-      "uuid": "7e5239d0-2dc4-40c4-875d-2d0846c8e33d"
+      "uuid": "33ddc1e2-e311-4dbc-9384-8992707d9c0f"
+    },
+    {
+      "audiences": [
+        "mtmf-expiry-api"
+      ],
+      "client_id": "mtmf-evidence-expiry",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "92af2a28-cc1b-437d-9e7f-96aeb4b71b56"
     }
   ],
   "issuer": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",

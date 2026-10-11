@@ -109,6 +109,20 @@ podman-compose -p mtmf-pr14-keycloak -f dev/keycloak/compose.yaml \
   --env-file /tmp/mtmf-pr14-kc.env down
 ```
 
+## D1 client-binding evidence (DC01–DC08)
+
+`scripts/pr14-keycloak-evidence.py collect` also runs the D1 follow-up cases
+against the same fixture: one client obtaining both a client-credentials
+and an auth-code+PKCE token (DC01), distinct-client mismatch (DC02), wrong
+audience (DC03), ID/refresh/swapped tokens (DC04), missing client identity
+(DC05), untrusted issuer/bad signature/expired token (DC06), domain-binding
+limits (DC07), and clean-recreate reproducibility (DC08). `DC05` and
+`DC07` are **NOT EXECUTED** and must not be read as PASS. See
+[`docs/PR14_KEYCLOAK_EVIDENCE.md`](../../docs/PR14_KEYCLOAK_EVIDENCE.md) §6A.
+
+The fixture includes a short-lived (`access.token.lifespan=1`)
+`mtmf-evidence-expiry` client used only for the expired-token negative case.
+
 ## Manual-only cases
 
 - **Root phishing-resistant assurance (K15–K17).** Enrolling a WebAuthn/passkey

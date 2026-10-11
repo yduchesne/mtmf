@@ -29,8 +29,8 @@ is absent, the contract stays BLOCKED.
 | TLS | operator-generated self-signed cert under `/tmp/mtmf-pr14-kc-tls` (not committed) |
 | Issuer URL | `https://127.0.0.1:28443/realms/mtmf-pr14-dev` |
 | Fixture commit | branch `dev/service-auth` (see §9 for exact SHAs) |
-| Sanitized artifact | `dev/keycloak/evidence/pr14-keycloak-evidence.json`, SHA-256 `51bc97f590f059a550677effde8fd767507247173a4f8311df315f05b609579c` |
-| Config manifest | `dev/keycloak/evidence/pr14-keycloak-config-manifest.json`, SHA-256 `3ef835f115cef757bdb7e2b4ce15e37edaae15b5544bffa0d0afbed697ba075a` |
+| Sanitized artifact | `dev/keycloak/evidence/pr14-keycloak-evidence.json`, SHA-256 `7888cc7357c983ffdd4d9ddf4185ce7c59c3e2717971d9420b88e709d40b7445` |
+| Config manifest | `dev/keycloak/evidence/pr14-keycloak-config-manifest.json`, SHA-256 `4b21135f51979b09e5ba893acb73feba47df11329fd9390bfcc575f0ad0c11d6` |
 
 The fixture is development-only. Keycloak is not a mandated production issuer;
 the PR 14 configuration remains provider-neutral. No raw token, refresh token,
@@ -128,14 +128,125 @@ delegation guarantee.
 
 | Option | Trust assumption | Issuer evidence | Application/Tenant binding | Confused-deputy risk | Disposition |
 | --- | --- | --- | --- | --- | --- |
-| **D1** Same-client direct token | The issuer signed the user access token for the verified calling client | Observed: same-client `azp` equality (K09); different-client mismatch (K10) | `(issuer, sub)` → Identity, then explicit memberships; Application from the service token | Requires an issuer guarantee that `azp` is the obtaining client and a rationale that this is sufficient delegation | **BLOCKED** — equality observed, but no documented issuer guarantee; reviewer decision required |
+| **D1** Same-client direct token | The issuer signed the user access token for the verified calling client | Source-supported: Keycloak 26.8.0 sets access-token `azp` from the authenticated OAuth client in both flows (§6A); observed: same-client `azp` equality (K09/DC01) | `(issuer, sub)` → Identity, then explicit memberships; Application from the service token | `azp` does not bind a request or prove consent; bearer replay and same-client-session risks remain (§6A) | **SELECTED FOR v0.1; ISSUER PROFILE PROPOSED, NOT APPROVED** (reviewer decision in §10) |
 | **D2** Distinct-client direct token with issuer-authorized delegation | An issuer-supported, cryptographically verified claim names the calling service client | None found | Same as D1 | Highest if unverified | **BLOCKED** |
 | **D3** RFC 8693 exchanged token | A stable exchanged token carries an `act` actor chain | Standard V2 documented but the fixture exchange failed (K13); actor delegation is Preview (K14) | Exchanged-token audience + actor chain | Depends on preview feature | **BLOCKED** |
 
-**Recommendation.** Leave `A14-07` BLOCKED. The smallest reviewer/issuer-admin
-decision is whether to obtain an explicit documented guarantee for D1's
-same-client `azp` semantics, or to approve a distinct-client + token-exchange
-design (which currently depends on a preview issuer feature).
+**Recommendation.** The D1 architecture was selected by the human reviewer
+(see the decision register §14A). Evidence now supports a **Keycloak
+26.8.0 development** client-binding contract (§6A), but it is **not an
+approved issuer contract**: the source behavior is not a normative issuer
+guarantee and must be revalidated on upgrade or for another issuer. D2
+and D3 remain BLOCKED.
+
+## 6A. D1 issuer-specific client-binding contract (proposed, not approved)
+
+This section answers the D1 follow-up question: whether a specific,
+configured Keycloak issuer profile provides a defensible, verifiable
+contract binding a client-credentials access token and an interactive user
+access token to the **same** OAuth client. It does **not** claim general
+OAuth delegation, user consent, or RFC 8693 actor delegation.
+
+### 6A.1 Provenance and classification
+
+| Source | Exact reference | What it establishes |
+| --- | --- | --- |
+| Keycloak 26.8.0 source | `core/.../representations/JsonWebToken.java`: `public static final String AZP = "azp"`; `@JsonProperty(AZP) protected String issuedFor;` | The access-token `azp` claim is the token's `issuedFor` value. |
+| Keycloak 26.8.0 source | `services/.../protocol/oidc/TokenManager.java`: `initToken(...)` sets `token.issuedFor(client.getClientId())`; `createClientAccessToken(...)` calls `initToken`; `AccessTokenResponseBuilder.generateAccessToken()` calls `createClientAccessToken(..., client, ...)` | `azp` is set from the response builder's client. |
+| Keycloak 26.8.0 source | `services/.../protocol/oidc/grants/OAuth2GrantTypeBase.java`: `this.client = context.client`; `checkClient()` sets `client = AuthorizeClientUtil.authorizeClient(...).getClient()`; `createTokenResponseBuilder` calls `createClientAccessToken(..., client, ...)` | In both flows the client is the **authenticated** OAuth client of the token request. |
+| Keycloak 26.8.0 source | `services/.../grants/ClientCredentialsGrantType.java`: rejects bearer-only/public clients, requires `isServiceAccountsEnabled()`, creates the service-account user session for that client | Client-credentials `azp` is the confidential service-account client. |
+| Keycloak 26.8.0 source | `services/.../grants/AuthorizationCodeGrantType.java`: `if (!client.getClientId().equals(clientSession.getClient().getClientId()))` rejects | The authenticated client must equal the code's client, so `azp` is that client. |
+| OpenID Connect Core 1.0 | `azp` is defined for ID Tokens; access-token `azp` is not normatively defined | Access-token `azp` is a Keycloak implementation behavior, not a standards guarantee. |
+
+**Classification:** access-token `azp` = obtaining client is
+**source-supported implementation behavior** for Keycloak 26.8.0, and
+**configured/observed** in this fixture. It is **not** a normative
+published issuer guarantee, so it must be revalidated on Keycloak
+upgrade and for any non-Keycloak issuer.
+
+### 6A.2 Proposed contract and preconditions (development profile)
+
+1. **Issuer:** exact configured `iss` (this fixture:
+   `https://127.0.0.1:28443/realms/mtmf-pr14-dev`).
+2. **Token class:** both must be signed access tokens with payload
+   `typ=Bearer` (not `ID`, not `Refresh`).
+3. **Signing:** asymmetric (`RS256` in this fixture); verify against the
+   issuer JWKS; zero positive `exp` leeway; require `exp` and `iat`;
+   validate `nbf` when present.
+4. **Distinct audiences:** the service token must contain the configured
+   service audience; the user token the configured user audience.
+5. **Client binding:** the signature-verified `azp` of the service token
+   identifies the registered credential `(issuer, client_id)`; the
+   signature-verified `azp` of the user token must identify the **same**
+   client. Both tokens must be independently valid before comparison.
+6. **Client configuration:** one confidential client with **both**
+   service-account (client credentials) and standard
+   authorization-code+PKCE enabled; the authenticated token-request client
+   must match the code's client (issuer-enforced).
+7. **No overrides:** no protocol mapper may add or override `azp`; no
+   token exchange, no `act`/`may_act` delegation, and no Keycloak preview
+   feature may be enabled for a client in this profile. An exchanged
+   token is out of scope and must be rejected.
+8. **Domain gates (separate):** `(issuer, sub)` → operator-provisioned
+   Identity; active Principal/Identity/Tenant, explicit memberships,
+   Application registration and subscription eligibility, and policy
+   evaluation remain independent MTMF gates.
+
+### 6A.3 Security argument (what D1 does and does not establish)
+
+- **(a) Authenticated calling client.** The service access token is
+  signature-verified and its `azp` maps to exactly one registered
+  Application. It authenticates the *client*, not a user or Tenant.
+- **(b) Issuer-bound user token obtained by the same client.** The user
+  access token is independently signature-verified with the user
+  audience and class; its `azp` is the same client. This supports a
+  **client-bound user context**: the user token was issued to the same
+  client that authenticated the service request. It does **not** prove
+  user consent, delegation, or authority to act for the subject.
+- **(c) MTMF domain authorization.** Identity binding, membership,
+  Tenant/Organization, registration, subscription, and Action policy are
+  separate gates. Neither token alone produces an `ALLOW`.
+
+### 6A.4 DC evidence (this fixture)
+
+| ID | Status | Evidence |
+| --- | --- | --- |
+| DC01 | PASS | One configured client obtains a client-credentials token and an auth-code+PKCE user token; both independently JWKS-verified; `azp` equal (`mtmf-evidence-same-client`) |
+| DC02 | PASS | Distinct clients produce distinct verified `azp`; pairing rejected by the proposed predicate (harness) |
+| DC03 | PASS | Service token against user audience and user token against service audience rejected by the verifier (audience check) |
+| DC04 | PASS | ID token (`typ=ID`) and refresh token (`typ=Refresh`, HS512) rejected; swap covered by DC03 |
+| DC05 | NOT EXECUTED | No issuer-backed signed access token without `azp` was produced; only a harness predicate was checked |
+| DC06 | PASS | Wrong issuer (`InvalidIssuerError`), tampered signature (`InvalidSignatureError`), and an expired short-lived token (`ExpiredSignatureError`) rejected by the verifier |
+| DC07 | NOT EXECUTED | The issuer fixture cannot prove Identity/Tenant/Application/subscription binding; that is future PR 14 acceptance scope |
+| DC08 | PASS | Clean `down -v` recreate reproduced DC01–DC06 |
+
+DC03/DC04/DC06 are **verifier-boundary** rejections; the issuer issued the
+expired token in DC06. DC02/DC05 are **harness predicate** assertions, not
+issuer-enforced checks. No synthetic unsigned JWT is counted as
+issuer-backed evidence.
+
+### 6A.5 Residual risks and revalidation requirements
+
+- **Bearer replay:** `azp` binds the token to a client, not to a request.
+  Valid stolen tokens can be replayed; TLS, short expiry, redaction, and
+  future holder-of-key/DPoP (if approved) are mitigations.
+- **Same-client separate sessions:** the user token may have been obtained
+  in an unrelated session; D1 accepts this as the selected model.
+- **No actor chain:** unlike RFC 8693 `act`, `azp` cannot show that the
+  client acted *for* the user in this call.
+- **Client trust:** the client credential is the trust anchor; its
+  compromise permits obtaining both token classes.
+- **Version/config coupling:** the behavior is source-supported, not
+  contractual; revalidate on every Keycloak upgrade, and require a new
+  issuer-specific review for any other issuer.
+- **Mapper/exchange coupling:** custom `azp` mappers or enabled token
+  exchange invalidate the contract; the profile forbids both.
+
+### 6A.6 Reviewer decision requested
+
+Approve, reject, or amend this **specific** Keycloak 26.8.0 development D1
+profile (and the production issuer version/config that will replace it).
+This document records no approval; the register approval log is unchanged.
 
 ## 7. Root assurance disposition
 
@@ -166,7 +277,9 @@ design (which currently depends on a preview issuer feature).
 
 - Branch `dev/service-auth`; base `origin/main` `1924143ea504a9c291d695d154e9537cdb61969e`.
 - Track 2 evidence was collected after a clean fixture recreate on the pinned
-  image above.
+  image above; the D1 follow-up added DC01–DC08 and was also validated by a
+  clean recreate.
+- Keycloak source citations are pinned to the `26.8.0` tag (§6A.1).
 - Sanitized artifacts and their SHA-256 hashes are recorded in §1.
 - All K-experiments were executed with the `mtmf_runtime`-unrelated, isolated
   development issuer; no MTMF database or runtime role was involved.

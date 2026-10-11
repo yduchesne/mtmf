@@ -34,10 +34,10 @@
         "exp": true,
         "iat": true,
         "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
-        "jti": "ef68055ee91b47ce",
+        "jti": "83e456faab757249",
         "preferred_username": "5c8ac914671d3ba4",
-        "scope": "profile email",
-        "sub": "1d448f0a1966a69a",
+        "scope": "email profile",
+        "sub": "7e456615aed824b8",
         "typ": "Bearer"
       },
       "header": {
@@ -47,7 +47,7 @@
           "typ"
         ],
         "alg": "RS256",
-        "kid": "11d5b225f13edad9",
+        "kid": "f36a4afeee476688",
         "typ": "JWT"
       },
       "signature_verified": true
@@ -86,21 +86,21 @@
         ],
         "acr": "1",
         "aud": [
-          "mtmf-evidence-exchange",
           "mtmf-user-api",
+          "mtmf-evidence-exchange",
           "account"
         ],
-        "auth_time": "35acfb2a575ac4ac",
+        "auth_time": "e1ea83bfe3d94106",
         "azp": "mtmf-evidence-user",
         "email": "c5e66a0ceb831356",
         "exp": true,
         "iat": true,
         "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
-        "jti": "402ef92f40af089e",
+        "jti": "fa26f7d8fac4d869",
         "preferred_username": "8ee4b5c2bbf4367c",
-        "scope": "openid profile email",
-        "sid": "7df7705da654e67c",
-        "sub": "86beabbf9aee686a",
+        "scope": "openid email profile",
+        "sid": "7cff012704d4572a",
+        "sub": "d350b3827fe0e2f2",
         "typ": "Bearer"
       },
       "has_id_token": true,
@@ -112,7 +112,7 @@
           "typ"
         ],
         "alg": "RS256",
-        "kid": "11d5b225f13edad9",
+        "kid": "f36a4afeee476688",
         "typ": "JWT"
       },
       "signature_verified": true
@@ -143,8 +143,8 @@
     "detail": {
       "note": "user token lacks the service audience; proposed service profile rejects it",
       "user_aud": [
-        "mtmf-evidence-exchange",
         "mtmf-user-api",
+        "mtmf-evidence-exchange",
         "account"
       ]
     },
@@ -180,16 +180,16 @@
         ],
         "acr": "1",
         "aud": "mtmf-evidence-user",
-        "auth_time": "35acfb2a575ac4ac",
+        "auth_time": "e1ea83bfe3d94106",
         "azp": "mtmf-evidence-user",
         "email": "c5e66a0ceb831356",
         "exp": true,
         "iat": true,
         "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
-        "jti": "95a3bd97495a46ae",
+        "jti": "d4569d85c1fd72b9",
         "preferred_username": "8ee4b5c2bbf4367c",
-        "sid": "7df7705da654e67c",
-        "sub": "86beabbf9aee686a",
+        "sid": "7cff012704d4572a",
+        "sub": "d350b3827fe0e2f2",
         "typ": "ID"
       },
       "has_user_audience": false,
@@ -200,7 +200,7 @@
           "typ"
         ],
         "alg": "RS256",
-        "kid": "11d5b225f13edad9",
+        "kid": "f36a4afeee476688",
         "typ": "JWT"
       }
     },
@@ -233,10 +233,10 @@
         "exp": true,
         "iat": true,
         "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
-        "jti": "d7497e364ea255b5",
-        "scope": "openid profile email acr roles web-origins basic",
-        "sid": "7df7705da654e67c",
-        "sub": "86beabbf9aee686a",
+        "jti": "d3b4d97df43edcb9",
+        "scope": "openid roles basic email acr profile web-origins",
+        "sid": "7cff012704d4572a",
+        "sub": "d350b3827fe0e2f2",
         "typ": "Refresh"
       },
       "header": {
@@ -246,7 +246,7 @@
           "typ"
         ],
         "alg": "HS512",
-        "kid": "6725fb36b0ac9c3f",
+        "kid": "ce34e4a9cfe8c580",
         "typ": "JWT"
       },
       "is_jwt": true,
@@ -381,17 +381,17 @@
           "mtmf-root-api",
           "account"
         ],
-        "auth_time": "35acfb2a575ac4ac",
+        "auth_time": "e1ea83bfe3d94106",
         "azp": "mtmf-evidence-root",
         "email": "77403f1d8e9bee6d",
         "exp": true,
         "iat": true,
         "iss": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
-        "jti": "f6c4900e13300899",
+        "jti": "1c23329aa4592af6",
         "preferred_username": "f77c511aff809b2e",
-        "scope": "openid profile email",
-        "sid": "1abd80bea8ad6104",
-        "sub": "47a52e5b7bbca6bc",
+        "scope": "openid email profile",
+        "sid": "da0507fde2d3ca49",
+        "sub": "d166ac6c5e364a76",
         "typ": "Bearer"
       },
       "header": {
@@ -401,7 +401,7 @@
           "typ"
         ],
         "alg": "RS256",
-        "kid": "11d5b225f13edad9",
+        "kid": "f36a4afeee476688",
         "typ": "JWT"
       },
       "note": "password-only root login yields only the generic realm assurance, not phishing resistance"
@@ -422,8 +422,8 @@
       ],
       "service_expected_present": true,
       "user_aud": [
-        "mtmf-evidence-exchange",
         "mtmf-user-api",
+        "mtmf-evidence-exchange",
         "account"
       ],
       "user_expected_present": true
@@ -478,6 +478,133 @@
       "rejected": true
     },
     "id": "K23",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "azp_equal": true,
+      "client_id": "mtmf-evidence-same-client",
+      "grants": [
+        "client_credentials",
+        "authorization_code+PKCE"
+      ],
+      "service_azp": "mtmf-evidence-same-client",
+      "user_azp": "mtmf-evidence-same-client"
+    },
+    "id": "DC01",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "harness_pairing_rejected": true,
+      "service_azp": "mtmf-evidence-service",
+      "user_azp": "mtmf-evidence-user"
+    },
+    "id": "DC02",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "boundary": "verifier (JWKS audience check), not issuer",
+      "service_token_as_user": {
+        "error": "InvalidAudienceError",
+        "rejected": true
+      },
+      "user_token_as_service": {
+        "error": "InvalidAudienceError",
+        "rejected": true
+      }
+    },
+    "id": "DC03",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "id_token": {
+        "error": "InvalidAudienceError",
+        "rejected": true,
+        "typ": "ID"
+      },
+      "refresh_token": {
+        "error": "PyJWKClientError",
+        "rejected": true,
+        "typ": "Refresh"
+      },
+      "swapped": "covered by DC03 audience checks"
+    },
+    "id": "DC04",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED"
+    ],
+    "detail": {
+      "harness_predicate_missing_azp_rejects": true,
+      "harness_predicate_present_azp_accepts": true,
+      "harness_predicate_requires_azp": true,
+      "note": "no issuer-backed signed access token without azp was produced"
+    },
+    "id": "DC05",
+    "status": "NOT EXECUTED"
+  },
+  {
+    "classifications": [
+      "CONFIGURED",
+      "OBSERVED-VERIFIED"
+    ],
+    "detail": {
+      "bad_signature": {
+        "error": "InvalidSignatureError",
+        "rejected": true
+      },
+      "boundary": "verifier (signature/issuer/time), issuer issued the expired token",
+      "expired": {
+        "error": "ExpiredSignatureError",
+        "rejected": true
+      },
+      "wrong_issuer": {
+        "error": "InvalidIssuerError",
+        "rejected": true
+      }
+    },
+    "id": "DC06",
+    "status": "PASS"
+  },
+  {
+    "classifications": [
+      "CONFIGURED"
+    ],
+    "detail": {
+      "note": "the issuer fixture proves token/client binding only; Identity, Tenant membership, Application registration and subscription eligibility are MTMF domain gates validated by future PR 14 acceptance tests"
+    },
+    "id": "DC07",
+    "status": "NOT EXECUTED"
+  },
+  {
+    "classifications": [
+      "CONFIGURED"
+    ],
+    "detail": {
+      "note": "clean `down -v` recreate reproduces DC01-DC06; see README"
+    },
+    "id": "DC08",
     "status": "PASS"
   }
 ]
