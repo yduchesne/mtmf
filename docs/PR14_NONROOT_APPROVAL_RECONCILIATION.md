@@ -61,3 +61,19 @@ A14-08 is a **scope split**, not root authentication approval. PR 14 ordinary D1
 3. If reviewer approves the T1 amendment, update the normative PR 12 register and PR 14 register together, preserving the limitation that D1 is not RFC 8693 delegation.
 4. If production issuer configuration is not supplied, do not invent it or silently promote loopback fixture values to production.
 5. Only after the non-root approval register is complete may a separate implementation plan authorize coding; retain integration and privilege gates.
+
+## 8. Post-T1-amendment decision-ready recommendation (2026-10-11)
+
+**PR 12 T1 conflict resolved:** The reviewer approved the narrow D1 amendment, recorded in PR12 and PR14 registers. The first row of §6 is no longer blocked. The implementation STOP remains because the other rows are not all approved.
+
+**Recommended non-root technical disposition for explicit reviewer approval:**
+
+1. **A14-01, A14-03, A14-04, A14-06, A14-09, A14-10:** approve the existing fail-closed normative requirements without broadening runtime privileges. Ordinary external identities are `FEDERATED`, and root is excluded.
+2. **A14-02 / §7:** approve the pinned Keycloak 26.8.0 **development** service/user issuer profile only. A service-account token and a human-user token must be distinguishable by issuer-backed claims/configuration, not merely by `typ=Bearer` or a shared audience. Require explicit token-class negative tests. Production issuer is a separately named profile, not inferred from the fixture.
+3. **A14-05 / A14-07 / §8:** accept D1 same-client issuer-bound user context as amended T1; reject cross-client pairings and unsupported exchanges. No claim of consent or RFC 8693 actor delegation.
+4. **§10:** approve explicit `pyjwt[crypto]>=2.13,<3` with a reproducible lock, fixed RS256 dev allowlist, `exp` leeway zero, mandatory `iat`, optional validated `nbf`, bounded and fail-closed JWKS transport, and the split of service HTTP/trust assembly versus core provider-neutral verification policy.
+5. **A14-08:** approved scope split; no root authentication in PR 14, with explicit fail-closed root exclusion and deferred test obligations.
+
+**Do not record these recommendations as approvals until the human reviewer explicitly confirms them.** Even after approval, coding must remain blocked pending an implementation-scope decision, production profile definition if production support is intended, and a testable service/user class predicate.
+
+**Outstanding product configuration choice:** Is the first implementation intended to support only the pinned local development Keycloak profile, or a separately configured production issuer from the outset? A production issuer cannot be safely specified from existing evidence alone.
