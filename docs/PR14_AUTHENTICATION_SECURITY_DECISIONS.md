@@ -932,6 +932,11 @@ PENDING.
 - The original PR 14 acceptance matrix must be partitioned explicitly into ordinary service/user requirements and deferred root-only requirements, preserving all root requirements as tracked obligations rather than silently deleting them.
 - This decision resolves **A14-08 scope for PR 14 only**; it does not approve the future root implementation or override other A14 approvals. The production issuer, claim profile, client-binding contract, dependency/ownership split, and non-root implementation approval remain pending.
 
+
+## 14D. Approved PR 12 T1 reconciliation (2026-10-11)
+
+The human reviewer approved the narrow v0.1 T1 amendment recorded in `PR12_INTEGRATION_SECURITY_DECISIONS.md` (commit `db470bebc4968a897bc30d10875a1611dfbf7109`). Constrained D1 may supply issuer-bound same-client user context without an RFC 8693 actor chain, subject to independent verification of both tokens, explicit issuer client-binding semantics, cross-client rejection, and independent Application, Identity, Tenant membership, subscription and policy gates. This is not consent, cross-client delegation, or a per-request actor-chain proof. The prohibition on arbitrary service-signed identity assertions remains. Distinct-client delegation requires a separately approved standards-based mechanism. Root remains excluded and fail-closed. **Production issuer, full non-root approval, and implementation remain PENDING.**
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
