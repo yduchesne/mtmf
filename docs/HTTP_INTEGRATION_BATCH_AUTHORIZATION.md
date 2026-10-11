@@ -1,16 +1,20 @@
 # HTTP Integration and Batch Authorization — v0.1 Normative Design Contract (PR 12)
 
-> **STATUS: NORMATIVE DESIGN CONTRACT — RUNTIME NOT IMPLEMENTED; SECURITY DECISIONS APPROVED.**
+> **STATUS: NORMATIVE DESIGN CONTRACT — HTTP RUNTIME NOT IMPLEMENTED; SECURITY DECISIONS APPROVED.**
 > This document is the PR 12 normative contract for the planned HTTP-only
-> consumer integration. No Application registry, Tenant subscription,
-> trusted HTTP actor propagation, batch endpoint, native Rust batch
-> evaluator, or client authorization snapshot is implemented. The
-> implemented baseline remains the single-action `Authorizer` with the PR 8H
-> pure-Python indexed `CompiledPolicy`.
+> consumer integration. PR 13 implements the internal Application registry,
+> Application–Tenant registration, Tenant subscription, and the trusted
+> internal eligibility gate (Section 3, gate 3) with PostgreSQL persistence
+> and a restricted runtime read surface; the HTTP registration/subscription
+> gate itself, trusted HTTP actor propagation, batch endpoint, native Rust
+> batch evaluator, and client authorization snapshot are **not** implemented.
+> The implemented authorization baseline remains the single-action
+> `Authorizer` with the PR 8H pure-Python indexed `CompiledPolicy`.
 >
 > Security-critical decisions `T1`, `T3`, `T4`, and `T6` are **APPROVED**;
-> `T2`/`T5` wire/lifecycle specifics are owned by PR 15/13. See
-> [PR12_INTEGRATION_SECURITY_DECISIONS.md](PR12_INTEGRATION_SECURITY_DECISIONS.md).
+> `T2` is owned by PR 15 and `T5` subscription lifecycle specifics are
+> **implemented by PR 13** (see
+> [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md)).
 > The illustrative JSON below remains **non-normative** until PR 15 freezes
 > the DTO contract.
 >
@@ -92,7 +96,13 @@ eligibility are **separate gates**. Failure at any gate cannot yield `ALLOW`.
 3. **Subscription eligibility (PR 13).** A Tenant subscribes to a registered
    Application. Missing, expired, suspended, or cancelled subscriptions deny
    new grants. A Tenant subscription does not automatically grant
-   Organization-level permission and never grants a Permission.
+   Organization-level permission and never grants a Permission. PR 13
+   implements the trusted **internal** eligibility gate: a positive outcome
+   requires an `ACTIVE` Application, an `ACTIVE` Tenant, an explicit
+   `ACTIVE` Application–Tenant registration, and an `ACTIVE` in-window
+   subscription for the exact pair; the evaluator returns a typed reason and
+   never an `ALLOW`. The authenticated HTTP gate that consumes it remains
+   PR 17.
 
 Mandatory trust properties for the acting-user mechanism: issuer and
 audience binding;
@@ -312,7 +322,7 @@ sensitive access.
 | PR | Deliverable | Implemented now? |
 | --- | --- | --- |
 | 12 | Architecture, trust, and batch contracts | No — documentation only |
-| 13 | Application registry and Tenant subscriptions | No |
+| 13 | Application registry and Tenant subscriptions | Partial — global Application registry, explicit registration, subscription lifecycle, PostgreSQL persistence, and trusted internal eligibility gate implemented; no HTTP/management API |
 | 14 | Trusted service/end-user authentication boundary | No |
 | 15 | Versioned HTTP batch API DTO contract | No |
 | 16 | Python/Rust native batch and parity benchmarks | No |
@@ -415,7 +425,7 @@ Application; (3) forged user UUID; (4) user not a member of the requested
 Tenant; (5) inactive/missing subscription; (6) unknown Action; (7) malformed
 envelope; (8) infrastructure failure → none yields `ALLOW`.
 
-## 14. Future conformance matrix (PR 13–20; not implemented)
+## 14. Future conformance matrix (PR 14–20 HTTP conformance; PR 13 internal gate implemented)
 
 | ID | Scenario | Expected future behavior | Owner |
 | --- | --- | --- | --- |
@@ -446,7 +456,7 @@ envelope; (8) infrastructure failure → none yields `ALLOW`.
 - [Security Model](SECURITY_MODEL.md) — service/acting-identity distinction and invariants.
 - [Authorization](AUTHORIZATION.md) — batch semantics and policy oracle.
 - [Architecture](ARCHITECTURE.md) — package ownership and HTTP-only boundary.
-- [Domain Model](DOMAIN_MODEL.md) — planned Application/subscription model.
+- [Domain Model](DOMAIN_MODEL.md) — implemented Application/registration/subscription model (PR 13).
 - [Roadmap](ROADMAP_V01.md) — PR 13–20 ownership.
 
 ## 16. PR 12 documentation acceptance matrix

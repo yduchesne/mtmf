@@ -260,6 +260,15 @@ Authorizer
 - The default path never selects Rust: the pure-Python indexed
   ``CompiledPolicy`` is the production default; the Rust evaluators
   remain experimental infrastructure behind their own explicit seams.
+- PR 13 adds the application-layer
+  :class:`~mtmf_core.application.application_eligibility.ApplicationTenantEligibilityService`:
+  a non-caching, read-only service that loads the Application, Tenant,
+  current registration, and current subscription for one exact
+  ``(application_id, tenant_id)`` pair in a single UnitOfWork and delegates
+  to the pure domain eligibility evaluator. It returns a typed eligibility
+  result, never an ``AuthorizationDecision``; it performs no Role resolution
+  and constructs no acting Identity. It does not change the Authorizer,
+  the policy resolver, or the policy implementations.
 
 ## 9. Persistence SPI
 
@@ -267,7 +276,9 @@ MTMF has one internal persistence Service Provider Interface: `MtmfSpi`.
 
 The SPI owns factories for:
 
-- repository instances;
+- repository instances (through PR 13 this includes the global
+  `Application`, `ApplicationTenantRegistration`, and
+  `TenantApplicationSubscription` repositories);
 - UnitOfWork instances.
 
 One persistence provider owns the complete persistence implementation for an MTMF runtime.
@@ -294,7 +305,7 @@ Application-level database operations and logic go through PostgreSQL stored fun
 
 ### 10.1 Physical schema
 
-All MTMF physical state lives in a single MTMF-owned schema, `mtmf` (never `public`, never one schema per Tenant). The initial schema persists the PR 5 aggregates — Tenant, Organization, Principal, Identity, Group, Role -> PermissionSet -> Permission, and Action — plus the six typed memberships, using PostgreSQL `uuid` for `DomainId` values, `text` for names/descriptions/URNs, and object-constrained `jsonb` for application `extension` data.
+All MTMF physical state lives in a single MTMF-owned schema, `mtmf` (never `public`, never one schema per Tenant). The initial schema persists the PR 5 aggregates — Tenant, Organization, Principal, Identity, Group, Role -> PermissionSet -> Permission, and Action — plus the six typed memberships, using PostgreSQL `uuid` for `DomainId` values, `text` for names/descriptions/URNs, and object-constrained `jsonb` for application `extension` data. PR 13 (revision `0010`) additively adds the global `application`, `application_tenant_registration`, and `tenant_application_subscription` tables and their partial-unique current-row indexes; the Application registry is global (not Tenant-owned), and registration/subscription remain independent security facts.
 
 Settled structural invariants are enforced at the database trusted boundary:
 
@@ -308,7 +319,7 @@ A deliberate PR 6 decision: PostgreSQL does not ship the deferred-constraint mec
 
 ### 10.2 Stored-function convention
 
-Substantial SQL functions ship as immutable, versioned, packaged resources under `mtmf_core/persistence/postgres/sql/vNNN/<function>.sql` and are installed by Alembic revisions in sorted filename order. Functions are schema-qualified, do not rely on caller `search_path` (`SET search_path = ''`), and avoid dynamic SQL. PR 6 installs a single infrastructure proof function (`mtmf.mtf_schema_version()`); PR 6B installs the typed-membership precondition replacements, guards, and removal functions described below. PR 7A (revision `0003`) converts only the six reviewed membership-removal entry points to owner-owned `SECURITY DEFINER` and grants the restricted runtime role `EXECUTE` on exactly those signatures. PR 7B (revision `0004`) adds 44 reviewed repository read/write functions with the same owner-owned `SECURITY DEFINER`, fixed `search_path = ''`, PUBLIC-EXECUTE-revoked, exact-runtime-grant posture. PR 9 (revision `0005`) adds the two typed Role-assignment tables and eight Role-assignment entry points with the same posture (plus three private, non-runtime-granted validation helpers). PR 11 (revision `0009`) adds the TenantManagementGroup structural tables, database guards, the two approved SYSTEM management Roles, atomic ROOT bootstrap integration, installation-only mutation primitives, and nine narrowly reviewed `SECURITY DEFINER` TenantManagementGroup/root-registry read functions. The mandatory post-upgrade verifier compares the runtime's effective `EXECUTE` set against the full 67-signature allowlist. Non-entry-point helpers are not runtime-executable.
+Substantial SQL functions ship as immutable, versioned, packaged resources under `mtmf_core/persistence/postgres/sql/vNNN/<function>.sql` and are installed by Alembic revisions in sorted filename order. Functions are schema-qualified, do not rely on caller `search_path` (`SET search_path = ''`), and avoid dynamic SQL. PR 6 installs a single infrastructure proof function (`mtmf.mtf_schema_version()`); PR 6B installs the typed-membership precondition replacements, guards, and removal functions described below. PR 7A (revision `0003`) converts only the six reviewed membership-removal entry points to owner-owned `SECURITY DEFINER` and grants the restricted runtime role `EXECUTE` on exactly those signatures. PR 7B (revision `0004`) adds 44 reviewed repository read/write functions with the same owner-owned `SECURITY DEFINER`, fixed `search_path = ''`, PUBLIC-EXECUTE-revoked, exact-runtime-grant posture. PR 9 (revision `0005`) adds the two typed Role-assignment tables and eight Role-assignment entry points with the same posture (plus three private, non-runtime-granted validation helpers). PR 11 (revision `0009`) adds the TenantManagementGroup structural tables, database guards, the two approved SYSTEM management Roles, atomic ROOT bootstrap integration, installation-only mutation primitives, and nine narrowly reviewed `SECURITY DEFINER` TenantManagementGroup/root-registry read functions. PR 13 (revision `0010`) adds the Application-registry tables, immutability/lifecycle guard triggers, six operator/installation-only mutation functions (`SECURITY INVOKER`, never runtime-granted), and eight narrowly reviewed `SECURITY DEFINER` runtime read functions. The mandatory post-upgrade verifier compares the runtime's effective `EXECUTE` set against the full 75-signature allowlist. Non-entry-point helpers are not runtime-executable.
 
 Security-critical invariants are enforced at trusted persistence/write boundaries in addition to higher layers where appropriate.
 
@@ -450,7 +461,7 @@ The following are intentionally not settled here:
 - Rust optimization details (the Rust evaluators are experimental and non-default since PR 8H; the production default is the pure-Python indexed `CompiledPolicy`).
 - HTTP API shape and versioning strategy.
 
-## Planned HTTP-only integration and package responsibilities (PRs 12–20; NOT IMPLEMENTED)
+## Planned HTTP-only integration and package responsibilities (PRs 12–20; HTTP NOT IMPLEMENTED)
 
 The v0.1 target integration architecture is an independently deployed MTMF HTTPS **PDP** with external consuming applications as **PEPs**. The earlier in-process/LocalConnector and location-transparent architecture statements in this document describe historical planning, not the newly agreed external integration target. Existing internal Python APIs remain implementation details. The planned public boundary is versioned HTTP only.
 
@@ -460,4 +471,9 @@ The v0.1 target integration architecture is an independently deployed MTMF HTTPS
 - `mtmf-client`: HTTP-only client and scoped snapshot/PEP helper, never an embedded PDP (PR 18).
 - External applications: enforce MTMF decisions and their own resource/Tenant data isolation (ATI reference PR 20).
 
-Application registry/subscriptions (PR 13) gate eligibility before ALLOW. This architecture and its batch endpoint are **not implemented**. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md) and [ROADMAP_V01.md](ROADMAP_V01.md).
+The PR 13 global Application registry, explicit Application–Tenant
+registration, Tenant subscription lifecycle, PostgreSQL persistence, and
+trusted internal eligibility gate are **implemented** (Section 8); this is a
+prerequisite input consumed before policy evaluation, not an HTTP decision
+layer. The HTTP service boundary, batch endpoint, and client snapshot helper
+remain **not implemented**. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md) and [ROADMAP_V01.md](ROADMAP_V01.md).

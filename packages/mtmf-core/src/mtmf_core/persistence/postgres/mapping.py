@@ -16,16 +16,29 @@ example Role definition ownership); they run unchanged after mapping.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from mtmf_core.domain.action import Action
+from mtmf_core.domain.application import (
+    Application,
+    ApplicationTenantRegistration,
+    TenantApplicationSubscription,
+)
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, PermissionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
 from mtmf_core.domain.json_types import JsonObject
-from mtmf_core.domain.lifecycle import DeletionStatus, IdentityOrigin, TenantLifecycle
+from mtmf_core.domain.lifecycle import (
+    ApplicationLifecycle,
+    DeletionStatus,
+    IdentityOrigin,
+    RegistrationLifecycle,
+    SubscriptionLifecycle,
+    TenantLifecycle,
+)
 from mtmf_core.domain.management_group import (
     TenantManagementGroup,
     TenantManagementGroupActorEligibility,
@@ -45,6 +58,8 @@ from mtmf_core.persistence.errors import PersistenceDataError
 
 __all__ = [
     "action_from_urn",
+    "application_from_payload",
+    "application_tenant_registration_from_payload",
     "group_from_payload",
     "group_role_assignment_from_payload",
     "identity_from_payload",
@@ -53,6 +68,7 @@ __all__ = [
     "principal_from_payload",
     "role_from_payload",
     "role_to_payload",
+    "tenant_application_subscription_from_payload",
     "tenant_from_payload",
     "tenant_management_group_actor_eligibility_from_payload",
     "tenant_management_group_from_payload",
@@ -120,6 +136,42 @@ def _require_extension(source: dict[str, Any]) -> JsonObject:
     if not isinstance(value, dict):
         raise PersistenceDataError("stored extension field is not a JSON object")
     return value
+
+
+def _require_timestamp(source: dict[str, Any], name: str) -> datetime:
+    """Return a required timezone-aware timestamp field or fail closed."""
+    value = source.get(name)
+    if not isinstance(value, str):
+        raise PersistenceDataError(f"stored payload field {name!r} is not a timestamp string")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored payload field {name!r} is not a valid timestamp"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise PersistenceDataError(f"stored payload field {name!r} is not timezone-aware")
+    return parsed
+
+
+def _optional_timestamp(source: dict[str, Any], name: str) -> datetime | None:
+    """Return an optional timezone-aware timestamp field or fail closed."""
+    value = source.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PersistenceDataError(
+            f"stored payload field {name!r} is not a timestamp string or null"
+        )
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored payload field {name!r} is not a valid timestamp"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise PersistenceDataError(f"stored payload field {name!r} is not timezone-aware")
+    return parsed
 
 
 def _require_deletion_status(source: dict[str, Any]) -> DeletionStatus:
@@ -333,6 +385,72 @@ def role_to_payload(role: Role) -> dict[str, object]:
             for permission_set in role.permission_sets
         ],
     }
+
+
+def application_from_payload(payload: object) -> Application:
+    """Reconstruct a global :class:`Application` from a detached stored payload."""
+    source = _require_object(payload, "Application")
+    raw_lifecycle = _require_int(source, "lifecycle")
+    try:
+        lifecycle = ApplicationLifecycle(raw_lifecycle)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored Application lifecycle {raw_lifecycle!r} is not a legal value"
+        ) from exc
+    return Application(
+        id=_require_uuid(source, "id"),
+        application_key=_require_str(source, "application_key"),
+        name=_require_str(source, "name"),
+        owner_identity_id=_require_uuid(source, "owner_identity_id"),
+        lifecycle=lifecycle,
+        extension=_require_extension(source),
+    )
+
+
+def application_tenant_registration_from_payload(
+    payload: object,
+) -> ApplicationTenantRegistration:
+    """Reconstruct one Application-Tenant registration from a stored payload."""
+    source = _require_object(payload, "ApplicationTenantRegistration")
+    raw_lifecycle = _require_int(source, "lifecycle")
+    try:
+        lifecycle = RegistrationLifecycle(raw_lifecycle)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored registration lifecycle {raw_lifecycle!r} is not a legal value"
+        ) from exc
+    return ApplicationTenantRegistration(
+        id=_require_uuid(source, "id"),
+        application_id=_require_uuid(source, "application_id"),
+        tenant_id=_require_uuid(source, "tenant_id"),
+        created_by_identity_id=_require_uuid(source, "created_by_identity_id"),
+        created_at=_require_timestamp(source, "created_at"),
+        lifecycle=lifecycle,
+    )
+
+
+def tenant_application_subscription_from_payload(
+    payload: object,
+) -> TenantApplicationSubscription:
+    """Reconstruct one Tenant-Application subscription from a stored payload."""
+    source = _require_object(payload, "TenantApplicationSubscription")
+    raw_lifecycle = _require_int(source, "lifecycle")
+    try:
+        lifecycle = SubscriptionLifecycle(raw_lifecycle)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored subscription lifecycle {raw_lifecycle!r} is not a legal value"
+        ) from exc
+    return TenantApplicationSubscription(
+        id=_require_uuid(source, "id"),
+        application_id=_require_uuid(source, "application_id"),
+        tenant_id=_require_uuid(source, "tenant_id"),
+        created_by_identity_id=_require_uuid(source, "created_by_identity_id"),
+        starts_at=_require_timestamp(source, "starts_at"),
+        created_at=_require_timestamp(source, "created_at"),
+        ends_at=_optional_timestamp(source, "ends_at"),
+        lifecycle=lifecycle,
+    )
 
 
 def tenant_management_group_from_payload(payload: object) -> TenantManagementGroup:

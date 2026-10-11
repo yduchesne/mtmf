@@ -10,6 +10,10 @@ authoritative decision point.
 
 from __future__ import annotations
 
+from mtmf_core.application.application_eligibility import (
+    ApplicationTenantEligibilityIntegrityError,
+    ApplicationTenantEligibilityService,
+)
 from mtmf_core.application.effective_roles import (
     EffectiveRoleIntegrityError,
     EffectiveRoleResolutionError,
@@ -28,6 +32,8 @@ from mtmf_core.application.management_scope import (
 )
 
 __all__ = [
+    "ApplicationTenantEligibilityIntegrityError",
+    "ApplicationTenantEligibilityService",
     "EffectiveRoleIntegrityError",
     "EffectiveRoleResolutionError",
     "EffectiveRoleResolver",

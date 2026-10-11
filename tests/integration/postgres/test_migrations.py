@@ -156,6 +156,23 @@ EXPECTED_FUNCTION_NAMES = {
     "tenant_management_group_actor_eligibility_find_by_group",
     "tenant_management_group_actor_eligibility_find_by_identity",
     "root_registry_get",
+    "guard_application_registry_application",
+    "guard_application_tenant_registration",
+    "guard_tenant_application_subscription",
+    "application_add",
+    "application_save",
+    "application_tenant_registration_add",
+    "application_tenant_registration_save",
+    "tenant_application_subscription_add",
+    "tenant_application_subscription_save",
+    "application_get",
+    "application_get_by_key",
+    "application_tenant_registration_get",
+    "application_tenant_registration_find_by_application_and_tenant",
+    "application_tenant_registration_find_by_tenant",
+    "tenant_application_subscription_get",
+    "tenant_application_subscription_find_by_application_and_tenant",
+    "tenant_application_subscription_find_by_tenant",
 }
 
 _FORBIDDEN_TABLES = (
@@ -187,7 +204,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0009"
+    assert revision == "0010"
     assert revision == manager.head_revision
 
 

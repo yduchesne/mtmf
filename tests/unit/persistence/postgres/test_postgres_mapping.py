@@ -8,26 +8,35 @@ coercing data or returning a partial aggregate.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from helpers import make_identity, make_role, make_tenant
 
 from mtmf_core import (
     ActionUrn,
+    ApplicationLifecycle,
     DomainId,
+    DomainInvariantError,
     IdentityOrigin,
+    RegistrationLifecycle,
     RoleUrn,
     SecurityScope,
+    SubscriptionLifecycle,
     TenantLifecycle,
 )
 from mtmf_core.persistence.errors import PersistenceDataError, PersistenceIntegrityError
 from mtmf_core.persistence.postgres.mapping import (
     action_from_urn,
+    application_from_payload,
+    application_tenant_registration_from_payload,
     group_from_payload,
     identity_from_payload,
     organization_from_payload,
     principal_from_payload,
     role_from_payload,
     role_to_payload,
+    tenant_application_subscription_from_payload,
     tenant_from_payload,
 )
 from mtmf_core.persistence.postgres.repositories import _extension_param
@@ -229,3 +238,106 @@ def test_extension_param_accepts_object_and_rejects_non_object() -> None:
     for bad in (None, [], "x", 3):
         with pytest.raises(PersistenceIntegrityError):
             _extension_param(bad)
+
+
+_APP_ID = "11111111-1111-4111-8111-111111111111"
+_TENANT_ID = "22222222-2222-4222-8222-222222222222"
+_OWNER_ID = "33333333-3333-4333-8333-333333333333"
+
+
+def _application_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "id": _APP_ID,
+        "application_key": "ati-client",
+        "name": "ATI Client",
+        "owner_identity_id": _OWNER_ID,
+        "lifecycle": 1,
+        "extension": {"k": 1},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _registration_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "application_id": _APP_ID,
+        "tenant_id": _TENANT_ID,
+        "created_by_identity_id": _OWNER_ID,
+        "lifecycle": 1,
+        "created_at": "2026-01-01T12:00:00+00:00",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _subscription_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "application_id": _APP_ID,
+        "tenant_id": _TENANT_ID,
+        "created_by_identity_id": _OWNER_ID,
+        "lifecycle": 1,
+        "starts_at": "2025-12-31T00:00:00+00:00",
+        "ends_at": "2026-12-31T00:00:00+00:00",
+        "created_at": "2025-12-31T00:00:00+00:00",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_application_round_trip() -> None:
+    application = application_from_payload(_application_payload())
+    assert application.id == DomainId.from_str(_APP_ID)
+    assert application.application_key == "ati-client"
+    assert application.lifecycle is ApplicationLifecycle.ACTIVE
+    assert application.extension == {"k": 1}
+
+
+def test_application_invalid_lifecycle_fails() -> None:
+    with pytest.raises(PersistenceDataError):
+        application_from_payload(_application_payload(lifecycle=9))
+    with pytest.raises(PersistenceDataError):
+        application_from_payload(_application_payload(lifecycle="active"))
+    with pytest.raises(PersistenceDataError):
+        application_from_payload(_application_payload(extension=[1]))
+
+
+def test_registration_round_trip_and_invalid_lifecycle() -> None:
+    registration = application_tenant_registration_from_payload(_registration_payload())
+    assert registration.application_id == DomainId.from_str(_APP_ID)
+    assert registration.lifecycle is RegistrationLifecycle.ACTIVE
+    with pytest.raises(PersistenceDataError):
+        application_tenant_registration_from_payload(_registration_payload(lifecycle=9))
+
+
+def test_registration_missing_or_naive_timestamp_fails() -> None:
+    with pytest.raises(PersistenceDataError):
+        application_tenant_registration_from_payload(_registration_payload(created_at=3))
+    with pytest.raises(PersistenceDataError):
+        application_tenant_registration_from_payload(
+            _registration_payload(created_at="2026-01-01T12:00:00")
+        )
+
+
+def test_subscription_round_trip_with_and_without_end() -> None:
+    subscription = tenant_application_subscription_from_payload(_subscription_payload())
+    assert subscription.lifecycle is SubscriptionLifecycle.ACTIVE
+    assert subscription.ends_at == datetime(2026, 12, 31, tzinfo=UTC)
+    open_ended = tenant_application_subscription_from_payload(_subscription_payload(ends_at=None))
+    assert open_ended.ends_at is None
+
+
+def test_subscription_invalid_payloads_fail() -> None:
+    with pytest.raises(PersistenceDataError):
+        tenant_application_subscription_from_payload(_subscription_payload(lifecycle=9))
+    with pytest.raises(PersistenceDataError):
+        tenant_application_subscription_from_payload(
+            _subscription_payload(starts_at="not-a-timestamp")
+        )
+    with pytest.raises(DomainInvariantError):
+        tenant_application_subscription_from_payload(
+            _subscription_payload(
+                starts_at="2026-01-01T00:00:00+00:00", ends_at="2026-01-01T00:00:00+00:00"
+            )
+        )

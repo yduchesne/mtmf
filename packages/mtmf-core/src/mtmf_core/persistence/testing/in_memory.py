@@ -34,11 +34,27 @@ from types import TracebackType
 from typing import ClassVar, Self, cast
 
 from mtmf_core.domain.action import Action
+from mtmf_core.domain.application import (
+    Application,
+    ApplicationTenantRegistration,
+    TenantApplicationSubscription,
+    normalize_application_key,
+    validate_application_transition,
+    validate_registration_transition,
+    validate_subscription_end_change,
+    validate_subscription_transition,
+)
+from mtmf_core.domain.errors import ApplicationRegistryInvariantError
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.identity_entity import Identity
 from mtmf_core.domain.json_types import JsonObject, JsonValue
+from mtmf_core.domain.lifecycle import (
+    ApplicationLifecycle,
+    RegistrationLifecycle,
+    SubscriptionLifecycle,
+)
 from mtmf_core.domain.management_group import (
     TenantManagementGroup,
     TenantManagementGroupActorEligibility,
@@ -65,6 +81,8 @@ from mtmf_core.persistence.errors import (
 )
 from mtmf_core.persistence.repositories import (
     ActionRepository,
+    ApplicationRepository,
+    ApplicationTenantRegistrationRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
     GroupRoleAssignmentRepository,
@@ -78,6 +96,7 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    TenantApplicationSubscriptionRepository,
     TenantManagementGroupActorEligibilityRepository,
     TenantManagementGroupMembershipRepository,
     TenantManagementGroupRepository,
@@ -941,6 +960,294 @@ class _InMemoryTenantManagementGroupActorEligibilityRepository(
         self._remove_by_id(found.id)
 
 
+class _InMemoryApplicationRepository:
+    """In-memory :class:`~mtmf_core.persistence.repositories.ApplicationRepository`.
+
+    An Application is keyed by its immutable UUID identity and is
+    additionally unique by its normalized application key.
+    """
+
+    _collection: ClassVar[str] = "Application"
+
+    def __init__(self, uow: _InMemoryUnitOfWork) -> None:
+        self._uow = uow
+
+    def _visible_committed(self) -> tuple[Application, ...]:
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        return tuple(
+            cast(Application, value)
+            for key, value in self._uow._committed_state.items(self._collection)
+            if key not in deletions
+        )
+
+    def add(self, application: Application) -> None:
+        """Stage a new Application, rejecting a duplicate identity or key."""
+        self._uow._require_active("ApplicationRepository.add")
+        staged = self._uow._staged_for(self._collection)
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        committed_present = application.id not in deletions and self._uow._committed_state.has(
+            self._collection, application.id
+        )
+        if application.id in staged or committed_present:
+            raise DuplicatePersistenceIdentityError(
+                f"Application: identity {application.id!r} already exists"
+            )
+        for existing in (*self._visible_committed(), *staged.values()):
+            if cast(Application, existing).application_key == application.application_key:
+                raise DuplicatePersistenceIdentityError(
+                    f"Application: key {application.application_key!r} already exists"
+                )
+        staged[application.id] = replace(
+            application, extension=_clone_extension(application.extension)
+        )
+
+    def _clone(self, application: Application) -> Application:
+        """Return a detached copy of an Application."""
+        return replace(application, extension=_clone_extension(application.extension))
+
+    def get(self, id: DomainId) -> Application | None:
+        """Return a detached Application snapshot from the transactional view, if any."""
+        self._uow._require_active("ApplicationRepository.get")
+        staged = self._uow._staged_for(self._collection)
+        if id in staged:
+            return self._clone(cast(Application, staged[id]))
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        if id in deletions:
+            return None
+        committed = self._uow._committed_state.get(self._collection, id)
+        return self._clone(cast(Application, committed)) if committed is not None else None
+
+    def get_by_key(self, application_key: str) -> Application | None:
+        """Return a detached Application snapshot by normalized key, if any."""
+        self._uow._require_active("ApplicationRepository.get_by_key")
+        normalized = normalize_application_key(application_key)
+        for application in (
+            *self._visible_committed(),
+            *(
+                cast(Application, value)
+                for value in self._uow._staged_for(self._collection).values()
+            ),
+        ):
+            if application.application_key == normalized:
+                return self._clone(application)
+        return None
+
+    def save(self, application: Application) -> None:
+        """Stage an update to an existing Application identity.
+
+        Mirrors the PostgreSQL terminal/lifecycle guard: a ``RETIRED``
+        Application cannot be updated and lifecycle changes must be legal.
+        """
+        self._uow._require_active("ApplicationRepository.save")
+        staged = self._uow._staged_for(self._collection)
+        stored = self.get(application.id)
+        if stored is None:
+            raise UnknownPersistenceIdentityError(
+                f"Application: cannot save unknown identity {application.id!r}; "
+                "introduce new identities with add"
+            )
+        if stored.lifecycle is ApplicationLifecycle.RETIRED:
+            raise ApplicationRegistryInvariantError(
+                "a RETIRED Application is terminal and cannot be updated"
+            )
+        if application.lifecycle is not stored.lifecycle:
+            validate_application_transition(stored.lifecycle, application.lifecycle)
+        for existing in (*self._visible_committed(), *staged.values()):
+            stored = cast(Application, existing)
+            if (
+                stored.id != application.id
+                and stored.application_key == application.application_key
+            ):
+                raise DuplicatePersistenceIdentityError(
+                    f"Application: key {application.application_key!r} already exists"
+                )
+        staged[application.id] = replace(
+            application, extension=_clone_extension(application.extension)
+        )
+
+
+class _InMemoryApplicationRegistryRecordRepository[RecordT]:
+    """Shared add/get/find/save for surrogate-id Application-registry records.
+
+    A record is keyed by its immutable UUID identity and is unique among
+    ``_is_current`` rows per ``(application_id, tenant_id)`` pair. Terminal
+    rows remain as history and never block a later current row.
+    """
+
+    _collection: ClassVar[str]
+
+    def __init__(self, uow: _InMemoryUnitOfWork) -> None:
+        self._uow = uow
+
+    def _pair(self, record: RecordT) -> tuple[DomainId, DomainId]:
+        return (record.application_id, record.tenant_id)  # type: ignore[attr-defined]
+
+    def _is_current(self, record: RecordT) -> bool:
+        raise NotImplementedError
+
+    def _clone(self, record: RecordT) -> RecordT:
+        """Return a detached copy of a registry record."""
+        return replace(record)  # type: ignore[type-var]
+
+    def _visible_committed(self) -> tuple[RecordT, ...]:
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        return tuple(
+            cast(RecordT, value)
+            for key, value in self._uow._committed_state.items(self._collection)
+            if key not in deletions
+        )
+
+    def add(self, record: RecordT) -> None:
+        """Stage a new record, rejecting a duplicate id or current pair."""
+        self._uow._require_active(f"{type(self).__name__}.add")
+        key = record.id  # type: ignore[attr-defined]
+        staged = self._uow._staged_for(self._collection)
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        committed_present = key not in deletions and self._uow._committed_state.has(
+            self._collection, key
+        )
+        if key in staged or committed_present:
+            raise DuplicatePersistenceIdentityError(
+                f"{self._collection}: identity {key!r} already exists"
+            )
+        if self._is_current(record):
+            pair = self._pair(record)
+            for existing in (*self._visible_committed(), *staged.values()):
+                candidate = cast(RecordT, existing)
+                if self._is_current(candidate) and self._pair(candidate) == pair:
+                    raise DuplicatePersistenceIdentityError(
+                        f"{self._collection}: current relationship {pair!r} already exists"
+                    )
+        staged[key] = self._clone(record)
+
+    def get(self, id: DomainId) -> RecordT | None:
+        """Return a detached record snapshot by identity, or ``None`` when unknown."""
+        self._uow._require_active(f"{type(self).__name__}.get")
+        staged = self._uow._staged_for(self._collection)
+        if id in staged:
+            return self._clone(cast(RecordT, staged[id]))
+        deletions = self._uow._staged_deletions.get(self._collection, set())
+        if id in deletions:
+            return None
+        committed = self._uow._committed_state.get(self._collection, id)
+        return self._clone(cast(RecordT, committed)) if committed is not None else None
+
+    def _find(self, predicate: Callable[[RecordT], bool]) -> tuple[RecordT, ...]:
+        self._uow._require_active(f"{type(self).__name__} query")
+        staged = self._uow._staged_for(self._collection)
+        matches = [self._clone(item) for item in self._visible_committed() if predicate(item)]
+        matches.extend(
+            self._clone(cast(RecordT, value))
+            for value in staged.values()
+            if predicate(cast(RecordT, value))
+        )
+        return tuple(matches)
+
+    def _validate_save(self, existing: RecordT, incoming: RecordT) -> None:
+        """Validate an update against the stored record; subclasses override."""
+        raise NotImplementedError
+
+    def save(self, record: RecordT) -> None:
+        """Stage an update to an existing record identity.
+
+        The update is validated against the stored record so the in-memory
+        provider mirrors the PostgreSQL terminal/lifecycle/end-date guard.
+        """
+        self._uow._require_active(f"{type(self).__name__}.save")
+        key = record.id  # type: ignore[attr-defined]
+        existing = self.get(key)
+        if existing is None:
+            raise UnknownPersistenceIdentityError(
+                f"{self._collection}: cannot save unknown identity {key!r}; "
+                "introduce new identities with add"
+            )
+        self._validate_save(existing, record)
+        self._uow._staged_for(self._collection)[key] = self._clone(record)
+
+
+class _InMemoryApplicationTenantRegistrationRepository(
+    _InMemoryApplicationRegistryRecordRepository[ApplicationTenantRegistration]
+):
+    """In-memory Application-Tenant registration repository."""
+
+    _collection: ClassVar[str] = "ApplicationTenantRegistration"
+
+    def _is_current(self, record: ApplicationTenantRegistration) -> bool:
+        return record.lifecycle is RegistrationLifecycle.ACTIVE
+
+    def _validate_save(
+        self,
+        existing: ApplicationTenantRegistration,
+        incoming: ApplicationTenantRegistration,
+    ) -> None:
+        """Reject terminal updates and illegal registration transitions."""
+        if existing.lifecycle is RegistrationLifecycle.REVOKED:
+            raise ApplicationRegistryInvariantError(
+                "a REVOKED registration is terminal and cannot be updated"
+            )
+        if incoming.lifecycle is not existing.lifecycle:
+            validate_registration_transition(existing.lifecycle, incoming.lifecycle)
+
+    def find_by_application_and_tenant(
+        self, application_id: DomainId, tenant_id: DomainId
+    ) -> tuple[ApplicationTenantRegistration, ...]:
+        """Return every registration row for the exact Application/Tenant pair."""
+        return self._find(
+            lambda record: record.application_id == application_id and record.tenant_id == tenant_id
+        )
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[ApplicationTenantRegistration, ...]:
+        """Return every registration row of one Tenant."""
+        return self._find(lambda record: record.tenant_id == tenant_id)
+
+
+class _InMemoryTenantApplicationSubscriptionRepository(
+    _InMemoryApplicationRegistryRecordRepository[TenantApplicationSubscription]
+):
+    """In-memory Tenant-Application subscription repository."""
+
+    _collection: ClassVar[str] = "TenantApplicationSubscription"
+
+    def _is_current(self, record: TenantApplicationSubscription) -> bool:
+        return record.lifecycle in (
+            SubscriptionLifecycle.PENDING,
+            SubscriptionLifecycle.ACTIVE,
+            SubscriptionLifecycle.SUSPENDED,
+        )
+
+    def _validate_save(
+        self,
+        existing: TenantApplicationSubscription,
+        incoming: TenantApplicationSubscription,
+    ) -> None:
+        """Reject terminal updates and non-restrictive end-date amendments (A1)."""
+        if existing.lifecycle in (
+            SubscriptionLifecycle.CANCELLED,
+            SubscriptionLifecycle.EXPIRED,
+        ):
+            raise ApplicationRegistryInvariantError("a terminal subscription cannot be updated")
+        if incoming.lifecycle is not existing.lifecycle:
+            validate_subscription_transition(existing.lifecycle, incoming.lifecycle)
+        if incoming.ends_at != existing.ends_at:
+            if incoming.ends_at is None:
+                raise ApplicationRegistryInvariantError(
+                    "a finite subscription ends_at cannot be cleared"
+                )
+            validate_subscription_end_change(existing.ends_at, incoming.ends_at, existing.starts_at)
+
+    def find_by_application_and_tenant(
+        self, application_id: DomainId, tenant_id: DomainId
+    ) -> tuple[TenantApplicationSubscription, ...]:
+        """Return every subscription row for the exact Application/Tenant pair."""
+        return self._find(
+            lambda record: record.application_id == application_id and record.tenant_id == tenant_id
+        )
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[TenantApplicationSubscription, ...]:
+        """Return every subscription row of one Tenant."""
+        return self._find(lambda record: record.tenant_id == tenant_id)
+
+
 class InMemoryMtmfSpi:
     """Deterministic in-memory :class:`~mtmf_core.persistence.spi.MtmfSpi`.
 
@@ -999,6 +1306,22 @@ class InMemoryMtmfSpi:
     def create_action_repository(self, uow: UnitOfWork) -> ActionRepository:
         """Create an Action repository bound to ``uow``."""
         return _InMemoryActionRepository(self._require_own_uow(uow))
+
+    def create_application_repository(self, uow: UnitOfWork) -> ApplicationRepository:
+        """Create an Application repository bound to ``uow``."""
+        return _InMemoryApplicationRepository(self._require_own_uow(uow))
+
+    def create_application_tenant_registration_repository(
+        self, uow: UnitOfWork
+    ) -> ApplicationTenantRegistrationRepository:
+        """Create an Application-Tenant registration repository bound to ``uow``."""
+        return _InMemoryApplicationTenantRegistrationRepository(self._require_own_uow(uow))
+
+    def create_tenant_application_subscription_repository(
+        self, uow: UnitOfWork
+    ) -> TenantApplicationSubscriptionRepository:
+        """Create a Tenant-Application subscription repository bound to ``uow``."""
+        return _InMemoryTenantApplicationSubscriptionRepository(self._require_own_uow(uow))
 
     def create_identity_role_assignment_repository(
         self, uow: UnitOfWork
