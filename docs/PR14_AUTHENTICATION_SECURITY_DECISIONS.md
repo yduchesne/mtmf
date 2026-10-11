@@ -921,6 +921,17 @@ PENDING.
 
 **Gate:** PR 14 production code, migration `0011`, API changes, and root authentication remain **STOPPED**. An explicitly scoped, separately approved implementation gate is required.
 
+## 14C. Human decision — defer root authentication to subsequent PR (2026-10-11)
+
+**APPROVED SCOPE SPLIT:** PR 14 may target ordinary service authentication and constrained D1 user-context propagation **only after its remaining non-root security gates are explicitly approved**. Root authentication is deferred to a separate future PR. This is a scope decision, **not** authorization to implement PR 14.
+
+- The canonical built-in root Identity remains `LOCAL`, with the protected external authentication binding architecture (Option A) reserved for the future root PR. This does not permit changing its origin, creating a second root, or silently substituting an ordinary `FEDERATED` Identity.
+- **Fail closed:** PR 14 must not provide an external or ordinary-user authentication path to the root Identity, root Principal, root privileges, or root-only operations. Root identities must never be eligible through D1 `(issuer, sub)` ordinary-user resolution, even if a token otherwise verifies. No fallback password, MFA downgrade, impersonation, privileged bootstrap bypass, or public root endpoint.
+- The separate root PR must define and verify issuer-enforced phishing-resistant authentication, exact access-token assurance claims, protected immutable root binding, and negative/downgrade tests before root authentication is enabled.
+- Existing separately governed operator recovery/bootstrap mechanisms are **not** modified or implicitly authorized by this scope split. If PR 14 requires root authentication to execute its ordinary-user paths, **STOP** and report the architectural dependency.
+- The original PR 14 acceptance matrix must be partitioned explicitly into ordinary service/user requirements and deferred root-only requirements, preserving all root requirements as tracked obligations rather than silently deleting them.
+- This decision resolves **A14-08 scope for PR 14 only**; it does not approve the future root implementation or override other A14 approvals. The production issuer, claim profile, client-binding contract, dependency/ownership split, and non-root implementation approval remain pending.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
@@ -934,7 +945,7 @@ All rows are **PENDING HUMAN REVIEW**. No decision is approved.
 | A14-05 | PENDING HUMAN REVIEW / SCOPE OPEN | — | — | — |
 | A14-06 | PENDING HUMAN REVIEW | — | — | — |
 | A14-07 | D1 SELECTED; KEYCLOAK DEVELOPMENT CLIENT-BINDING PROFILE CONDITIONALLY APPROVED; PRODUCTION/IMPLEMENTATION BLOCKED | Human reviewer (conversation) | 2026-10-11 | §§14A–14B |
-| A14-08 | PENDING HUMAN REVIEW / BLOCKED ON ROOT ASSURANCE | — | — | — |
+| A14-08 | ROOT AUTHENTICATION DEFERRED TO FUTURE PR; PR 14 MUST FAIL CLOSED FOR ROOT | Human reviewer (conversation) | 2026-10-11 | §14C |
 | A14-09 | PENDING HUMAN REVIEW | — | — | — |
 | A14-10 | PENDING HUMAN REVIEW | — | — | — |
 | §7 claim profiles | KEYCLOAK 26.8.0 DEVELOPMENT D1 PROFILE CONDITIONALLY APPROVED; PRODUCTION PROFILE PENDING | Human reviewer (conversation) | 2026-10-11 | §14B; PR14_KEYCLOAK_EVIDENCE §6A |
