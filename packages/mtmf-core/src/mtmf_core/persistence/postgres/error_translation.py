@@ -73,6 +73,19 @@ _PR10_INTEGRITY_CODES = frozenset(
     }
 )
 
+#: PR 13 Application-registry structural-invariant SQLSTATEs (illegal
+#: lifecycle transition, immutable-column update, invalid subscription
+#: window). They are deterministic structural failures and map to
+#: :class:`~mtmf_core.persistence.errors.PersistenceIntegrityError`.
+_PR13_INTEGRITY_CODES = frozenset(
+    {
+        "MT040",  # illegal Application lifecycle transition
+        "MT041",  # illegal registration lifecycle transition
+        "MT042",  # illegal subscription transition / invalid window
+        "MT043",  # immutable Application-registry column update / invalid key
+    }
+)
+
 _UNIQUE_VIOLATION = "23505"
 _FOREIGN_KEY_VIOLATION = "23503"
 _CHECK_VIOLATION = "23514"
@@ -91,6 +104,7 @@ _INTEGRITY_CODES = (
         }
     )
     | _PR10_INTEGRITY_CODES
+    | _PR13_INTEGRITY_CODES
 )
 
 

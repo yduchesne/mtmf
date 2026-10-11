@@ -57,6 +57,16 @@ class TenantLifecycleError(DomainInvariantError):
     """
 
 
+class ApplicationRegistryInvariantError(DomainInvariantError):
+    """An Application-registry or Tenant-subscription invariant is violated (PR 13).
+
+    Raised by the pure Application/registration/subscription validators and
+    the internal eligibility evaluator. This is structural validation only;
+    it does not authenticate a caller and never issues an authorization
+    decision.
+    """
+
+
 class ManagementGroupInvariantError(DomainInvariantError):
     """A structural TenantManagementGroup invariant is violated (PR 11).
 

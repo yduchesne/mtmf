@@ -1,7 +1,23 @@
 """MTMF core domain: entities, typed memberships, session, invariants, and policy."""
 
 from mtmf_core.domain.action import BASELINE_ACTIONS, Action
+from mtmf_core.domain.application import (
+    Application,
+    ApplicationTenantRegistration,
+    TenantApplicationSubscription,
+    normalize_application_key,
+    validate_application_transition,
+    validate_registration_transition,
+    validate_subscription_transition,
+    validate_subscription_window,
+)
+from mtmf_core.domain.eligibility import (
+    ApplicationTenantEligibility,
+    EligibilityReason,
+    evaluate_application_tenant_eligibility,
+)
 from mtmf_core.domain.errors import (
+    ApplicationRegistryInvariantError,
     DomainInvariantError,
     ImmutabilityError,
     ManagementGroupInvariantError,
@@ -29,8 +45,11 @@ from mtmf_core.domain.invariants import (
 from mtmf_core.domain.json_types import JsonObject, JsonScalar, JsonValue, new_extension
 from mtmf_core.domain.lifecycle import (
     ActiveStatus,
+    ApplicationLifecycle,
     DeletionStatus,
     IdentityOrigin,
+    RegistrationLifecycle,
+    SubscriptionLifecycle,
     TenantLifecycle,
 )
 from mtmf_core.domain.management_group import (
@@ -86,10 +105,16 @@ __all__ = [
     "Action",
     "ActionUrn",
     "ActiveStatus",
+    "Application",
+    "ApplicationLifecycle",
+    "ApplicationRegistryInvariantError",
+    "ApplicationTenantEligibility",
+    "ApplicationTenantRegistration",
     "DefinitionNamespace",
     "DeletionStatus",
     "DomainId",
     "DomainInvariantError",
+    "EligibilityReason",
     "Group",
     "GroupOrgMembership",
     "GroupRoleAssignment",
@@ -115,6 +140,7 @@ __all__ = [
     "PermissionUrn",
     "Principal",
     "PrincipalTenantMembership",
+    "RegistrationLifecycle",
     "Role",
     "RoleUrn",
     "RootBootstrapRecord",
@@ -123,7 +149,9 @@ __all__ = [
     "SessionContext",
     "SessionContextError",
     "StewardshipInvariantError",
+    "SubscriptionLifecycle",
     "Tenant",
+    "TenantApplicationSubscription",
     "TenantBoundaryError",
     "TenantLifecycle",
     "TenantLifecycleError",
@@ -133,9 +161,12 @@ __all__ = [
     "TenantManagementScope",
     "TenantStewardshipDesignation",
     "Urn",
+    "evaluate_application_tenant_eligibility",
     "match_permission",
     "match_permission_urn",
     "new_extension",
+    "normalize_application_key",
+    "validate_application_transition",
     "validate_group_org_membership",
     "validate_group_role_assignment",
     "validate_group_tenant_membership",
@@ -143,9 +174,12 @@ __all__ = [
     "validate_identity_org_membership",
     "validate_identity_role_assignment",
     "validate_identity_tenant_membership",
+    "validate_registration_transition",
     "validate_root_bootstrap_record",
     "validate_session_context",
     "validate_stewardship_designation",
+    "validate_subscription_transition",
+    "validate_subscription_window",
     "validate_tenant_lifecycle_transition",
     "validate_tenant_management_group",
     "validate_tenant_management_group_actor_eligibility",

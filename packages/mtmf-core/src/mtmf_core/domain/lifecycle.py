@@ -58,3 +58,47 @@ class TenantLifecycle(IntEnum):
     PROVISIONING = 0
     ACTIVE = 1
     SUSPENDED = 2
+
+
+class ApplicationLifecycle(IntEnum):
+    """Global registered-Application lifecycle (PR 13, decision S2).
+
+    Only :attr:`ACTIVE` contributes to a positive eligibility outcome.
+    :attr:`RETIRED` is terminal: a retired Application is not silently
+    reinstated. The numeric values are part of the documented contract
+    and MUST NOT be reordered or renumbered.
+    """
+
+    ACTIVE = 1
+    SUSPENDED = 2
+    RETIRED = 3
+
+
+class RegistrationLifecycle(IntEnum):
+    """Application-Tenant registration lifecycle (PR 13, decision S2).
+
+    Only :attr:`ACTIVE` contributes to a positive eligibility outcome.
+    :attr:`REVOKED` is terminal. The numeric values are part of the
+    documented contract and MUST NOT be reordered or renumbered.
+    """
+
+    ACTIVE = 1
+    REVOKED = 2
+
+
+class SubscriptionLifecycle(IntEnum):
+    """TenantApplicationSubscription lifecycle (PR 13, decision S2).
+
+    Only :attr:`ACTIVE` contributes to a positive eligibility outcome.
+    :attr:`CANCELLED` and :attr:`EXPIRED` are terminal. Time-based
+    expiry is enforced immediately at ``ends_at`` even before any
+    administrative ``EXPIRED`` transition (decision S7). The numeric
+    values are part of the documented contract and MUST NOT be reordered
+    or renumbered.
+    """
+
+    PENDING = 0
+    ACTIVE = 1
+    SUSPENDED = 2
+    CANCELLED = 3
+    EXPIRED = 4

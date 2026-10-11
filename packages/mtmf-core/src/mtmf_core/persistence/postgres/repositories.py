@@ -30,6 +30,11 @@ from typing import ClassVar
 from psycopg.types.json import Jsonb
 
 from mtmf_core.domain.action import Action
+from mtmf_core.domain.application import (
+    Application,
+    ApplicationTenantRegistration,
+    TenantApplicationSubscription,
+)
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
@@ -58,6 +63,8 @@ from mtmf_core.persistence.errors import (
     UnknownPersistenceIdentityError,
 )
 from mtmf_core.persistence.postgres.mapping import (
+    application_from_payload,
+    application_tenant_registration_from_payload,
     group_from_payload,
     group_role_assignment_from_payload,
     identity_from_payload,
@@ -66,6 +73,7 @@ from mtmf_core.persistence.postgres.mapping import (
     principal_from_payload,
     role_from_payload,
     role_to_payload,
+    tenant_application_subscription_from_payload,
     tenant_from_payload,
     tenant_management_group_actor_eligibility_from_payload,
     tenant_management_group_from_payload,
@@ -75,6 +83,8 @@ from mtmf_core.persistence.postgres.unit_of_work import PostgresUnitOfWork
 
 __all__ = [
     "PostgresActionRepository",
+    "PostgresApplicationRepository",
+    "PostgresApplicationTenantRegistrationRepository",
     "PostgresGroupOrgMembershipRepository",
     "PostgresGroupRepository",
     "PostgresGroupRoleAssignmentRepository",
@@ -88,6 +98,7 @@ __all__ = [
     "PostgresPrincipalRepository",
     "PostgresPrincipalTenantMembershipRepository",
     "PostgresRoleRepository",
+    "PostgresTenantApplicationSubscriptionRepository",
     "PostgresTenantManagementGroupActorEligibilityRepository",
     "PostgresTenantManagementGroupMembershipRepository",
     "PostgresTenantManagementGroupRepository",
@@ -382,6 +393,181 @@ class PostgresActionRepository(_Repository):
         """Return the Action with exact ``urn``, or ``None`` when unknown."""
         present = self._bool("SELECT mtmf.action_get(%s)", (urn.value,))
         return Action(urn) if present else None
+
+
+class PostgresApplicationRepository(_Repository):
+    """PostgreSQL :class:`~mtmf_core.persistence.repositories.ApplicationRepository`.
+
+    Reads run through the runtime-granted read functions. ``add``/``save``
+    call operator-only mutation functions and therefore fail closed for the
+    restricted runtime login (PR 13 decisions S5/S8).
+    """
+
+    def add(self, application: Application) -> None:
+        """Stage a new Application, rejecting an existing identity or key."""
+        added = self._bool(
+            "SELECT mtmf.application_add(%s, %s, %s, %s, %s, %s)",
+            (
+                application.id.value,
+                application.application_key,
+                application.name,
+                application.owner_identity_id.value,
+                int(application.lifecycle),
+                _extension_param(application.extension),
+            ),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                f"Application: identity {application.id!r} or key "
+                f"{application.application_key!r} already exists"
+            )
+
+    def get(self, id: DomainId) -> Application | None:
+        """Return the Application with ``id``, or ``None`` when unknown."""
+        payload = self._payload("SELECT mtmf.application_get(%s)", (id.value,))
+        return None if payload is None else application_from_payload(payload)
+
+    def get_by_key(self, application_key: str) -> Application | None:
+        """Return the Application with normalized ``application_key``, or ``None``."""
+        payload = self._payload("SELECT mtmf.application_get_by_key(%s)", (application_key,))
+        return None if payload is None else application_from_payload(payload)
+
+    def save(self, application: Application) -> None:
+        """Stage a lifecycle/name/extension update to an existing Application."""
+        updated = self._bool(
+            "SELECT mtmf.application_save(%s, %s, %s, %s)",
+            (
+                application.id.value,
+                application.name,
+                int(application.lifecycle),
+                _extension_param(application.extension),
+            ),
+        )
+        if not updated:
+            raise UnknownPersistenceIdentityError(
+                f"Application: cannot save unknown identity {application.id!r}; "
+                "introduce new identities with add"
+            )
+
+
+class PostgresApplicationTenantRegistrationRepository(_Repository):
+    """PostgreSQL Application-Tenant registration repository."""
+
+    def add(self, registration: ApplicationTenantRegistration) -> None:
+        """Stage a new registration, rejecting a duplicate current pair."""
+        added = self._bool(
+            "SELECT mtmf.application_tenant_registration_add(%s, %s, %s, %s, %s, %s)",
+            (
+                registration.id.value,
+                registration.application_id.value,
+                registration.tenant_id.value,
+                registration.created_by_identity_id.value,
+                int(registration.lifecycle),
+                registration.created_at,
+            ),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                "ApplicationTenantRegistration: identity or current pair already exists"
+            )
+
+    def get(self, id: DomainId) -> ApplicationTenantRegistration | None:
+        """Return the registration with ``id``, or ``None`` when unknown."""
+        payload = self._payload("SELECT mtmf.application_tenant_registration_get(%s)", (id.value,))
+        return None if payload is None else application_tenant_registration_from_payload(payload)
+
+    def find_by_application_and_tenant(
+        self, application_id: DomainId, tenant_id: DomainId
+    ) -> tuple[ApplicationTenantRegistration, ...]:
+        """Return every registration row for the exact Application/Tenant pair."""
+        rows = self._uow._execute(
+            "SELECT * FROM "
+            "mtmf.application_tenant_registration_find_by_application_and_tenant(%s, %s)",
+            (application_id.value, tenant_id.value),
+        ).fetchall()
+        return tuple(application_tenant_registration_from_payload(row[0]) for row in rows)
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[ApplicationTenantRegistration, ...]:
+        """Return every registration row of one Tenant."""
+        rows = self._uow._execute(
+            "SELECT * FROM mtmf.application_tenant_registration_find_by_tenant(%s)",
+            (tenant_id.value,),
+        ).fetchall()
+        return tuple(application_tenant_registration_from_payload(row[0]) for row in rows)
+
+    def save(self, registration: ApplicationTenantRegistration) -> None:
+        """Stage a lifecycle update to an existing registration."""
+        updated = self._bool(
+            "SELECT mtmf.application_tenant_registration_save(%s, %s)",
+            (registration.id.value, int(registration.lifecycle)),
+        )
+        if not updated:
+            raise UnknownPersistenceIdentityError(
+                f"ApplicationTenantRegistration: cannot save unknown identity {registration.id!r}"
+            )
+
+
+class PostgresTenantApplicationSubscriptionRepository(_Repository):
+    """PostgreSQL Tenant-Application subscription repository."""
+
+    def add(self, subscription: TenantApplicationSubscription) -> None:
+        """Stage a new subscription, rejecting a duplicate current pair."""
+        added = self._bool(
+            "SELECT mtmf.tenant_application_subscription_add(%s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                subscription.id.value,
+                subscription.application_id.value,
+                subscription.tenant_id.value,
+                subscription.created_by_identity_id.value,
+                int(subscription.lifecycle),
+                subscription.starts_at,
+                subscription.ends_at,
+                subscription.created_at,
+            ),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                "TenantApplicationSubscription: identity or current pair already exists"
+            )
+
+    def get(self, id: DomainId) -> TenantApplicationSubscription | None:
+        """Return the subscription with ``id``, or ``None`` when unknown."""
+        payload = self._payload("SELECT mtmf.tenant_application_subscription_get(%s)", (id.value,))
+        return None if payload is None else tenant_application_subscription_from_payload(payload)
+
+    def find_by_application_and_tenant(
+        self, application_id: DomainId, tenant_id: DomainId
+    ) -> tuple[TenantApplicationSubscription, ...]:
+        """Return every subscription row for the exact Application/Tenant pair."""
+        rows = self._uow._execute(
+            "SELECT * FROM "
+            "mtmf.tenant_application_subscription_find_by_application_and_tenant(%s, %s)",
+            (application_id.value, tenant_id.value),
+        ).fetchall()
+        return tuple(tenant_application_subscription_from_payload(row[0]) for row in rows)
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[TenantApplicationSubscription, ...]:
+        """Return every subscription row of one Tenant."""
+        rows = self._uow._execute(
+            "SELECT * FROM mtmf.tenant_application_subscription_find_by_tenant(%s)",
+            (tenant_id.value,),
+        ).fetchall()
+        return tuple(tenant_application_subscription_from_payload(row[0]) for row in rows)
+
+    def save(self, subscription: TenantApplicationSubscription) -> None:
+        """Stage a lifecycle/window update to an existing subscription."""
+        updated = self._bool(
+            "SELECT mtmf.tenant_application_subscription_save(%s, %s, %s)",
+            (
+                subscription.id.value,
+                int(subscription.lifecycle),
+                subscription.ends_at,
+            ),
+        )
+        if not updated:
+            raise UnknownPersistenceIdentityError(
+                f"TenantApplicationSubscription: cannot save unknown identity {subscription.id!r}"
+            )
 
 
 class _RoleAssignmentRepository[AssignmentT]:

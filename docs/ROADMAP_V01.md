@@ -158,9 +158,15 @@ Documentation/design gate before any public HTTP API contract. Define the indepe
 
 **Delivered (documentation only).** The normative contract is [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md) with the required decisions recorded in [PR 12 Integration Security Decisions](PR12_INTEGRATION_SECURITY_DECISIONS.md). Human approval recorded for `T1` (signed external-issuer end-user tokens or standards-based token exchange), `T3` (snapshot TTL: 300s maximum / 60s default / 15s sensitive), `T4` (capability-level for application-owned resources; mandatory validated qualifiers when MTMF owns resource-specific policy), and `T6` (one credential → exactly one registered Application; explicit Application–Tenant registration; one Application/Tenant context per request). `T2`/`T5` wire/lifecycle specifics are owned by PR 15/13; `T7`/`T8` are approved principles. Historical `LocalConnector`/`HttpConnector` language in `ARCHITECTURE.md` is labelled historical in favour of the HTTP-only v0.1 boundary. No runtime, API, client, database, migration, privilege, dependency, or test change was made; docs-only `./build.sh --qa` and `./build.sh --sec` pass.
 
-### PR 13 — Application registry and Tenant subscriptions [NEW — PLANNED]
+### PR 13 — Application registry and Tenant subscriptions [DONE]
 
-Add registered Application and TenantApplicationSubscription domain objects, lifecycle and eligibility rules, PostgreSQL persistence and management use cases. A subscription belongs to a Tenant; Organizations may be further restricted by authorization but do not independently subscribe in v0.1. Define inactive/missing subscription as a deny prerequisite. Do not implement payments, invoices, usage quotas, or feature metering.
+Implemented on `dev/app-registry`. Introduces three independent aggregates: a global, Tenant-independent `Application` (immutable UUID identity, unique normalized application key, `ACTIVE`/`SUSPENDED`/`RETIRED` lifecycle); an explicit `ApplicationTenantRegistration` (`ACTIVE`/`REVOKED`); and a time-bounded `TenantApplicationSubscription` (`PENDING`/`ACTIVE`/`SUSPENDED`/`CANCELLED`/`EXPIRED`, UTC `[starts_at, ends_at)` window). The approved `S1`–`S8` decisions are recorded in [PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+
+A pure, fail-closed `evaluate_application_tenant_eligibility` evaluator plus a non-caching application-layer `ApplicationTenantEligibilityService` require an `ACTIVE` Application, `ACTIVE` Tenant, `ACTIVE` registration, and `ACTIVE` in-window subscription for the exact pair; time-derived expiry, wrong-pair rejection, and distinct infrastructure/integrity propagation are covered by the E01–E20 matrix. Eligibility is never an `AuthorizationDecision` and a subscription never grants a Role or Permission.
+
+Provider-neutral repositories were added to `MtmfSpi` with a deterministic in-memory implementation and a PostgreSQL implementation. Additive Alembic revision `0010` / packaged `sql/v010` adds partial-unique current-row indexes, immutability/lifecycle guards, six operator/installation-only `SECURITY INVOKER` mutation functions (never granted to `mtmf_runtime`), and eight narrowly reviewed `SECURITY DEFINER` runtime read functions; the mandatory post-upgrade verifier now enforces the exact 75-signature runtime allowlist. Registration/subscription mutation is operator-privileged only (`S5`/`S8`); the restricted runtime login has a read-only eligibility surface.
+
+Verified by the unit suite (>= 85% coverage), the real-runtime PostgreSQL slice (`test_postgres_application_registry.py`), and the canonical `./build.sh --qa`, `--sec`, and `--integration` gates. Organizations do not independently subscribe in v0.1; payments, invoices, usage quotas, and feature metering remain out of scope. The Rust gate was not required (no Rust/native or evaluator code changed).
 
 ### PR 14 — Service authentication and verified acting-user propagation [NEW — PLANNED]
 
@@ -208,7 +214,9 @@ Rust/PyO3 permission-engine work is owned by the PR 8 series above and is not de
 
 ## Integration implementation status (roadmap-only)
 
-**NOT IMPLEMENTED:** application subscriptions (PR 13), authenticated service/end-user HTTP trust (PR 14), batch HTTP authorization DTOs (PR 15), native batch evaluation (PR 16), production HTTP batch endpoint (PR 17), scoped client snapshots (PR 18), and ATI integration (PR 20). Existing single-action authorization and experimental Rust work MUST NOT be described as implementing this future integration design. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
+**IMPLEMENTED (internal prerequisite only):** the PR 13 global Application registry, explicit Application–Tenant registration, Tenant subscription lifecycle, PostgreSQL persistence, and trusted internal eligibility gate. This is a prerequisite input only; it is not an HTTP decision layer.
+
+**NOT IMPLEMENTED:** authenticated service/end-user HTTP trust (PR 14), batch HTTP authorization DTOs (PR 15), native batch evaluation (PR 16), production HTTP batch endpoint (PR 17), scoped client snapshots (PR 18), and ATI integration (PR 20). Existing single-action authorization and experimental Rust work MUST NOT be described as implementing this future integration design. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
 
 ## 5. Roadmap Maintenance
 

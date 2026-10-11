@@ -20,6 +20,8 @@ from typing import Protocol, runtime_checkable
 
 from mtmf_core.persistence.repositories import (
     ActionRepository,
+    ApplicationRepository,
+    ApplicationTenantRegistrationRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
     GroupRoleAssignmentRepository,
@@ -33,6 +35,7 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    TenantApplicationSubscriptionRepository,
     TenantManagementGroupActorEligibilityRepository,
     TenantManagementGroupMembershipRepository,
     TenantManagementGroupRepository,
@@ -84,6 +87,22 @@ class MtmfSpi(Protocol):
 
     def create_action_repository(self, uow: UnitOfWork) -> ActionRepository:
         """Create an Action repository bound to ``uow``."""
+        ...
+
+    def create_application_repository(self, uow: UnitOfWork) -> ApplicationRepository:
+        """Create an Application repository bound to ``uow``."""
+        ...
+
+    def create_application_tenant_registration_repository(
+        self, uow: UnitOfWork
+    ) -> ApplicationTenantRegistrationRepository:
+        """Create an Application-Tenant registration repository bound to ``uow``."""
+        ...
+
+    def create_tenant_application_subscription_repository(
+        self, uow: UnitOfWork
+    ) -> TenantApplicationSubscriptionRepository:
+        """Create a Tenant-Application subscription repository bound to ``uow``."""
         ...
 
     def create_identity_role_assignment_repository(

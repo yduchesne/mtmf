@@ -38,6 +38,8 @@ from mtmf_core.persistence.errors import (
 )
 from mtmf_core.persistence.repositories import (
     ActionRepository,
+    ApplicationRepository,
+    ApplicationTenantRegistrationRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
     GroupRoleAssignmentRepository,
@@ -51,6 +53,7 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    TenantApplicationSubscriptionRepository,
     TenantManagementGroupActorEligibilityRepository,
     TenantManagementGroupMembershipRepository,
     TenantManagementGroupRepository,
@@ -61,6 +64,8 @@ from mtmf_core.persistence.unit_of_work import UnitOfWork
 
 __all__ = [
     "ActionRepository",
+    "ApplicationRepository",
+    "ApplicationTenantRegistrationRepository",
     "DuplicatePersistenceIdentityError",
     "ForeignUnitOfWorkError",
     "GroupOrgMembershipRepository",
@@ -87,6 +92,7 @@ __all__ = [
     "PrincipalRepository",
     "PrincipalTenantMembershipRepository",
     "RoleRepository",
+    "TenantApplicationSubscriptionRepository",
     "TenantManagementGroupActorEligibilityRepository",
     "TenantManagementGroupMembershipRepository",
     "TenantManagementGroupRepository",

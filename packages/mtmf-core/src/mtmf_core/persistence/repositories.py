@@ -26,6 +26,11 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from mtmf_core.domain.action import Action
+from mtmf_core.domain.application import (
+    Application,
+    ApplicationTenantRegistration,
+    TenantApplicationSubscription,
+)
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
@@ -222,6 +227,101 @@ class GroupRoleAssignmentRepository(Protocol):
 
     def remove(self, id: DomainId) -> None:
         """Physically remove one assignment, rejecting an unknown identity."""
+        ...
+
+
+@runtime_checkable
+class ApplicationRepository(Protocol):
+    """Persistence for the global :class:`~mtmf_core.domain.application.Application`.
+
+    An Application is a Tenant-independent aggregate root keyed by its
+    immutable UUID identity and additionally unique by its normalized
+    immutable application key. ``add`` rejects a duplicate identity or
+    duplicate key; ``save`` updates only the mutable lifecycle/name/
+    extension state and never replaces identity, key, or provenance. A
+    repository never authorizes an operation and confers no authority.
+    """
+
+    def add(self, application: Application) -> None:
+        """Stage a new Application."""
+        ...
+
+    def get(self, id: DomainId) -> Application | None:
+        """Return the Application with ``id``, or ``None`` when unknown."""
+        ...
+
+    def get_by_key(self, application_key: str) -> Application | None:
+        """Return the Application with normalized ``application_key``, or ``None``."""
+        ...
+
+    def save(self, application: Application) -> None:
+        """Stage an update to an existing Application."""
+        ...
+
+
+@runtime_checkable
+class ApplicationTenantRegistrationRepository(Protocol):
+    """Persistence for :class:`~mtmf_core.domain.application.ApplicationTenantRegistration`.
+
+    A registration is keyed by its immutable UUID identity and is unique
+    among current registrations per ``(application_id, tenant_id)`` pair.
+    ``REVOKED`` registrations are terminal history and do not block a
+    later registration for the same pair.
+    """
+
+    def add(self, registration: ApplicationTenantRegistration) -> None:
+        """Stage a new Application-Tenant registration."""
+        ...
+
+    def get(self, id: DomainId) -> ApplicationTenantRegistration | None:
+        """Return the registration with ``id``, or ``None`` when unknown."""
+        ...
+
+    def find_by_application_and_tenant(
+        self, application_id: DomainId, tenant_id: DomainId
+    ) -> tuple[ApplicationTenantRegistration, ...]:
+        """Return every registration row for the exact Application/Tenant pair."""
+        ...
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[ApplicationTenantRegistration, ...]:
+        """Return every registration row of one Tenant."""
+        ...
+
+    def save(self, registration: ApplicationTenantRegistration) -> None:
+        """Stage a lifecycle update to an existing registration."""
+        ...
+
+
+@runtime_checkable
+class TenantApplicationSubscriptionRepository(Protocol):
+    """Persistence for :class:`~mtmf_core.domain.application.TenantApplicationSubscription`.
+
+    A subscription is keyed by its immutable UUID identity and is unique
+    among current subscriptions per ``(application_id, tenant_id)`` pair.
+    Terminal ``CANCELLED``/``EXPIRED`` rows are retained as history and do
+    not block a later subscription for the same pair.
+    """
+
+    def add(self, subscription: TenantApplicationSubscription) -> None:
+        """Stage a new Tenant-Application subscription."""
+        ...
+
+    def get(self, id: DomainId) -> TenantApplicationSubscription | None:
+        """Return the subscription with ``id``, or ``None`` when unknown."""
+        ...
+
+    def find_by_application_and_tenant(
+        self, application_id: DomainId, tenant_id: DomainId
+    ) -> tuple[TenantApplicationSubscription, ...]:
+        """Return every subscription row for the exact Application/Tenant pair."""
+        ...
+
+    def find_by_tenant(self, tenant_id: DomainId) -> tuple[TenantApplicationSubscription, ...]:
+        """Return every subscription row of one Tenant."""
+        ...
+
+    def save(self, subscription: TenantApplicationSubscription) -> None:
+        """Stage a lifecycle/window update to an existing subscription."""
         ...
 
 

@@ -56,7 +56,7 @@ Activation and deactivation are explicit state transitions. Setting an object ac
 
 Whether restoration of soft-deleted objects is supported remains **UNRESOLVED**.
 
-For ordinary Tenants, PR 10 specifies explicit PROVISIONING, ACTIVE and SUSPENDED states; only ACTIVE supports ordinary Tenant sessions. The root Tenant is ACTIVE and cannot be suspended. The exact active/inactive applicability for **other** domain object types remains **UNRESOLVED**. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
+For ordinary Tenants, PR 10 specifies explicit PROVISIONING, ACTIVE and SUSPENDED states; only ACTIVE supports ordinary Tenant sessions. The root Tenant is ACTIVE and cannot be suspended. PR 13 defines explicit lifecycles for the Application registry and Tenant subscriptions (Section 20). The exact active/inactive applicability for other domain object types remains **UNRESOLVED**. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md) and [PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
 
 ### 2.4 Application extension data
 
@@ -598,10 +598,59 @@ The following remain intentionally unsettled:
 
 These questions should be resolved deliberately before schema or API choices depend on them.
 
-## Planned Application subscriptions (PR 13; NOT IMPLEMENTED)
+## 20. Application Registry and Tenant Subscriptions (PR 13)
 
-The proposed v0.1 integration domain introduces a globally registered **Application** (stable identity/key and lifecycle) and a **TenantApplicationSubscription** linking one Tenant to one Application with explicit lifecycle/eligibility dates. Tenant subscriptions govern application eligibility; Organization-specific access remains subject to existing scoped authorization. A subscription does not grant Roles or Permissions, and a Principal's membership in multiple Tenants does not transfer a subscription between them. Billing, metering and quotas are deferred.
+PR 13 introduces three distinct, independently meaningful aggregates for the
+future HTTP integration boundary. The approved decisions are recorded in
+[PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
 
-A registered Application is a **service-client identity**, distinct from an end-user Principal or Identity, from an OAuth client credential identifier, from an IAM Group, and from a Tenant. None of these are interchangeable: an Application identity never becomes an acting Identity, a Tenant subscription never becomes a Role or Permission assignment, and a Principal's Tenant membership never transfers an Application subscription. The acting end user remains a verified `(Tenant, Principal, Identity)` session evaluated by the existing authorization pipeline.
+### 20.1 Application
 
-**This is a planned extension only.** PR 13 owns exact entity fields, uniqueness constraints, lifecycle transitions, persistence and eligibility semantics. PR 14 owns authenticated service-to-Application identity mapping. PRs 15–18 own batch API and client enforcement. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
+A globally registered **Application** is a software client. Its internal
+UUID identity and its normalized, unique application key are immutable, as is
+its creator provenance. Its lifecycle is `ACTIVE` / `SUSPENDED` / `RETIRED`,
+where `RETIRED` is terminal. An Application is deliberately **not** a
+Principal, Identity, Tenant, Organization, IAM Group, Role, Permission, or
+OAuth credential: its UUID is never proof of authentication, and PR 14 owns
+the future verified credential-to-Application mapping and any separate OAuth
+`client_id`.
+
+### 20.2 ApplicationTenantRegistration
+
+An **ApplicationTenantRegistration** records the explicit fact that one
+Application is permitted to operate for one Tenant. It has an immutable
+UUID identity, an immutable Application/Tenant association, immutable
+creation provenance, and an `ACTIVE` / `REVOKED` lifecycle where `REVOKED` is
+terminal. Registration and subscription are independent: a registration
+does not create or activate a subscription, and neither implies the other.
+
+### 20.3 TenantApplicationSubscription
+
+A **TenantApplicationSubscription** records the time-bounded commercial fact
+that a Tenant subscribes to an Application. Its lifecycle is `PENDING` /
+`ACTIVE` / `SUSPENDED` / `CANCELLED` / `EXPIRED`; `CANCELLED` and `EXPIRED`
+are terminal. The validity window is the UTC half-open interval
+`[starts_at, ends_at)`; `starts_at` is required and `ends_at` is optional.
+Expiry is time-derived: a subscription is ineligible immediately at
+`ends_at` without any asynchronous status transition. An Organization does
+not independently subscribe in v0.1.
+
+### 20.4 Eligibility is not authorization
+
+A positive eligibility outcome requires **all** of: an `ACTIVE` Application,
+an `ACTIVE` (non-deleted) Tenant, an `ACTIVE` registration for the exact
+pair, and an `ACTIVE` in-window subscription for the exact pair. No fact
+substitutes for another. There is no ROOT, stewardship, management-group, or
+ordinary-membership bypass. The internal eligibility evaluator returns a
+
+typed eligibility result and reason, never an `AuthorizationDecision` and
+never an `ALLOW`. A subscription or registration never grants a Role or
+Permission, and a verified acting end user remains a
+`(Tenant, Principal, Identity)` session evaluated by the existing
+authorization pipeline.
+
+Application/registration/subscription mutation is operator/installation-
+privileged only in PR 13; the restricted runtime login has a read-only
+eligibility surface. PR 14 owns authenticated service-to-Application
+identity mapping; PRs 15–18 own the batch API and client enforcement. See
+[HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).

@@ -8,6 +8,7 @@ directions) is exercised without a database.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -16,6 +17,8 @@ from helpers import make_identity, make_organization, make_principal, make_role,
 from mtmf_core import (
     Action,
     ActionUrn,
+    Application,
+    ApplicationTenantRegistration,
     DomainId,
     Group,
     GroupOrgMembership,
@@ -27,8 +30,11 @@ from mtmf_core import (
     Organization,
     Principal,
     PrincipalTenantMembership,
+    RegistrationLifecycle,
     RoleUrn,
+    SubscriptionLifecycle,
     Tenant,
+    TenantApplicationSubscription,
 )
 from mtmf_core.persistence.errors import (
     DuplicatePersistenceIdentityError,
@@ -354,3 +360,164 @@ def test_role_repository_uses_the_canonical_role_urn() -> None:
     query, params = uow.calls[0]
     assert query == "SELECT mtmf.role_add(%s)"
     assert len(params) == 1
+
+
+_NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+
+def _application_payload(application: Application) -> dict[str, object]:
+    return {
+        "id": str(application.id),
+        "application_key": application.application_key,
+        "name": application.name,
+        "owner_identity_id": str(application.owner_identity_id),
+        "lifecycle": int(application.lifecycle),
+        "extension": application.extension,
+    }
+
+
+def _registration_payload(registration: ApplicationTenantRegistration) -> dict[str, object]:
+    return {
+        "id": str(registration.id),
+        "application_id": str(registration.application_id),
+        "tenant_id": str(registration.tenant_id),
+        "created_by_identity_id": str(registration.created_by_identity_id),
+        "lifecycle": int(registration.lifecycle),
+        "created_at": registration.created_at.isoformat(),
+    }
+
+
+def _subscription_payload(subscription: TenantApplicationSubscription) -> dict[str, object]:
+    return {
+        "id": str(subscription.id),
+        "application_id": str(subscription.application_id),
+        "tenant_id": str(subscription.tenant_id),
+        "created_by_identity_id": str(subscription.created_by_identity_id),
+        "lifecycle": int(subscription.lifecycle),
+        "starts_at": subscription.starts_at.isoformat(),
+        "ends_at": None if subscription.ends_at is None else subscription.ends_at.isoformat(),
+        "created_at": subscription.created_at.isoformat(),
+    }
+
+
+def test_application_repository_lifecycle() -> None:
+    application = Application(DomainId.generate(), "ati-client", "ATI Client", DomainId.generate())
+    uow = _uow()
+    repo_module.PostgresApplicationRepository(uow).add(application)
+    assert "mtmf.application_add" in uow.calls[0][0]
+
+    uow = _ScriptedUnitOfWork().set("application_get", [(_application_payload(application),)])
+    assert repo_module.PostgresApplicationRepository(uow).get(application.id) == application
+
+    uow = _ScriptedUnitOfWork().set(
+        "application_get_by_key", [(_application_payload(application),)]
+    )
+    assert repo_module.PostgresApplicationRepository(uow).get_by_key("ATI-Client") == application
+
+    uow = _ScriptedUnitOfWork()
+    repo_module.PostgresApplicationRepository(uow).save(application)
+    assert "mtmf.application_save" in uow.calls[0][0]
+
+    uow = _ScriptedUnitOfWork().set("application_add", [(False,)])
+    with pytest.raises(DuplicatePersistenceIdentityError):
+        repo_module.PostgresApplicationRepository(uow).add(application)
+
+    uow = _ScriptedUnitOfWork().set("application_save", [(False,)])
+    with pytest.raises(UnknownPersistenceIdentityError):
+        repo_module.PostgresApplicationRepository(uow).save(application)
+
+
+def test_application_registration_repository_lifecycle() -> None:
+    registration = ApplicationTenantRegistration(
+        DomainId.generate(),
+        DomainId.generate(),
+        DomainId.generate(),
+        DomainId.generate(),
+        _NOW,
+        RegistrationLifecycle.ACTIVE,
+    )
+    uow = _uow()
+    repo_module.PostgresApplicationTenantRegistrationRepository(uow).add(registration)
+    assert "mtmf.application_tenant_registration_add" in uow.calls[0][0]
+
+    payload = (_registration_payload(registration),)
+    uow = _ScriptedUnitOfWork().set("application_tenant_registration_get", [payload])
+    assert (
+        repo_module.PostgresApplicationTenantRegistrationRepository(uow).get(registration.id)
+        == registration
+    )
+
+    uow = _ScriptedUnitOfWork().set(
+        "application_tenant_registration_find_by_application_and_tenant", [payload]
+    )
+    assert repo_module.PostgresApplicationTenantRegistrationRepository(
+        uow
+    ).find_by_application_and_tenant(registration.application_id, registration.tenant_id) == (
+        registration,
+    )
+
+    uow = _ScriptedUnitOfWork().set("application_tenant_registration_find_by_tenant", [payload])
+    assert repo_module.PostgresApplicationTenantRegistrationRepository(uow).find_by_tenant(
+        registration.tenant_id
+    ) == (registration,)
+
+    uow = _uow()
+    repo_module.PostgresApplicationTenantRegistrationRepository(uow).save(registration)
+    assert "mtmf.application_tenant_registration_save" in uow.calls[0][0]
+
+    uow = _ScriptedUnitOfWork().set("application_tenant_registration_add", [(False,)])
+    with pytest.raises(DuplicatePersistenceIdentityError):
+        repo_module.PostgresApplicationTenantRegistrationRepository(uow).add(registration)
+
+    uow = _ScriptedUnitOfWork().set("application_tenant_registration_save", [(False,)])
+    with pytest.raises(UnknownPersistenceIdentityError):
+        repo_module.PostgresApplicationTenantRegistrationRepository(uow).save(registration)
+
+
+def test_tenant_application_subscription_repository_lifecycle() -> None:
+    subscription = TenantApplicationSubscription(
+        DomainId.generate(),
+        DomainId.generate(),
+        DomainId.generate(),
+        DomainId.generate(),
+        _NOW,
+        _NOW,
+        None,
+        SubscriptionLifecycle.ACTIVE,
+    )
+    uow = _uow()
+    repo_module.PostgresTenantApplicationSubscriptionRepository(uow).add(subscription)
+    assert "mtmf.tenant_application_subscription_add" in uow.calls[0][0]
+
+    payload = (_subscription_payload(subscription),)
+    uow = _ScriptedUnitOfWork().set("tenant_application_subscription_get", [payload])
+    assert (
+        repo_module.PostgresTenantApplicationSubscriptionRepository(uow).get(subscription.id)
+        == subscription
+    )
+
+    uow = _ScriptedUnitOfWork().set(
+        "tenant_application_subscription_find_by_application_and_tenant", [payload]
+    )
+    assert repo_module.PostgresTenantApplicationSubscriptionRepository(
+        uow
+    ).find_by_application_and_tenant(subscription.application_id, subscription.tenant_id) == (
+        subscription,
+    )
+
+    uow = _ScriptedUnitOfWork().set("tenant_application_subscription_find_by_tenant", [payload])
+    assert repo_module.PostgresTenantApplicationSubscriptionRepository(uow).find_by_tenant(
+        subscription.tenant_id
+    ) == (subscription,)
+
+    uow = _uow()
+    repo_module.PostgresTenantApplicationSubscriptionRepository(uow).save(subscription)
+    assert "mtmf.tenant_application_subscription_save" in uow.calls[0][0]
+
+    uow = _ScriptedUnitOfWork().set("tenant_application_subscription_add", [(False,)])
+    with pytest.raises(DuplicatePersistenceIdentityError):
+        repo_module.PostgresTenantApplicationSubscriptionRepository(uow).add(subscription)
+
+    uow = _ScriptedUnitOfWork().set("tenant_application_subscription_save", [(False,)])
+    with pytest.raises(UnknownPersistenceIdentityError):
+        repo_module.PostgresTenantApplicationSubscriptionRepository(uow).save(subscription)

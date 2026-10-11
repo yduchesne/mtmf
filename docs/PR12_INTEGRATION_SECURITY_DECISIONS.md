@@ -3,8 +3,11 @@
 > **STATUS: T1/T3/T4/T6 APPROVED BY HUMAN REVIEWER.** The security-critical
 > decisions required to freeze the PR 12 integration/authorization contract
 > are approved. Remaining items are either approved principles or downstream
-> specifics explicitly owned by PR 13/15. No runtime behavior is implemented
-> by PR 12; this register and the companion contract are documentation only.
+> specifics. PR 12 itself is documentation only. The `T5` subscription
+> lifecycle/state specifics subsequently owned by PR 13 are now implemented
+> under the approved `S1`–`S8` decisions in
+> [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md);
+> the HTTP authentication, batch, and client layers remain unimplemented.
 >
 > Companion contract: [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
 > Owner documentation: [SECURITY_MODEL.md](SECURITY_MODEL.md), [AUTHORIZATION.md](AUTHORIZATION.md).
@@ -124,7 +127,9 @@ maximum batch size are PR 15 decisions.
 ### T5 — Subscription eligibility and failure precedence
 
 **Status:** precedence `APPROVED PRINCIPLE` (P03, P04); lifecycle specifics
-owned by **PR 13**.
+owned by **PR 13** and now implemented as decisions `S1`–`S8` in
+[PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+The `T5` precedence ordering itself is unchanged.
 
 Approved precedence (fail-closed): (1) authenticate the service;
 (2) verify the acting user/Tenant/Organization context; (3) verify the

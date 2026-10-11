@@ -894,7 +894,58 @@ Privileged bootstrap/root recovery uses separately controlled installation autho
 
 ---
 
-## 25. Explicitly Unresolved Security Design
+## 25. Application/Tenant Eligibility Gate (PR 13)
+
+PR 13 implements the trusted internal prerequisite gate that the future HTTP
+integration boundary consumes. The approved decisions are recorded in
+[PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+
+The following are **two independent security facts**:
+
+1. an explicit `ApplicationTenantRegistration` permitting an Application to
+   operate for a Tenant (PR 12 decision `T6`);
+2. a currently eligible `TenantApplicationSubscription` for that Tenant
+   (PR 12 decision `T5`).
+
+Neither substitutes for the other and neither is authorization. A positive
+eligibility outcome requires **all** of an `ACTIVE` Application, an `ACTIVE`
+(non-deleted) Tenant, an `ACTIVE` registration for the exact
+`(application_id, tenant_id)` pair, and an `ACTIVE` in-window subscription for
+that exact pair. There is no ROOT, stewardship, TenantManagementGroup,
+management-Role, or ordinary-membership bypass, and an Organization does not
+independently subscribe in v0.1.
+
+The gate is fail-closed:
+
+- a missing, inactive, terminal, wrong-Application, wrong-Tenant, or
+  out-of-window fact is ineligible;
+- expiry is time-derived at `ends_at` and never waits for an asynchronous
+  status transition, so a delayed background job cannot leave a stale grant;
+- corrupt persisted state (for example more than one current registration or
+  subscription for a pair) is an integrity failure, never a silent eligible
+  result;
+- a database/infrastructure failure propagates as a persistence failure and
+  is never converted into an eligibility reason, an `ALLOW`, or an empty
+  (semantically denying) result that could be mistaken for a decision;
+- a committed revocation, suspension, or cancellation is effective for the
+  next evaluation; there is no cache, and no instantaneous-invalidation
+  promise is made for a decision already handed to a caller.
+
+The evaluator returns a typed eligibility result and a stable internal reason
+taxonomy. It never returns an `AuthorizationDecision`, never evaluates a
+Permission or Action, and never constructs a synthetic acting Identity.
+
+Application/registration/subscription mutation is operator/installation-
+privileged only in PR 13 (decisions `S5`/`S8`). The restricted `mtmf_runtime`
+login receives a read-only eligibility surface and no management mutation
+grant: possessing or calling any registry repository/function confers no
+domain authority, and an Application UUID or a caller-supplied identifier is
+never authentication. Trusted service authentication and credential-to-
+Application mapping remain PR 14.
+
+---
+
+## 26. Explicitly Unresolved Security Design
 
 The following security details have not yet been fully specified and MUST NOT be invented by an implementation:
 
@@ -909,7 +960,7 @@ Until these matters are explicitly defined, implementations MUST choose the more
 
 ---
 
-## 26. Constitutional Summary
+## 27. Constitutional Summary
 
 The MTMF security model rests on these non-negotiable principles:
 
@@ -941,7 +992,7 @@ The MTMF security model rests on these non-negotiable principles:
 
 ## Planned HTTP integration security boundary (PRs 12–20; NOT IMPLEMENTED)
 
-**Status:** Future architecture requirements; this section does **not** assert an implemented subscription, HTTP actor authentication, batch API, or client cache. Existing security invariants and implemented single-action semantics remain authoritative.
+**Status:** Future architecture requirements; this section does **not** assert implemented HTTP actor authentication, batch API, or client cache. PR 13 (Section 25) implements the internal Application/Tenant registration and subscription eligibility prerequisite; that gate is a prerequisite input, not an HTTP decision layer. Existing security invariants and implemented single-action semantics remain authoritative.
 
 For future HTTP integration, MTMF is the authoritative Policy Decision Point (PDP) and each consuming application is a Policy Enforcement Point (PEP). The HTTP service MUST authenticate the calling service (PR 14) and derive its registered Application identity from validated credentials; it MUST NOT trust a body-supplied Application identifier. It MUST separately verify end-user acting Identity and membership in the selected Tenant; a caller-supplied UUID alone MUST NOT establish actor authority. A Tenant's active Application subscription (PR 13) is a prerequisite for new ALLOW decisions, not a replacement for scoped Role/Permission checks.
 
