@@ -1,0 +1,152 @@
+[
+  {
+    "detail": {
+      "aud": [
+        "mtmf-service-api",
+        "account"
+      ],
+      "azp": "mtmf-evidence-service",
+      "client_id": "mtmf-evidence-service",
+      "has_sub": true,
+      "service_class": true,
+      "typ": "Bearer",
+      "user_class": false
+    },
+    "evidence": "genuine client-credentials token satisfies the service predicate only",
+    "id": "G0-T01",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "aud": [
+        "mtmf-user-api",
+        "mtmf-evidence-exchange",
+        "account"
+      ],
+      "azp": "mtmf-evidence-user",
+      "client_id": null,
+      "has_sub": true,
+      "service_class": false,
+      "typ": "Bearer",
+      "user_class": true
+    },
+    "evidence": "genuine auth-code+PKCE token satisfies the user predicate only",
+    "id": "G0-T02",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "aud": [
+        "mtmf-user-api",
+        "mtmf-service-api",
+        "account"
+      ],
+      "azp": "mtmf-evidence-user-cross",
+      "client_id": null,
+      "has_sub": true,
+      "service_class": false,
+      "typ": "Bearer",
+      "user_class": true
+    },
+    "evidence": "user token with the service audience is rejected by the service predicate",
+    "id": "G0-T03",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "aud": [
+        "mtmf-service-api",
+        "mtmf-user-api",
+        "account"
+      ],
+      "azp": "mtmf-evidence-service-cross",
+      "client_id": "mtmf-evidence-service-cross",
+      "has_sub": true,
+      "service_class": true,
+      "typ": "Bearer",
+      "user_class": false
+    },
+    "evidence": "service token with the user audience is rejected by the user predicate",
+    "id": "G0-T04",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "service_cross": {
+        "aud": [
+          "mtmf-service-api",
+          "mtmf-user-api",
+          "account"
+        ],
+        "azp": "mtmf-evidence-service-cross",
+        "client_id": "mtmf-evidence-service-cross",
+        "has_sub": true,
+        "service_class": true,
+        "typ": "Bearer",
+        "user_class": false
+      },
+      "user_cross": {
+        "aud": [
+          "mtmf-user-api",
+          "mtmf-service-api",
+          "account"
+        ],
+        "azp": "mtmf-evidence-user-cross",
+        "client_id": null,
+        "has_sub": true,
+        "service_class": false,
+        "typ": "Bearer",
+        "user_class": true
+      }
+    },
+    "evidence": "both-audience tokens do not satisfy the opposite class predicate",
+    "id": "G0-T05",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "aud": [
+        "mtmf-service-api",
+        "account"
+      ],
+      "azp": "mtmf-evidence-svc-noclaim",
+      "client_id": null,
+      "has_sub": true,
+      "service_class": false,
+      "typ": "Bearer",
+      "user_class": true
+    },
+    "evidence": "service token without the grant-derived client_id claim fails the service predicate",
+    "id": "G0-T06",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "id_typ": "ID",
+      "refresh_typ": "Refresh"
+    },
+    "evidence": "ID and refresh tokens satisfy neither class predicate",
+    "id": "G0-T07",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "cross_pairing_rejected": true,
+      "different_client_azp_differ": true,
+      "same_client_azp_equal": true
+    },
+    "evidence": "same-client azp observed equal; different-client pairing rejected",
+    "id": "G0-T08",
+    "status": "PASS"
+  },
+  {
+    "detail": {
+      "azp_overridden": true,
+      "client_id_injected": true,
+      "injected_user_token_passes_service_predicate": true
+    },
+    "evidence": "a realm protocol mapper can inject client_id and override azp; the class predicates are therefore configuration-dependent, not unconditionally safe",
+    "id": "G0-T09",
+    "status": "FAIL"
+  }
+]

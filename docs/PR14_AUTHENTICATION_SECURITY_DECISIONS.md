@@ -948,6 +948,30 @@ The human reviewer approved the narrow v0.1 T1 amendment recorded in `PR12_INTEG
 - Root authentication remains deferred and fail-closed. DC05/DC07 and all applicable non-root AUTH acceptance scenarios must be completed before declaring the feature accepted.
 - **Deployment gate:** no production rollout or production issuer trust may be enabled until its issuer-specific profile, configuration, key-management and security evidence receive separate human approval.
 
+### G0-A class-predicate reconciliation (evidence only, 2026-10-11)
+
+Gate G0-A tested whether the pinned Keycloak 26.8.0 development fixture
+provides a signed, issuer-backed predicate distinguishing client-credentials
+service tokens from interactive user tokens. Evidence:
+[PR14_G0_NONROOT_EVIDENCE_REPORT.md](PR14_G0_NONROOT_EVIDENCE_REPORT.md).
+
+- **G0-T01–T08, T10 PASS:** a candidate predicate (service = `typ=Bearer` +
+  `client_id` present and `client_id == azp`; user = `typ=Bearer` + `azp` +
+  `sub` and no `client_id`) classifies genuine tokens correctly and rejects
+  wrong-audience, both-audience, missing-`client_id`, ID/refresh, and
+  different-client cases; a clean recreate reproduces the results.
+- **G0-T09 FAIL:** a realm `oidc-hardcoded-claim-mapper` injects `client_id`
+  and overrides `azp` in a signed user token, after which the user token
+  passes the service predicate. The predicate is configuration-dependent,
+  not non-spoofable.
+- **Status:** `A14-02`/§7 class-predicate evidence is **BLOCKED for
+  unconditional acceptance**; `typ=Bearer` + audience is insufficient. The
+  reviewer must choose a disposition (mapper-profile lockdown + attestation,
+  distinct clients, or issuer introspection) before implementation.
+
+This note records evidence only. It does not approve any decision; the
+approval log below is unchanged and every entry remains PENDING.
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.

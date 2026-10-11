@@ -77,3 +77,25 @@ A14-08 is a **scope split**, not root authentication approval. PR 14 ordinary D1
 **Do not record these recommendations as approvals until the human reviewer explicitly confirms them.** Even after approval, coding must remain blocked pending an implementation-scope decision, production profile definition if production support is intended, and a testable service/user class predicate.
 
 **Outstanding product configuration choice:** Is the first implementation intended to support only the pinned local development Keycloak profile, or a separately configured production issuer from the outset? A production issuer cannot be safely specified from existing evidence alone.
+
+## 9. G0 decision checklist (2026-10-11)
+
+Evidence: [PR14_G0_NONROOT_EVIDENCE_REPORT.md](PR14_G0_NONROOT_EVIDENCE_REPORT.md).
+Gate G0-A found that the candidate service/user class predicate works in the
+default fixture but is **mapper-spoofable** (G0-T09), so `typ=Bearer` +
+audience is insufficient. The reviewer is asked to choose a disposition.
+
+| # | Decision | Recommended choice | Alternative |
+| --- | --- | --- | --- |
+| 1 | Service/user class predicate (G0-A) | **Lock + attest the issuer mapper profile and use the `client_id == azp` service predicate** (realm prohibits client-managed mappers and pins the mapper set) | Distinct clients per class, or issuer token introspection |
+| 2 | A14-01, A14-03, A14-04, A14-06, A14-09, A14-10 | Approve existing fail-closed contracts as written | Amend with specific constraints |
+| 3 | A14-05 / A14-07 / §8 (D1 under amended T1) | Approve constrained D1; reject cross-client, `act`, and consent claims | Revert to requiring RFC 8693 delegation |
+| 4 | A14-02 / §7 profiles | Approve the pinned Keycloak 26.8.0 **development** profile only | Require a named production profile first |
+| 5 | A14-08 | Confirm scope split; root fail-closed; AUTH-26/27 deferred | Reintroduce root into PR 14 (not recommended) |
+| 6 | §10 dependency | `pyjwt[crypto]>=2.13,<3`; RS256 only; `exp` zero leeway; `iat` required; `nbf` optional validated; bounded JWKS | Adjust constraints |
+| 7 | §10 ownership | `mtmf-service` transport/composition; `mtmf-core` provider-neutral verification (reconcile PR 12 §2 text) | Keep verification in `mtmf-service` |
+| 8 | Implementation scope | Development-first pinned Keycloak profile; production issuer a separate later profile | Production-first (cannot be specified from current evidence) |
+
+**No row is approved.** This checklist prepares the human decision; it does not
+record one. Until the reviewer records the decisions above, PR 14 production
+implementation remains stopped.

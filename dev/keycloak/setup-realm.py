@@ -58,6 +58,10 @@ class ClientSpec:
     token_exchange: bool = False
     client_audiences: tuple[str, ...] = ()
     access_token_lifespan: int | None = None
+    #: When True, remove the built-in ``service_account`` client scope so the
+    #: client's tokens omit the grant-derived ``client_id``/``clientHost``/
+    #: ``clientAddress`` claims (G0-T06 missing-class-evidence case).
+    strip_service_account_scope: bool = False
 
 
 CLIENTS = (
@@ -104,6 +108,26 @@ CLIENTS = (
         service_account=True,
         standard_flow=False,
         access_token_lifespan=1,
+    ),
+    ClientSpec(
+        client_id="mtmf-evidence-user-cross",
+        audiences=("mtmf-user-api", "mtmf-service-api"),
+        service_account=False,
+        standard_flow=True,
+        redirect_uris=(DEFAULT_REDIRECT,),
+    ),
+    ClientSpec(
+        client_id="mtmf-evidence-service-cross",
+        audiences=("mtmf-service-api", "mtmf-user-api"),
+        service_account=True,
+        standard_flow=False,
+    ),
+    ClientSpec(
+        client_id="mtmf-evidence-svc-noclaim",
+        audiences=("mtmf-service-api",),
+        service_account=True,
+        standard_flow=False,
+        strip_service_account_scope=True,
     ),
 )
 
@@ -259,7 +283,24 @@ def ensure_client(api: AdminApi, realm: str, spec: ClientSpec) -> dict[str, Any]
         client_id_uuid = created[0]["id"]
 
     ensure_audience_mapper(api, realm, client_id_uuid, spec)
+    if spec.strip_service_account_scope:
+        strip_client_scope(api, realm, client_id_uuid, "service_account")
     return api.get(f"/admin/realms/{realm}/clients/{client_id_uuid}")
+
+
+def strip_client_scope(api: AdminApi, realm: str, client_uuid: str, scope_name: str) -> None:
+    """Remove one client scope assignment (default or optional) from a client.
+
+    Used only to reproduce the G0-T06 missing-class-evidence case.
+    """
+    for kind in ("default-client-scopes", "optional-client-scopes"):
+        scopes = api.get(f"/admin/realms/{realm}/clients/{client_uuid}/{kind}") or []
+        for scope in scopes:
+            if scope.get("name") == scope_name:
+                api.request(
+                    "DELETE",
+                    f"/admin/realms/{realm}/clients/{client_uuid}/{kind}/{scope['id']}",
+                )
 
 
 def ensure_audience_mapper(api: AdminApi, realm: str, client_uuid: str, spec: ClientSpec) -> None:

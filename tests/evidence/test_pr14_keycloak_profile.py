@@ -146,6 +146,23 @@ def test_client_binding_ok_fails_closed_without_azp():
     assert evidence.client_binding_ok({"azp": ""}) is False
 
 
+def test_service_and_user_class_predicates_are_disjoint():
+    service = {"typ": "Bearer", "azp": "client", "client_id": "client", "sub": "sa"}
+    user = {"typ": "Bearer", "azp": "client", "sub": "human"}
+    assert evidence.service_class_ok(service) is True
+    assert evidence.user_class_ok(service) is False
+    assert evidence.user_class_ok(user) is True
+    assert evidence.service_class_ok(user) is False
+    # Mismatched client_id/azp is not a service class.
+    assert (
+        evidence.service_class_ok({"typ": "Bearer", "azp": "a", "client_id": "b", "sub": "s"})
+        is False
+    )
+    # ID/refresh classes match neither predicate.
+    assert evidence.service_class_ok({"typ": "ID", "azp": "a", "sub": "s"}) is False
+    assert evidence.user_class_ok({"typ": "Refresh", "azp": "a", "sub": "s"}) is False
+
+
 @pytest.mark.skipif(
     os.environ.get("MTMF_PR14_KC_LIVE_EVIDENCE") != "1",
     reason="live Keycloak evidence is opt-in (set MTMF_PR14_KC_LIVE_EVIDENCE=1)",

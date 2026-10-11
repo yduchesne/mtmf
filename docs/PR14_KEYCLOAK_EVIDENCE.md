@@ -29,8 +29,9 @@ is absent, the contract stays BLOCKED.
 | TLS | operator-generated self-signed cert under `/tmp/mtmf-pr14-kc-tls` (not committed) |
 | Issuer URL | `https://127.0.0.1:28443/realms/mtmf-pr14-dev` |
 | Fixture commit | branch `dev/service-auth` (see §9 for exact SHAs) |
-| Sanitized artifact | `dev/keycloak/evidence/pr14-keycloak-evidence.json`, SHA-256 `7888cc7357c983ffdd4d9ddf4185ce7c59c3e2717971d9420b88e709d40b7445` |
-| Config manifest | `dev/keycloak/evidence/pr14-keycloak-config-manifest.json`, SHA-256 `4b21135f51979b09e5ba893acb73feba47df11329fd9390bfcc575f0ad0c11d6` |
+| Sanitized artifact | `dev/keycloak/evidence/pr14-keycloak-evidence.json`, SHA-256 `1ec148e41718474ffb94f0674a419efa8368622135e3ea7f09392109bc84f454` |
+| Config manifest | `dev/keycloak/evidence/pr14-keycloak-config-manifest.json`, SHA-256 `476ecdf7f02f4276145fb71b96035100d26fd11e8e6c46aef30d7122d687276e` |
+| G0 class-predicate artifact | `dev/keycloak/evidence/pr14-g0-token-class-evidence.json`, SHA-256 `2b0807df2fa0a104743e8e52dd6de939abc3e1c0a9737293d2b3ec393737a7f6` |
 
 The fixture is development-only. Keycloak is not a mandated production issuer;
 the PR 14 configuration remains provider-neutral. No raw token, refresh token,
@@ -247,6 +248,30 @@ issuer-backed evidence.
 Approve, reject, or amend this **specific** Keycloak 26.8.0 development D1
 profile (and the production issuer version/config that will replace it).
 This document records no approval; the register approval log is unchanged.
+
+## 6B. G0-A token-class follow-up (BLOCKED)
+
+Gate G0-A asked whether the pinned fixture provides a signed,
+issuer-backed predicate distinguishing client-credentials service tokens
+from interactive user tokens. Full detail:
+[PR14_G0_NONROOT_EVIDENCE_REPORT.md](PR14_G0_NONROOT_EVIDENCE_REPORT.md).
+
+- Candidate predicate: service = `typ=Bearer` + `client_id` present and
+  `client_id == azp`; user = `typ=Bearer` + `azp` + `sub` and no `client_id`.
+  The `client_id` claim is produced by the built-in `service_account`
+  client-scope `oidc-usersessionmodel-note-mapper` from the session note
+  set only by `ClientCredentialsGrantType`.
+- G0-T01–T08 and T10 PASS: genuine tokens classify correctly; wrong-audience,
+  both-audience, missing-`client_id`, ID/refresh, and different-client cases
+  fail closed; a clean recreate reproduces the results.
+- **G0-T09 FAIL:** a realm `oidc-hardcoded-claim-mapper` injects `client_id`
+  and overrides `azp` in a signed user token, after which the user token
+  passes the service predicate. The predicate is therefore
+  **configuration-dependent, not non-spoofable**.
+- **Verdict: G0-A BLOCKED for unconditional acceptance.** `typ=Bearer` +
+  audience is insufficient. Selecting a defensible predicate (issuer
+  mapper-profile lockdown + attestation, distinct clients, or issuer
+  introspection) is a reviewer decision in the G0 report §2.5/§7.
 
 ## 7. Root assurance disposition
 

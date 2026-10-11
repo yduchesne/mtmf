@@ -131,6 +131,37 @@ def client_binding_ok(claims: dict[str, Any]) -> bool:
     return bool(claims.get("azp"))
 
 
+def service_class_ok(claims: dict[str, Any]) -> bool:
+    """Proposed candidate service-account class predicate (harness only).
+
+    A service-account access token is an access token (``typ=Bearer``) that
+    carries the grant-derived built-in ``client_id`` claim and whose
+    ``client_id`` equals the signed ``azp``. This predicate is evaluated on
+    independently signature-verified claims only. It is a candidate, not
+    approved MTMF trust logic.
+    """
+    if claims.get("typ") != "Bearer":
+        return False
+    client_id = claims.get("client_id")
+    azp = claims.get("azp")
+    return bool(client_id) and bool(azp) and client_id == azp
+
+
+def user_class_ok(claims: dict[str, Any]) -> bool:
+    """Proposed candidate interactive-user class predicate (harness only).
+
+    An interactive-user access token is an access token (``typ=Bearer``)
+    with a signed ``azp`` and ``sub`` and **without** the grant-derived
+    ``client_id`` claim. Not approved MTMF trust logic.
+    """
+    return (
+        claims.get("typ") == "Bearer"
+        and bool(claims.get("azp"))
+        and "client_id" not in claims
+        and bool(claims.get("sub"))
+    )
+
+
 class IssuerError(RuntimeError):
     """A remote issuer operation failed."""
 

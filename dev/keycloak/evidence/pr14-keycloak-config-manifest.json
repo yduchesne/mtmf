@@ -8,7 +8,7 @@
       "service_account": true,
       "standard_flow": false,
       "token_exchange": false,
-      "uuid": "b9f10551-10bc-4090-b8d9-8c4f1c0f407a"
+      "uuid": "fe64db03-da86-4312-b7d1-0988c3b2d7cf"
     },
     {
       "audiences": [
@@ -18,7 +18,7 @@
       "service_account": false,
       "standard_flow": true,
       "token_exchange": false,
-      "uuid": "b6493b43-c4ad-406c-9642-05b5f49a561e"
+      "uuid": "b6b5f1da-c90b-41b8-be7c-1e1df6d00de7"
     },
     {
       "audiences": [
@@ -28,7 +28,7 @@
       "service_account": true,
       "standard_flow": true,
       "token_exchange": false,
-      "uuid": "ceae5c09-f002-4ada-ba02-0cee9fe73f45"
+      "uuid": "69f4b20e-0ca2-47d3-bb7f-e250d58a06da"
     },
     {
       "audiences": [
@@ -38,7 +38,7 @@
       "service_account": false,
       "standard_flow": true,
       "token_exchange": false,
-      "uuid": "4fba7e6f-1d57-4400-beed-6a0a62108212"
+      "uuid": "808796b6-58a2-4f79-895a-d46dad621323"
     },
     {
       "audiences": [
@@ -48,7 +48,7 @@
       "service_account": true,
       "standard_flow": false,
       "token_exchange": true,
-      "uuid": "33ddc1e2-e311-4dbc-9384-8992707d9c0f"
+      "uuid": "c4e905f9-3433-409b-a346-cbecec82c6f7"
     },
     {
       "audiences": [
@@ -58,7 +58,39 @@
       "service_account": true,
       "standard_flow": false,
       "token_exchange": false,
-      "uuid": "92af2a28-cc1b-437d-9e7f-96aeb4b71b56"
+      "uuid": "6c0280a7-f66e-4eac-8a12-0bb9d6378d0a"
+    },
+    {
+      "audiences": [
+        "mtmf-user-api",
+        "mtmf-service-api"
+      ],
+      "client_id": "mtmf-evidence-user-cross",
+      "service_account": false,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "3eba3be2-10b7-425a-9208-33b7f1ef5238"
+    },
+    {
+      "audiences": [
+        "mtmf-service-api",
+        "mtmf-user-api"
+      ],
+      "client_id": "mtmf-evidence-service-cross",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "cac39c22-9d36-4032-88e1-bee76ee5d3ff"
+    },
+    {
+      "audiences": [
+        "mtmf-service-api"
+      ],
+      "client_id": "mtmf-evidence-svc-noclaim",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "8340178d-f09a-46ac-a29e-041f2065ac2d"
     }
   ],
   "issuer": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
