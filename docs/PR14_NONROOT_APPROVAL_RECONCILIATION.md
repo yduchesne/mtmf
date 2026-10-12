@@ -99,3 +99,45 @@ audience is insufficient. The reviewer is asked to choose a disposition.
 **No row is approved.** This checklist prepares the human decision; it does not
 record one. Until the reviewer records the decisions above, PR 14 production
 implementation remains stopped.
+
+
+## 10. Post-G0-A consolidated final approval package (2026-10-11)
+
+**Decision preparation, not self-approval.** This section supersedes stale status summaries in §§1–9 only where subsequent recorded human decisions explicitly changed them. The original evidence and negative tests remain intact.
+
+### 10.1 Already approved (do not re-ask)
+
+- PR 12 T1 narrowly amended for constrained same-client D1 (PR 14 §14D). D1 is not consent, actor delegation, or RFC 8693 token exchange.
+- Pinned Keycloak 26.8.0 **development-first** scope (§14B/§14E); production issuer approval deferred.
+- Root authentication split (§14C), root-only AUTH-26/27 deferred, all ordinary D1 root access fail-closed.
+- G0-A option 1: independently trusted mapper baseline and attestation (§14F).
+- **Conditional A14-02/§7 development design contract** (§14G): fresh, zero-positive-cache attestation **for every authentication operation**, then signed service token `typ=Bearer`, expected service audience, `client_id == azp`; signed user token `typ=Bearer`, expected user audience, nonempty `azp` and `sub`, **no `client_id`**. Independently verify both JWTs and same-client pairing. Failure to attest, drift, ambiguity or wrong token class rejects. Not yet implemented or accepted.
+
+### 10.2 Remaining approvals requested as one coherent non-root package
+
+| Decision | Proposed approval contract | Status |
+| --- | --- | --- |
+| A14-01 | Explicit trusted issuer/JWKS, asymmetric signed access tokens, exact `iss`, class-specific `aud`, strict temporal and algorithm validation, fail-closed | **PENDING** |
+| A14-03 | Immutable `(issuer,client_id)` credential key maps to exactly one Application; no ambiguous or historical reassignment | **PENDING** |
+| A14-04 | Immutable `(issuer,sub)` maps to exactly one ordinary `FEDERATED` Identity; operator-only binding; no JIT/email matching | **PENDING** |
+| A14-05 / A14-07 / §8 | Constrained D1 independently verified same-client tokens under amended T1; no cross-client delegation or service-minted assertions | **PENDING final register approval** |
+| A14-06 | Active Identity/Principal/ordinary Tenant, explicit memberships, active Application registration and independent subscription eligibility; never an implicit ALLOW | **PENDING** |
+| A14-09 | Typed internal authentication interface only; no public route, token issuance, token leakage or account enumeration | **PENDING** |
+| A14-10 | Additive migration `0011` only if needed after fresh-main reconciliation; operator-only mutations, narrow reviewed runtime stored-function read grants, real PostgreSQL privilege tests | **PENDING** |
+| §10 JWT/JWKS | Locked `pyjwt[crypto]>=2.13,<3`, pinned dev RS256, `exp` zero leeway, required `iat`, validated optional `nbf`, strict duplicate/size/URL/redirect/timeout/TTL/key-rotation checks | **PENDING** |
+| §10 ownership | `mtmf-service` owns HTTP credential extraction, issuer/JWKS transport, attestation/configuration and deployment composition; `mtmf-core` owns provider-neutral immutable verified claims, validation policy, Identity/Application resolution and actor-context composition through existing SPI/UoW; no duplicate authority | **PENDING explicit PR12 §2 reconciliation** |
+
+**Ownership reconciliation:** PR 12's HTTP integration §2 describes the end-to-end service-authentication boundary, not a mandatory Python package location for every verification operation. The split above keeps external trust transport/configuration in `mtmf-service` and reusable domain verification/composition in `mtmf-core`. If source text prescribes a conflicting concrete package, amend that source after human approval; do not silently reinterpret it during coding.
+
+### 10.3 Attestation implementation obligations
+
+- Zero **positive** cache lifetime for the development issuer: fresh live Admin REST attestation per authentication operation, before any acceptance; negative cache may fail closed.
+- Independent, reviewed baseline; no dynamic trust-on-first-use, no automatic baseline update from Keycloak. A committed baseline alone does not prevent a compromised deployment from replacing both code and manifest; deployment integrity is an explicit assumption.
+- Define an atomic operation boundary for checking attestation and both JWTs. Record the remaining time-of-check/time-of-use race, potential Admin REST latency/availability and privileged configuration mutation; never describe the solution as unconditional grant-type proof.
+- No production issuer or production attestation TTL is approved. No root authentication.
+- G0-T09 remains **FAIL (vulnerability demonstrated)**; R06 is the positive detection control. R12 separate-run evidence must be reconciled against its matrix `NOT EXECUTED` record before claiming matrix PASS.
+- DC05 (signed missing `azp`) and DC07 (real PostgreSQL binding) remain **NOT EXECUTED**; both are mandatory later acceptance, as are non-root AUTH-01–25 and AUTH-28–36.
+
+### 10.4 Approval boundary
+
+The reviewer must explicitly approve or amend **all rows in §10.2**, including the §10 ownership reconciliation, before authorizing implementation. A general instruction to prepare this package is not an approval of those rows. After approval, update the normative PR14 decision register and any conflicting PR12 integration text, then issue a separate explicit implementation authorization. Until then, **production authentication code, schema, migration, API and runtime grant changes remain STOPPED**.
