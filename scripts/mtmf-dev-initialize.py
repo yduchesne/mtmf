@@ -70,10 +70,14 @@ from mtmf_service.development_bootstrap import (
     TenantFixture,
     UserFixture,
 )
+from mtmf_service.development_user import DevUserConfig, KeycloakDevUserProvisioner
 from mtmf_service.settings import DeploymentMode, ServiceSettings
 
 #: Stable, non-secret fixture namespace for deterministic UUIDv5 identities.
 _FIXTURE_NAMESPACE = uuid.UUID("6f2c1f0e-6f4f-4b64-9b5e-2f6d1f2a4c17")
+
+#: Upper bound for any single Keycloak Admin REST response body.
+_MAX_RESPONSE_BYTES = 1024 * 1024
 
 TENANT_ADMIN_ROLE_URN = "urn:mtmf:iam:roles:system:tenant-administrator"
 
@@ -417,7 +421,10 @@ class KeycloakCredentialProvisioner:
             f"{self.base_url}/realms/master/protocol/openid-connect/token", data=data
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            return json.loads(response.read())["access_token"]
+            payload = response.read(_MAX_RESPONSE_BYTES + 1)
+        if len(payload) > _MAX_RESPONSE_BYTES:
+            raise BootstrapError("the Keycloak token response exceeded the bounded size")
+        return json.loads(payload)["access_token"]
 
     def _request(self, method: str, path: str, body: Any | None = None) -> Any:
         headers = {"Authorization": f"Bearer {self._admin_token()}"}
@@ -429,8 +436,14 @@ class KeycloakCredentialProvisioner:
             f"{self.base_url}{path}", data=data, method=method, headers=headers
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            payload = response.read()
+            payload = response.read(_MAX_RESPONSE_BYTES + 1)
+        if len(payload) > _MAX_RESPONSE_BYTES:
+            raise BootstrapError("the Keycloak response exceeded the bounded size")
         return json.loads(payload) if payload else None
+
+    def request(self, method: str, path: str, body: Any | None = None) -> Any:
+        """Public Admin REST transport used by the development user provisioner."""
+        return self._request(method, path, body)
 
     def _approved_policy(self) -> ExpectedClientPolicy:
         path = os.environ.get(
@@ -500,12 +513,32 @@ class KeycloakCredentialProvisioner:
             handle.write(secret)
         os.chmod(target, 0o600)
 
+    def preflight_issuer(self, expected_issuer: str) -> None:
+        """Validate the live issuer discovery before any user provisioning."""
+        if not expected_issuer:
+            raise BootstrapError("the configured issuer trust anchor is empty")
+        try:
+            discovery = self._request(
+                "GET", f"/realms/{self.realm}/.well-known/openid-configuration"
+            )
+            if not isinstance(discovery, dict) or discovery.get("issuer") != expected_issuer:
+                raise BootstrapError("the live issuer does not match the configured trust anchor")
+            self._request("GET", f"/realms/{self.realm}/protocol/openid-connect/certs")
+        except BootstrapError:
+            raise
+        except urllib.error.HTTPError as exc:
+            raise BootstrapError(
+                f"the development issuer preflight failed with HTTP {exc.code}"
+            ) from None
+        except urllib.error.URLError, OSError, ValueError:
+            raise BootstrapError(
+                "the development issuer preflight could not be completed; verify the issuer "
+                "trust anchor, credential, and network reachability"
+            ) from None
+
     def verify_issuer(self, fixture: BootstrapFixture) -> None:
         """Freshly attest the realm projection and every approved client."""
-        discovery = self._request("GET", f"/realms/{self.realm}/.well-known/openid-configuration")
-        if discovery.get("issuer") != fixture.issuer:
-            raise BootstrapError("the live issuer does not match the configured trust anchor")
-        self._request("GET", f"/realms/{self.realm}/protocol/openid-connect/certs")
+        self.preflight_issuer(fixture.issuer)
         manifest_path = os.environ.get(
             "MTMF_AUTH_EXPECTED_MANIFEST", "dev/keycloak/expected-realm-security.json"
         )
@@ -535,8 +568,13 @@ class _AdminReadAdapter:
         return self._provisioner._request("GET", path)
 
 
-def _dev_fixture() -> BootstrapFixture:
-    """Build the generic, application-neutral development fixture."""
+def _dev_fixture(subject: str) -> BootstrapFixture:
+    """Build the generic, application-neutral development fixture.
+
+    The acting-user ``subject`` must be the authoritative Keycloak user ID
+    already verified by :class:`KeycloakDevUserProvisioner`; there is no
+    fabricated fallback.
+    """
     applications = tuple(
         ApplicationFixture(key.strip(), key.strip())
         for key in (os.environ.get("MTMF_DEV_APPLICATION_KEYS", "sample-app") or "").split(",")
@@ -550,7 +588,7 @@ def _dev_fixture() -> BootstrapFixture:
             identity_name="Development Tenant Steward Identity",
         ),
         user=UserFixture(
-            subject=os.environ.get("MTMF_DEV_USER_SUBJECT", "mtmf-dev-user"),
+            subject=subject,
             principal_name="Development User Principal",
             identity_name="Development User Identity",
         ),
@@ -588,9 +626,12 @@ def main(argv: list[str] | None = None) -> int:
         admin_password=os.environ.get("MTMF_AUTH_ADMIN_PASSWORD", ""),
     )
     try:
+        config = DevUserConfig.from_env()
+        credentials.preflight_issuer(os.environ.get("MTMF_AUTH_ISSUER", "").rstrip("/"))
+        subject = KeycloakDevUserProvisioner(credentials, credentials.realm).ensure_user(config)
         DevelopmentBootstrap(
             mode=settings.deployment_mode,
-            fixture=_dev_fixture(),
+            fixture=_dev_fixture(subject),
             provisioning=provisioner,
             credentials=credentials,
             lock=provisioner,

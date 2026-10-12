@@ -74,7 +74,25 @@ services:
       MTMF_PR14_KC_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
       MTMF_PR14_KC_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD:?set admin password}
       MTMF_DEV_APPLICATION_KEYS: ${MTMF_DEV_APPLICATION_KEYS:-sample-app}
-      MTMF_DEV_USER_SUBJECT: ${MTMF_DEV_USER_SUBJECT:-mtmf-dev-user}
+      MTMF_DEV_TENANT_KEY: ${MTMF_DEV_TENANT_KEY:-dev}
+      MTMF_DEV_TENANT_NAME: ${MTMF_DEV_TENANT_NAME:-Development Tenant}
+      # PR 17-B development user create-or-verify. The username is required
+      # and creation is opt-in (default false). The password file is a
+      # read-only container path backed by the restricted host secret mount
+      # below; no plaintext password is ever placed in this file or `.env`.
+      MTMF_DEV_USER_USERNAME: ${MTMF_DEV_USER_USERNAME:?set development username}
+      MTMF_DEV_USER_EMAIL: ${MTMF_DEV_USER_EMAIL:-}
+      MTMF_DEV_USER_CREATE: ${MTMF_DEV_USER_CREATE:-false}
+      MTMF_DEV_USER_PASSWORD_FILE: ${MTMF_DEV_USER_PASSWORD_FILE:-/run/mtmf-secrets/dev-user-password}
+      # Optional assertion only: when set it must equal the actual Keycloak
+      # user ID. It is never a fabricated identity source.
+      MTMF_DEV_USER_SUBJECT: ${MTMF_DEV_USER_SUBJECT:-}
+    volumes:
+      # Read-only restricted mount of the MTMF-owned secret directory (0700
+      # host directory, 0600 secret files). This never exposes another
+      # application's resources; the initializer validates the password
+      # file's type, ownership and mode before reading it.
+      - ${MTMF_DEV_SECRET_DIR:-/tmp/mtmf-dev-secrets}:/run/mtmf-secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
