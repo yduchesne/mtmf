@@ -27,7 +27,7 @@ not used.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from urllib.parse import quote, urlparse
 
@@ -39,6 +39,21 @@ ENV_PORT = "MTMF_POSTGRES_PORT"
 ENV_DATABASE = "MTMF_POSTGRES_DB"
 ENV_USER = "MTMF_POSTGRES_USER"
 ENV_PASSWORD = "MTMF_POSTGRES_PASSWORD"
+
+#: Restricted-runtime session timeout controls. They are only meaningful for
+#: the application (runtime) identity and are applied to every runtime
+#: connection through the libpq ``options`` parameter, so they survive
+#: connection reuse rather than being scoped to a single transaction.
+ENV_RUNTIME_STATEMENT_TIMEOUT_MS = "MTMF_RUNTIME_STATEMENT_TIMEOUT_MS"
+ENV_RUNTIME_LOCK_TIMEOUT_MS = "MTMF_RUNTIME_LOCK_TIMEOUT_MS"
+
+#: Conservative development defaults proposed by PR 17 Amendment #2.
+DEFAULT_RUNTIME_STATEMENT_TIMEOUT_MS = 10_000
+DEFAULT_RUNTIME_LOCK_TIMEOUT_MS = 3_000
+
+#: Hard upper bound for a runtime session timeout (10 minutes). A caller may
+#: not configure a value large enough to defeat the service deadline.
+MAX_RUNTIME_TIMEOUT_MS = 600_000
 
 _ADMIN_PREFIX = "MTMF_"
 _MIGRATOR_PREFIX = "MTMF_MIGRATOR_"
@@ -122,6 +137,39 @@ def _validate_port(port: int) -> None:
         raise PostgresConfigError(f"MTMF PostgreSQL port must be in 1..65535, got {port}")
 
 
+def _optional_timeout_ms(name: str, default: int) -> int:
+    """Read a positive, bounded millisecond timeout from the environment."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise PostgresConfigError(f"{name} must be an integer number of milliseconds") from exc
+    if value < 1 or value > MAX_RUNTIME_TIMEOUT_MS:
+        raise PostgresConfigError(
+            f"{name} must be in 1..{MAX_RUNTIME_TIMEOUT_MS} milliseconds, got {value}"
+        )
+    return value
+
+
+def _runtime_timeouts(role: PostgresRole) -> tuple[int | None, int | None]:
+    """Return ``(statement_timeout_ms, lock_timeout_ms)`` for ``role``.
+
+    Administrator and migrator identities never receive these timeouts; the
+    restricted application identity always receives the configured values
+    (defaulting to the conservative development values).
+    """
+    if role is not PostgresRole.RUNTIME:
+        return (None, None)
+    return (
+        _optional_timeout_ms(
+            ENV_RUNTIME_STATEMENT_TIMEOUT_MS, DEFAULT_RUNTIME_STATEMENT_TIMEOUT_MS
+        ),
+        _optional_timeout_ms(ENV_RUNTIME_LOCK_TIMEOUT_MS, DEFAULT_RUNTIME_LOCK_TIMEOUT_MS),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class PostgresConfig:
     """Validated, explicit MTMF PostgreSQL connection parameters.
@@ -136,6 +184,34 @@ class PostgresConfig:
     user: str
     password: str
     role: PostgresRole = PostgresRole.ADMIN
+    #: Runtime-only per-statement timeout in milliseconds (``None`` = unset).
+    statement_timeout_ms: int | None = None
+    #: Runtime-only lock-acquisition timeout in milliseconds (``None`` = unset).
+    lock_timeout_ms: int | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("statement_timeout_ms", self.statement_timeout_ms),
+            ("lock_timeout_ms", self.lock_timeout_ms),
+        ):
+            if value is None:
+                continue
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise PostgresConfigError(
+                    f"{name} must be a positive integer number of milliseconds"
+                )
+            if value < 1 or value > MAX_RUNTIME_TIMEOUT_MS:
+                raise PostgresConfigError(
+                    f"{name} must be in 1..{MAX_RUNTIME_TIMEOUT_MS} milliseconds, got {value}"
+                )
+        if (
+            self.lock_timeout_ms is not None
+            and self.statement_timeout_ms is not None
+            and self.lock_timeout_ms >= self.statement_timeout_ms
+        ):
+            raise PostgresConfigError(
+                "lock_timeout_ms must be strictly shorter than statement_timeout_ms"
+            )
 
     @classmethod
     def from_env(cls, role: PostgresRole = PostgresRole.ADMIN) -> PostgresConfig:
@@ -154,8 +230,14 @@ class PostgresConfig:
                 f"MTMF PostgreSQL {role.value} configuration is ambiguous: {url_name} and "
                 f"{host_name}/* component variables are both set; choose exactly one source"
             )
+        statement_timeout_ms, lock_timeout_ms = _runtime_timeouts(role)
         if url_value:
-            return _parse_url(url_value, role)
+            base = _parse_url(url_value, role)
+            return replace(
+                base,
+                statement_timeout_ms=statement_timeout_ms,
+                lock_timeout_ms=lock_timeout_ms,
+            )
         raw_port = os.environ.get(port_name, "").strip() or str(DEFAULT_PORT)
         try:
             port = int(raw_port)
@@ -169,17 +251,44 @@ class PostgresConfig:
             user=_require_env(user_name),
             password=_require_env(password_name),
             role=role,
+            statement_timeout_ms=statement_timeout_ms,
+            lock_timeout_ms=lock_timeout_ms,
         )
+
+    @property
+    def session_options(self) -> str | None:
+        """The libpq ``options`` value applying the configured session timeouts.
+
+        Returns ``None`` when no timeout is configured. The value is applied
+        through the connection DSN so every runtime connection inherits it
+        and connection reuse cannot silently drop it.
+        """
+        settings: list[str] = []
+        if self.statement_timeout_ms is not None:
+            settings.append(f"-c statement_timeout={self.statement_timeout_ms}")
+        if self.lock_timeout_ms is not None:
+            settings.append(f"-c lock_timeout={self.lock_timeout_ms}")
+        return " ".join(settings) if settings else None
 
     @property
     def psycopg_dsn(self) -> str:
         """A psycopg connection DSN for this configuration."""
+        options = self.session_options
+        if options is None:
+            return conninfo.make_conninfo(
+                host=self.host,
+                port=self.port,
+                dbname=self.database,
+                user=self.user,
+                password=self.password,
+            )
         return conninfo.make_conninfo(
             host=self.host,
             port=self.port,
             dbname=self.database,
             user=self.user,
             password=self.password,
+            options=options,
         )
 
     @property

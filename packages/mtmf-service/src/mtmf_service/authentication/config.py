@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
 
 __all__ = ["AuthenticationConfigError", "IssuerConfig"]
 
@@ -24,6 +25,26 @@ def _required(name: str) -> str:
     if not value:
         raise AuthenticationConfigError(f"required configuration {name} is not set")
     return value
+
+
+def _secret(name: str) -> str:
+    """Read a secret from ``NAME`` or, preferably, ``NAME_FILE``.
+
+    The ``_FILE`` form supports Podman-secret / mounted-file delivery so the
+    value never appears in process arguments.
+    """
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    path = os.environ.get(f"{name}_FILE", "").strip()
+    if path:
+        try:
+            secret = Path(path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise AuthenticationConfigError(f"{name}_FILE is unreadable") from exc
+        if secret:
+            return secret
+    raise AuthenticationConfigError(f"required secret {name} or {name}_FILE is not set")
 
 
 def _is_loopback(url: str) -> bool:
@@ -42,8 +63,14 @@ class IssuerConfig:
     expected_manifest_path: str
     admin_base_url: str
     admin_realm: str
-    admin_username: str
-    admin_password: str
+    #: Dedicated least-privilege attestation reader client. The runtime never
+    #: receives a human/inventory administrator password; the reader uses a
+    #: non-interactive client-credentials grant with read-only realm roles.
+    attestation_client_id: str
+    attestation_client_secret: str
+    #: Independently approved expected-client policy. Empty means derive
+    #: ``expected-client-policy.json`` beside the manifest path.
+    expected_client_policy_path: str = ""
     algorithm: str = "RS256"
     transport_timeout_seconds: float = 5.0
     max_token_bytes: int = 8192
@@ -58,6 +85,18 @@ class IssuerConfig:
     allow_shared_audience: bool = False
 
     def __post_init__(self) -> None:
+        if not self.attestation_client_id or not self.attestation_client_secret:
+            raise AuthenticationConfigError(
+                "the dedicated attestation reader client credential is required"
+            )
+        if not self.expected_client_policy_path:
+            # Deterministic default beside the reviewed manifest; never derived
+            # from live issuer state.
+            object.__setattr__(
+                self,
+                "expected_client_policy_path",
+                str(Path(self.expected_manifest_path).with_name("expected-client-policy.json")),
+            )
         if self.algorithm != "RS256":
             raise AuthenticationConfigError("only the reviewed RS256 algorithm is supported")
         if self.service_audience == self.user_audience and not self.allow_shared_audience:
@@ -88,14 +127,20 @@ class IssuerConfig:
             user_audience=_required("MTMF_AUTH_USER_AUDIENCE"),
             jwks_uri=_required("MTMF_AUTH_JWKS_URI"),
             expected_manifest_path=_required("MTMF_AUTH_EXPECTED_MANIFEST"),
+            expected_client_policy_path=os.environ.get(
+                "MTMF_AUTH_EXPECTED_CLIENT_POLICY", ""
+            ).strip(),
             admin_base_url=_required("MTMF_AUTH_ADMIN_BASE").rstrip("/"),
             admin_realm=realm,
-            admin_username=_required("MTMF_AUTH_ADMIN_USERNAME"),
-            admin_password=_required("MTMF_AUTH_ADMIN_PASSWORD"),
+            attestation_client_id=_required("MTMF_AUTH_ATTESTATION_CLIENT_ID"),
+            attestation_client_secret=_secret("MTMF_AUTH_ATTESTATION_CLIENT_SECRET"),
             transport_timeout_seconds=float(
                 os.environ.get("MTMF_AUTH_TIMEOUT_SECONDS", "5") or "5"
             ),
             jwks_cache_seconds=float(
                 os.environ.get("MTMF_AUTH_JWKS_CACHE_SECONDS", "300") or "300"
             ),
+            # Development-only, approved decision §14J. Default stays fail-closed
+            # (distinct audiences required) unless explicitly enabled.
+            allow_shared_audience=os.environ.get("MTMF_AUTH_ALLOW_SHARED_AUDIENCE", "") == "1",
         )

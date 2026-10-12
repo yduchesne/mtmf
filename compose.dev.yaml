@@ -1,0 +1,132 @@
+# MTMF-owned local development override (PR 17).
+#
+# DEVELOPMENT ONLY. Never used for production. Always invoke with the
+# explicit MTMF project name:
+#
+#   python scripts/mtmf-dev-stack.py up
+#
+# Portable orchestration: `podman-compose 1.0.6` does not honor
+# `depends_on: condition: service_completed_successfully`, so the explicit
+# `scripts/mtmf-dev-stack.py` launcher waits for PostgreSQL/Keycloak health,
+# runs the privileged one-shot initializer, and only then starts the
+# unprivileged service and waits for readiness. The `depends_on` below is
+# startup ordering only and is not a correctness guarantee on this tooling.
+#
+# Resource ownership: every resource belongs to the explicit `mtmf`
+# project. MTMF tooling never discovers, mutates, or prunes resources owned
+# by ATI, Digr, Darkula, Hammeridian, or any other application.
+#
+# Host ports: MTMF owns local host-port prefix `2`. PostgreSQL remains
+# 25432 (from compose.yaml). Keycloak publishes loopback 28443/28080 and
+# the HTTP service publishes loopback 28001. Every publication binds
+# loopback only.
+#
+# Secrets: supplied at runtime via `.env`/Podman secrets. No secret,
+# bootstrap admin credential, migrator credential or client secret is
+# committed here. The HTTP service environment intentionally excludes
+# migrator/owner/bootstrap credentials; only the restricted runtime and
+# the read-only attestation reader are present.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0-1
+    command:
+      - start-dev
+      - --http-port=8080
+      - --https-port=8443
+      - --hostname-strict=false
+      - --health-enabled=true
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD:?set MTMF_PR14_KC_ADMIN_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "127.0.0.1:${MTMF_PR14_KC_HTTP_PORT:-28080}:8080"
+      - "127.0.0.1:${MTMF_PR14_KC_HTTPS_PORT:-28443}:8443"
+    volumes:
+      - mtmf-dev-keycloak-data:/opt/keycloak/data
+      - ${MTMF_PR14_KC_TLS_DIR:-/tmp/mtmf-pr14-kc-tls}:/opt/keycloak/conf/tls:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  initializer:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["python", "scripts/mtmf-dev-initialize.py"]
+    environment:
+      MTMF_SERVICE_DEPLOYMENT_MODE: development
+      MTMF_SERVICE_ALLOW_CONTAINER_BIND: "1"
+      MTMF_MIGRATOR_DATABASE_URL: ${MTMF_MIGRATOR_DATABASE_URL:?set MTMF_MIGRATOR_DATABASE_URL}
+      MTMF_POSTGRES_DB: ${MTMF_POSTGRES_DB:-mtmf}
+      MTMF_AUTH_ISSUER: ${MTMF_AUTH_ISSUER:?set MTMF_AUTH_ISSUER}
+      MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
+      MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-pr14-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://127.0.0.1:28443}
+      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:?set attestation reader username}
+      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set attestation reader password}
+      MTMF_PR14_KC_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
+      MTMF_PR14_KC_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD:?set admin password}
+      MTMF_DEV_APPLICATION_KEYS: ${MTMF_DEV_APPLICATION_KEYS:-sample-app}
+      MTMF_DEV_USER_SUBJECT: ${MTMF_DEV_USER_SUBJECT:-mtmf-dev-user}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+
+  service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["python", "-m", "mtmf_service"]
+    environment:
+      MTMF_SERVICE_DEPLOYMENT_MODE: development
+      MTMF_SERVICE_HOST: 0.0.0.0
+      MTMF_SERVICE_PORT: "28001"
+      MTMF_SERVICE_ALLOW_CONTAINER_BIND: "1"
+      MTMF_SERVICE_INITIALIZED: "1"
+      MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS: ${MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS:-40}
+      MTMF_RUNTIME_DATABASE_URL: ${MTMF_RUNTIME_DATABASE_URL:?set MTMF_RUNTIME_DATABASE_URL}
+      MTMF_RUNTIME_STATEMENT_TIMEOUT_MS: ${MTMF_RUNTIME_STATEMENT_TIMEOUT_MS:-10000}
+      MTMF_RUNTIME_LOCK_TIMEOUT_MS: ${MTMF_RUNTIME_LOCK_TIMEOUT_MS:-3000}
+      # Read-only attestation reader; never the bootstrap admin.
+      MTMF_AUTH_ISSUER: ${MTMF_AUTH_ISSUER:?set MTMF_AUTH_ISSUER}
+      MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
+      MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
+      MTMF_AUTH_JWKS_URI: ${MTMF_AUTH_JWKS_URI:?set JWKS URI}
+      MTMF_AUTH_EXPECTED_MANIFEST: ${MTMF_AUTH_EXPECTED_MANIFEST:-dev/keycloak/expected-realm-security.json}
+      MTMF_AUTH_EXPECTED_CLIENT_POLICY: ${MTMF_AUTH_EXPECTED_CLIENT_POLICY:-dev/keycloak/expected-client-policy.json}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-pr14-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://127.0.0.1:28443}
+      # Dedicated least-privilege client-credentials reader; no admin password.
+      # Prefer MTMF_AUTH_ATTESTATION_CLIENT_SECRET_FILE with a mounted secret;
+      # the plain variable is the documented development placeholder.
+      MTMF_AUTH_ATTESTATION_CLIENT_ID: ${MTMF_AUTH_ATTESTATION_CLIENT_ID:?set attestation reader client id}
+      MTMF_AUTH_ATTESTATION_CLIENT_SECRET: ${MTMF_AUTH_ATTESTATION_CLIENT_SECRET:?set attestation reader client secret}
+    ports:
+      - "127.0.0.1:28001:28001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      initializer:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:28001/health/ready',timeout=2).status==200 else 1)\""
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  mtmf-dev-keycloak-data:
+    name: mtmf-dev-keycloak-data

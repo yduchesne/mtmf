@@ -48,12 +48,16 @@ def build_actor_context_service(
     reader = HttpAdminRestReader(
         config.admin_base_url,
         config.admin_realm,
-        config.admin_username,
-        config.admin_password,
+        config.attestation_client_id,
+        config.attestation_client_secret,
         timeout=config.transport_timeout_seconds,
+        max_bytes=config.max_jwks_bytes,
     )
     attestor = BaselineConfigurationAttestor(
-        reader, config.admin_realm, config.expected_manifest_path
+        reader,
+        config.admin_realm,
+        config.expected_manifest_path,
+        config.expected_client_policy_path,
     )
     return AuthenticatedActorContextService(
         spi=spi,
