@@ -1,0 +1,12 @@
+{
+  "tenant_id": "00000000-0000-0000-0000-000000000000",
+  "actions": [
+    {
+      "request_id": "check-1",
+      "action": "urn:mtmf:iam:actions:system:document:read-object",
+      "resource": {
+        "kind": "capability"
+      }
+    }
+  ]
+}

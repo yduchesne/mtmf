@@ -1,0 +1,7 @@
+{
+  "schema_version": "1",
+  "error": {
+    "code": "UNSUPPORTED_MEDIA_TYPE",
+    "message": "Unsupported media type"
+  }
+}

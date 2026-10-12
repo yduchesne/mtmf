@@ -1,0 +1,8 @@
+{
+  "schema_version": "1",
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "Request validation failed",
+    "request_id": "req-trace-123"
+  }
+}
