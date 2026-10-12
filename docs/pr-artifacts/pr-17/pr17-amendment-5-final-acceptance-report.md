@@ -1,8 +1,8 @@
 # PR 17 — Amendment #5 final acceptance report
 
 **Branch:** `dev/pr17-http-service`. **Base:** `4eea688`; prior head `e6bdcbc`.
-**Amendment #5 feature commit:** `__FILL_AFTER_COMMIT__` (all gates and the
-pre-commit hook ran on this tree).
+**Amendment #5 feature commit:** `50cfc3115bc6e919c1fea29521f1356545f3a5b7`
+(all gates and the pre-commit hook ran on this tree).
 **Disposition: IMPLEMENTATION COMPLETE — ACCEPTANCE COMPLETE — READY FOR HUMAN REVIEW.**
 No self-merge; PR 17 is not marked DONE.
 
