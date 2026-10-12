@@ -1074,3 +1074,13 @@ implementation remains stopped.
 The reviewer explicitly approved the entire package in `docs/PR14_NONROOT_APPROVAL_RECONCILIATION.md` section 10.2, as written. Approved: A14-01, A14-03, A14-04, A14-05, A14-06, A14-07, A14-09, A14-10, section 10 JWT/JWKS policy, and the `mtmf-service` / `mtmf-core` ownership reconciliation. These approvals apply only to the previously selected development-first, conditional-attestation, same-client D1 non-root scope. Earlier PENDING entries are superseded for this scope.
 
 The production issuer, production attestation freshness, and root authentication remain deferred. Runtime acceptance evidence (including DC05, DC07 and the applicable AUTH cases) remains required. This approval does not authorize implementation; the separate implementation STOP remains active.
+
+## 14I. Amendment #2 acceptance-closure decisions (2026-10-11)
+
+**HUMAN APPROVED — narrowly scoped development-only follow-up:**
+
+1. Permit a pinned Keycloak development-fixture change and an independently reviewed committed expected-manifest update **only if** the agent demonstrates a same-client service/user token pair with distinct class-specific audiences, preserves the G0-A mapper-lockdown predicates, and maintains fresh zero-positive-cache attestation on every authentication operation. No relaxed audience, class, issuer or signature checks. If Keycloak cannot provide this configuration, STOP for a reviewer decision rather than weakening the approved policy.
+2. Permit a locally RS256-signed missing-`azp` token using an isolated test-only private key and corresponding trusted test JWKS to prove the real production verifier rejects it. The originally specified *issuer-signed* DC05 remains **NOT EXECUTED / issuer limitation**; the test-key result is a separately named verifier acceptance result, never mislabeled as issuer evidence. No test signing key in production configuration or logs.
+3. Require explicit executable closure of remaining mandatory non-root AUTH/D1 cases in the Amendment #1 matrix (including uniqueness, concurrency, terminal binding lifecycle, DB outage, revoked-binding freshness, JOSE critical headers, redaction, and live V01–V16), with exact evidence and no inferred PASS. AUTH-26/27 remain deferred root-only.
+
+**Execution authorization:** The reviewer authorized proceeding with this narrowly scoped Amendment #2 acceptance work on `dev/service-auth`, subject to an executable follow-up plan and existing STOP gates. No PR 14 merge approval is implied. No production issuer, root authentication/recovery, RFC 8693, cross-client delegation, public HTTP routes, existing-version SQL edits, or broadened runtime privileges are approved.
