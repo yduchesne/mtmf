@@ -1,6 +1,6 @@
 # PR 10 — Gate M resolution: protected seed and deferred enforcement
 
-> **Status: APPROVED exact minimum seed policy for PR 10** (reviewed and merged as PR #38; installed by additive Alembic revision `0006`). The 11-Role / 11-ALLOW-PermissionSet / 11-exact-Permission / 3-Action table and its 22 UUID literals below are the authorized seed. This approval does **not** authorize any privileged runtime capability: bootstrap, stewardship transfer/recovery, Tenant activation, and end-user administrative execution remain deferred, and the broader [PR10_EXACT_PERMISSION_MANIFEST.md](PR10_EXACT_PERMISSION_MANIFEST.md) 34-Action candidate catalog remains **candidate-only and unseeded**.
+> **Status: APPROVED exact minimum seed policy for PR 10** (reviewed and merged as PR #38; installed by additive Alembic revision `0006`). The 11-Role / 11-ALLOW-PermissionSet / 11-exact-Permission / 3-Action table and its 22 UUID literals below are the authorized seed. This approval does **not** authorize any privileged runtime capability: bootstrap, stewardship transfer/recovery, Tenant activation, and end-user administrative execution remain deferred, and the broader [PR10_EXACT_PERMISSION_MANIFEST.md](pr10-exact-permission-manifest.md) 34-Action candidate catalog remains **candidate-only and unseeded**.
 
 ## Decision: Option B
 
