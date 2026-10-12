@@ -799,6 +799,8 @@ Tables are particularly effective for low-reasoning coding agents because they c
 
 # 18. Unit test matrix
 
+**When determining unit and integration tests, make sure to account for positive/happy and negative/unhappy cases; also consider edge cases.** Apply this requirement to both the unit-test matrix in this section and the integration/vertical-slice tests in Section 19. For each significant behavior, identify successful operation, rejection/failure behavior, and relevant boundary conditions; state the expected result for each rather than merely naming a test category.
+
 Specify important unit cases explicitly.
 
 Use stable IDs when useful:
