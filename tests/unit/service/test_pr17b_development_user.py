@@ -366,6 +366,10 @@ def test_u14_federated_and_managed_accounts_are_rejected():
     with pytest.raises(BootstrapError, match="federated or managed"):
         _provisioner(managed).ensure_user(_config())
 
+    brokered = FakeTransport([_user(origin="github")])
+    with pytest.raises(BootstrapError, match="federated or managed"):
+        _provisioner(brokered).ensure_user(_config())
+
 
 # --------------------------------------------------------------------------
 # U17-U22 edge cases

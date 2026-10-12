@@ -409,7 +409,11 @@ def _validate_user(row: Mapping[str, Any]) -> _VerifiedUser:
     email = row.get("email")
     if email is not None and not isinstance(email, str):
         raise BootstrapError("a Keycloak user record has an invalid email value")
-    federated = bool(row.get("federationLink")) or bool(row.get("serviceAccountClientId"))
+    federated = (
+        bool(row.get("federationLink"))
+        or bool(row.get("serviceAccountClientId"))
+        or bool(row.get("origin"))
+    )
     return _VerifiedUser(
         subject=subject.strip(),
         username=username.strip(),
