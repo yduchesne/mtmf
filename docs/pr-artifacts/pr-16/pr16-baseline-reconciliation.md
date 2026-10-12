@@ -3,7 +3,7 @@
 Recorded: 2026-10-12. Author: coding agent (PR 16). Status: **reconciled; prerequisite gate PASSED**.
 
 This document is the mandatory Part A inventory for
-[PR16_DETAILED_EXECUTION_PLAN.md](../../Downloads/PR16_DETAILED_EXECUTION_PLAN.md)
+[PR16_DETAILED_EXECUTION_PLAN.md](../../DETAILED_PR_PLAN_AUTHORING_GUIDE.md)
 (the plan lives outside the repository; this is the repository-resident
 record). It captures the exact base, prerequisite confirmation, existing
 surface, and baseline gate results **before** any PR 16 change. Baseline
