@@ -6,7 +6,7 @@
 > specifics. PR 12 itself is documentation only. The `T5` subscription
 > lifecycle/state specifics subsequently owned by PR 13 are now implemented
 > under the approved `S1`–`S8` decisions in
-> [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](../pr-13/pr13-application-subscription-decisions.md);
+> [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](../pr-13/PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md);
 > the HTTP authentication, batch, and client layers remain unimplemented.
 >
 > Companion contract: [HTTP Integration and Batch Authorization](../../HTTP_INTEGRATION_BATCH_AUTHORIZATION.md).
@@ -128,7 +128,7 @@ maximum batch size are PR 15 decisions.
 
 **Status:** precedence `APPROVED PRINCIPLE` (P03, P04); lifecycle specifics
 owned by **PR 13** and now implemented as decisions `S1`–`S8` in
-[PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](../pr-13/pr13-application-subscription-decisions.md).
+[PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](../pr-13/PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
 The `T5` precedence ordering itself is unchanged.
 
 Approved precedence (fail-closed): (1) authenticate the service;

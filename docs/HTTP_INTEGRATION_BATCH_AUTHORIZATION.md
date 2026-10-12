@@ -14,11 +14,11 @@
 > Security-critical decisions `T1`, `T3`, `T4`, and `T6` are **APPROVED**;
 > `T2` is owned by PR 15 and `T5` subscription lifecycle specifics are
 > **implemented by PR 13** (see
-> [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md)).
+> [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](pr-artifacts/pr-13/PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md)).
 > The illustrative JSON below remains **non-normative**; the frozen v1
 > wire contract is now
-> [PR15_HTTP_API_V1_CONTRACT.md](PR15_HTTP_API_V1_CONTRACT.md) with its
-> decisions in [PR15_API_CONTRACT_DECISIONS.md](PR15_API_CONTRACT_DECISIONS.md)
+> [PR15_HTTP_API_V1_CONTRACT.md](pr-artifacts/pr-15/PR15_HTTP_API_V1_CONTRACT.md) with its
+> decisions in [PR15_API_CONTRACT_DECISIONS.md](pr-artifacts/pr-15/PR15_API_CONTRACT_DECISIONS.md)
 > (contract-only; no HTTP runtime).
 >
 > Contract identifiers `C01`–`C11` are stable review anchors.
@@ -455,7 +455,7 @@ envelope; (8) infrastructure failure → none yields `ALLOW`.
 
 ## 15. Review anchors
 
-- [PR 12 decisions register](PR12_INTEGRATION_SECURITY_DECISIONS.md) — `T1`–`T8`.
+- [PR 12 decisions register](pr-artifacts/pr-12/PR12_INTEGRATION_SECURITY_DECISIONS.md) — `T1`–`T8`.
 - [Security Model](SECURITY_MODEL.md) — service/acting-identity distinction and invariants.
 - [Authorization](AUTHORIZATION.md) — batch semantics and policy oracle.
 - [Architecture](ARCHITECTURE.md) — package ownership and HTTP-only boundary.

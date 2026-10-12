@@ -2,7 +2,7 @@
 
 **Status:** Architecture decisions approved for PR 10 planning; implementation remains pending. Documentation only; no implementation or privilege grant is implied.  
 **Applies to:** PR 10 — Bootstrap, root invariants, and Tenant Stewardship.  
-**Read first:** [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md), [Security Model](SECURITY_MODEL.md), [Domain Model](DOMAIN_MODEL.md), [Authorization](AUTHORIZATION.md), [Database Architecture](DATABASE.md).
+**Read first:** [Root Administration and Tenant Stewardship](../../ROOT_AND_STEWARDSHIP.md), [Security Model](../../SECURITY_MODEL.md), [Domain Model](../../DOMAIN_MODEL.md), [Authorization](../../AUTHORIZATION.md), [Database Architecture](../../DATABASE.md).
 
 ## Why this decision record exists
 

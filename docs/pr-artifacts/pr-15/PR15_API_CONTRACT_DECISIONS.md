@@ -16,10 +16,10 @@ re-open any approved PR 12 semantic rule (`T1`, `T3`, `T4`, `T6`,
 `P01`–`P10`).
 
 Companion normative document:
-[PR 15 HTTP API v1 Contract](../pr-15/pr15-http-api-v1-contract.md).
+[PR 15 HTTP API v1 Contract](PR15_HTTP_API_V1_CONTRACT.md).
 Companion sources: [HTTP Integration and Batch Authorization](../../HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
-C01–C11, [PR 12 Integration Security Decisions](../pr-12/pr12-integration-security-decisions.md),
-[PR 14 Authentication Security Decisions](../pr-14/pr14-authentication-security-decisions.md) §14J.
+C01–C11, [PR 12 Integration Security Decisions](../pr-12/PR12_INTEGRATION_SECURITY_DECISIONS.md),
+[PR 14 Authentication Security Decisions](../pr-14/PR14_AUTHENTICATION_SECURITY_DECISIONS.md) §14J.
 
 ## Decision register
 

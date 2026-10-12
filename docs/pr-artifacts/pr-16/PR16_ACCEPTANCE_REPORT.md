@@ -7,7 +7,7 @@ Branch: `dev/native-batch-auth`. PR 17 (authenticated HTTP) and PR 18
 
 This report records the exact commands, results, environment, and
 complete-decision evidence for PR 16. It is grounded in
-[PR16_BASELINE_RECONCILIATION.md](../pr-16/pr16-baseline-reconciliation.md),
+[PR16_BASELINE_RECONCILIATION.md](PR16_BASELINE_RECONCILIATION.md),
 [SECURITY_MODEL.md](../../SECURITY_MODEL.md), and
 [AUTHORIZATION.md §8.4](../../AUTHORIZATION.md).
 
