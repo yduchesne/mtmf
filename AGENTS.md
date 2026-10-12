@@ -178,6 +178,20 @@ Classes, interfaces, modules, and public functions/methods should have useful do
 
 When a roadmap PR item is completed, update `docs/ROADMAP_V01.md` in the same PR to reflect its status after implementation and validation are complete.
 
+## PR artifact documentation (mandatory)
+
+For every roadmap PR, keep **all reports and supporting documentation produced by the coding agent for that PR** under its dedicated repository directory:
+
+`docs/pr-artifacts/<pr-id>/`
+
+Derive `<pr-id>` from the **PR identifier in `docs/ROADMAP_V01.md`**, not the GitHub pull-request number. Normalize it to lowercase and replace spaces with hyphens (`-`); do not use spaces or uppercase characters. Examples: `PR 16` → `docs/pr-artifacts/pr-16/`; `PR 8H` → `docs/pr-artifacts/pr-8h/`; `PR 31F-4` → `docs/pr-artifacts/pr-31f-4/`. Preserve existing hyphens.
+
+Store baseline/reconciliation reports, implementation and acceptance reports, security and benchmark reports, STOP/deviation records, review/fixup reports, and other PR-specific coding-agent artifacts in this directory. Use descriptive lowercase hyphenated filenames. Commit these reports to the PR branch; do not leave them solely in `/tmp`, `Downloads`, or another local directory. Link to them using valid repository-relative links.
+
+Existing PR-specific artifacts are also being consolidated under these directories in the documentation migration PR. When reorganizing historical artifacts, preserve links through compatibility pointers or update references. Do not move shared normative documentation. Shared normative/architectural documentation (for example `docs/SECURITY_MODEL.md`, `docs/AUTHORIZATION.md`, `docs/ROADMAP_V01.md`, and the detailed plan authoring guide) remains in its established location. This policy concerns PR-specific agent-produced artifacts, not all documentation changed during a PR.
+
+Every detailed PR execution plan must explicitly state the **fully resolved directory** for its roadmap PR (for example `docs/pr-artifacts/pr-16/`) and instruct the coding agent to create it and save all PR-specific reports there. Follow `docs/DETAILED_PR_PLAN_AUTHORING_GUIDE.md`.
+
 ## Working discipline
 
 Before coding:
