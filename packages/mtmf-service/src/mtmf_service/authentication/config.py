@@ -50,12 +50,21 @@ class IssuerConfig:
     max_jwks_bytes: int = 262144
     jwks_cache_seconds: float = 300.0
     jwks_min_refresh_seconds: float = 5.0
+    #: Development-only: allow the same configured audience for the service and
+    #: user profiles (approved decision §14J). The audience is a recipient
+    #: restriction, never a grant-type discriminator; the freshly attested signed
+    #: ``client_id`` class predicate remains mandatory. Never enable for a
+    #: production issuer profile.
+    allow_shared_audience: bool = False
 
     def __post_init__(self) -> None:
         if self.algorithm != "RS256":
             raise AuthenticationConfigError("only the reviewed RS256 algorithm is supported")
-        if self.service_audience == self.user_audience:
-            raise AuthenticationConfigError("service and user audiences must differ")
+        if self.service_audience == self.user_audience and not self.allow_shared_audience:
+            raise AuthenticationConfigError(
+                "service and user audiences must differ unless the development "
+                "shared-audience profile is explicitly enabled"
+            )
         if not _is_loopback(self.issuer) or not _is_loopback(self.admin_base_url):
             raise AuthenticationConfigError(
                 "the development issuer and admin base must be loopback; "

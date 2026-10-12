@@ -196,3 +196,27 @@ and [PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md)
 - **Merge not recommended**; smallest decision is the Phase 1 audience-predicate
   disposition (shared-audience predicate, distinct clients, or a reviewed
   conditional mapper).
+
+## 13. Amendment #3 shared-audience D1 status (2026-10-11)
+
+Status only; see [PR14_AMENDMENT3_ACCEPTANCE_REPORT.md](PR14_AMENDMENT3_ACCEPTANCE_REPORT.md)
+and [PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md).
+
+- §14J supersedes the distinct-audience requirement for the development D1
+  profile; the shared audience is a recipient check only. The signed, freshly
+  attested `client_id`/`azp` class predicate remains mandatory.
+- Added a development-only, explicitly gated `allow_shared_audience` config
+  field (equal audiences still rejected by default) with unit tests.
+- **Live DC07 slice executed and PASS** against real Keycloak 26.8.0 and real
+  PostgreSQL: positive actor context, wrong-slot rejection, cross-client
+  rejection, missing service/subject binding rejection, and mapper-drift
+  fail-closed with restoration.
+- Deterministic gates green: 61 auth unit tests, 11 binding integration tests,
+  556 integration (6 live opt-in skipped), 1418 QA at 88.28%, security 0,
+  pre-commit pass; 77-signature runtime verifier pass. Fixture/baseline unchanged
+  (hash `9e9bb847…`).
+- **Not executed live:** inactive identity/tenant/membership/registration/
+  subscription, root, Admin REST outage, JWKS outage, real PG outage, and an
+  Amendment #3 clean recreate; these remain unit/integration-covered only.
+- **Merge not recommended** pending the remaining live cases or an explicit
+  reviewer exception.
