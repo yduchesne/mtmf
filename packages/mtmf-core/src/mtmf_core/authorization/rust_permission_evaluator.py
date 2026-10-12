@@ -102,20 +102,7 @@ class RustPermissionEvaluator(PermissionEvaluatorProtocol):
             unavailability, capability, parsing, or malformed/incoherent
             response failure; never a policy decision.
         """
-        primitive_sets: list[tuple[str, list[str]]] = []
-        for role in roles:
-            for permission_set in role.permission_sets:
-                if permission_set.role_urn != role.urn:
-                    raise PermissionEvaluationError(
-                        f"PermissionSet {permission_set.id} is owned by "
-                        f"{permission_set.role_urn}, not by supplied Role {role.urn}"
-                    )
-                primitive_sets.append(
-                    (
-                        permission_set.effect.value,
-                        [permission.urn.value for permission in permission_set.permissions],
-                    )
-                )
+        primitive_sets = flatten_roles_to_primitive_sets(roles)
         try:
             evaluation = native_evaluate(action.urn.value, primitive_sets)
         except (
@@ -129,6 +116,39 @@ class RustPermissionEvaluator(PermissionEvaluatorProtocol):
                 "closed because no ALLOW decision can be produced"
             ) from exc
         return _map_native_evaluation(evaluation)
+
+
+def flatten_roles_to_primitive_sets(
+    roles: Iterable[Role],
+) -> list[tuple[str, list[str]]]:
+    """Validate ownership and flatten applicable Roles to detached primitives.
+
+    Consumes the supplied iterable exactly once and returns the PR 8E
+    detached primitive representation: ``(effect, [permission URN
+    texts])`` pairs. This is the single canonical Role/PermissionSet
+    structural validation shared by the linear Rust evaluator, the batch
+    Rust authorizer, and the compiled-policy benchmark adapter: a
+    PermissionSet whose ``role_urn`` disagrees with its owning Role is
+    corrupted domain policy.
+
+    :raises PermissionEvaluationError: for structurally corrupted domain
+        policy (ownership corruption), before any native call.
+    """
+    primitive_sets: list[tuple[str, list[str]]] = []
+    for role in roles:
+        for permission_set in role.permission_sets:
+            if permission_set.role_urn != role.urn:
+                raise PermissionEvaluationError(
+                    f"PermissionSet {permission_set.id} is owned by "
+                    f"{permission_set.role_urn}, not by supplied Role {role.urn}"
+                )
+            primitive_sets.append(
+                (
+                    permission_set.effect.value,
+                    [permission.urn.value for permission in permission_set.permissions],
+                )
+            )
+    return primitive_sets
 
 
 def _map_native_specificity(specificity: str | None) -> MatchSpecificity | None:

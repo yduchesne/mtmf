@@ -50,6 +50,13 @@ invented here.
 from __future__ import annotations
 
 from mtmf_core.authorization.authorizer import Authorizer
+from mtmf_core.authorization.batch import (
+    AuthorizationBatch,
+    AuthorizationBatchResult,
+    BatchAuthorizer,
+    InvalidAuthorizationBatchError,
+    RustBatchAuthorizer,
+)
 from mtmf_core.authorization.compiled_policy import CompiledPolicy
 from mtmf_core.authorization.context import (
     AuthorizationContext,
@@ -79,6 +86,8 @@ from mtmf_core.authorization.policy_resolver import (
 )
 
 __all__ = [
+    "AuthorizationBatch",
+    "AuthorizationBatchResult",
     "AuthorizationContext",
     "AuthorizationDecision",
     "AuthorizationEffect",
@@ -86,15 +95,18 @@ __all__ = [
     "AuthorizationPolicyResolver",
     "AuthorizationRequest",
     "Authorizer",
+    "BatchAuthorizer",
     "CompiledPolicy",
     "DefaultAuthorizationPolicyResolver",
     "DenyReason",
     "DominanceRequirement",
     "EffectivePolicy",
+    "InvalidAuthorizationBatchError",
     "ManagementScopeCandidate",
     "ManagementScopeResolution",
     "PermissionEvaluationError",
     "PermissionEvaluator",
+    "RustBatchAuthorizer",
     "UnsupportedConstraint",
     "is_extension_action",
     "strictly_dominates",

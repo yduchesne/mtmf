@@ -12,11 +12,15 @@ the primitive native evaluator bridge:
 already-applicable detached PermissionSets entirely in Rust and returns
 a validated :class:`RustEvaluation` aggregate result (decision, highest
 specificity, ALLOW/DENY presence at that specificity, coarse deny
-reason), and - PR 8G experiment only - the ``native_compile_policy``
-compiled-policy bridge: compile already-applicable detached
-PermissionSets once into an opaque immutable native object whose
-``evaluate`` method handles repeated Actions without resending,
-reparsing, sorting, or scanning policy.
+reason), the PR 16 single-crossing batch bridge
+``native_batch_evaluate``: compile already-applicable detached
+PermissionSets once and evaluate an ordered 1-100 Action batch in one
+native call, returning one validated :class:`RustEvaluation` per Action
+in input order (all-or-nothing on malformed input), and - PR 8G
+experiment only - the ``native_compile_policy`` compiled-policy bridge:
+compile already-applicable detached PermissionSets once into an opaque
+immutable native object whose ``evaluate`` method handles repeated
+Actions without resending, reparsing, sorting, or scanning policy.
 
 Boundary invariants:
 
@@ -78,6 +82,11 @@ _NATIVE_DECISIONS = frozenset({_NATIVE_ALLOW, _NATIVE_DENY})
 _NATIVE_NO_MATCH = "no-match"
 _NATIVE_MATCHED_DENY = "matched-deny"
 _NATIVE_DENY_REASONS = frozenset({_NATIVE_NO_MATCH, _NATIVE_MATCHED_DENY})
+
+# Frozen PR 16 native direct-batch bound: 1..=100 ordered Actions in one
+# crossing. Mirrors the Rust `NATIVE_BATCH_MIN`/`NATIVE_BATCH_MAX`.
+_NATIVE_BATCH_MIN_ACTIONS = 1
+_NATIVE_BATCH_MAX_ACTIONS = 100
 
 
 class RustEngineUnavailableError(RuntimeError):
@@ -324,6 +333,84 @@ def native_evaluate(
             "(effect: 'str', permissions: list['str']) pairs"
         ) from exc
     return _validate_native_evaluation(native_response)
+
+
+def native_batch_evaluate(
+    permission_sets: list[tuple[str, list[str]]],
+    action_urns: list[str],
+) -> list[RustEvaluation]:
+    """Compile policy and evaluate an ordered Action batch in one native crossing.
+
+    Primitive data in; a list of validated :class:`RustEvaluation`
+    results out, one per input Action in input order. ``permission_sets``
+    has the same shape as :func:`native_evaluate`: a list of
+    ``(effect, permissions)`` pairs where ``effect`` is exactly
+    ``"allow"`` or ``"deny"`` and ``permissions`` is a list of
+    Permission matcher URN texts. ``action_urns`` is the ordered list of
+    exact Action URN texts (1-100).
+
+    This is the single PyO3 batch crossing: the native side compiles the
+    already-applicable policy once (reusing the canonical indexed
+    compiled policy) and resolves the whole ordered batch, so the caller
+    never loops invoking a native per-Action evaluation. No domain object
+    crosses the FFI boundary and Rust never determines applicable policy.
+
+    The complete response is validated before anything is returned:
+    container type, exact length, and every element's decision,
+    specificity, flags, deny reason, and coherence are checked; a single
+    malformed element fails the whole batch. Malformed input
+    (out-of-range size, malformed Action/Permission URNs, unknown
+    effects, wrong primitive types/container shapes) is all-or-nothing and
+    raises :class:`ValueError`. An unavailable or incapable native module
+    raises :class:`RustEngineUnavailableError`/
+    :class:`RustEngineCapabilityError`. None of these is ever a policy
+    decision and no Python fallback exists.
+
+    :raises ValueError: for an out-of-range batch size or malformed
+        primitive input; never a policy decision.
+    :raises RustEngineUnavailableError: when the native module is absent.
+    :raises RustEngineCapabilityError: when the native batch capability is
+        missing or its response is malformed/unknown/incoherent or has
+        the wrong length/container type.
+    """
+    action_texts = list(action_urns)
+    if (
+        len(action_texts) < _NATIVE_BATCH_MIN_ACTIONS
+        or len(action_texts) > _NATIVE_BATCH_MAX_ACTIONS
+    ):
+        raise ValueError(
+            f"malformed batch size {len(action_texts)} at the native boundary; expected "
+            f"{_NATIVE_BATCH_MIN_ACTIONS}..={_NATIVE_BATCH_MAX_ACTIONS} exact Action URNs"
+        )
+    module = _load_native_module()
+    batch = getattr(module, "batch_evaluate", None)
+    if not callable(batch):
+        raise RustEngineCapabilityError(
+            f"native module {_NATIVE_MODULE_NAME!r} does not expose the primitive "
+            "batch evaluator 'batch_evaluate'"
+        )
+    try:
+        primitive_sets = [(effect, list(permissions)) for effect, permissions in permission_sets]
+        native_response = batch(primitive_sets, action_texts)
+    except TypeError as exc:
+        raise ValueError(
+            f"malformed primitive input to the native {_NATIVE_MODULE_NAME!r} boundary; "
+            "expected a list of (effect: 'str', permissions: list['str']) pairs and a "
+            "list of exact Action URN 'str' values"
+        ) from exc
+    if not isinstance(native_response, (list, tuple)):
+        raise RustEngineCapabilityError(
+            f"native module {_NATIVE_MODULE_NAME!r} returned a malformed batch response "
+            f"{native_response!r}; expected an ordered list of evaluation results"
+        )
+    if len(native_response) != len(action_texts):
+        raise RustEngineCapabilityError(
+            f"native module {_NATIVE_MODULE_NAME!r} returned {len(native_response)} batch "
+            f"results for {len(action_texts)} Actions; the batch result count must match"
+        )
+    # Validate every element before returning anything: a single malformed
+    # or incoherent element fails the whole batch.
+    return [_validate_native_evaluation(item) for item in native_response]
 
 
 def native_compile_policy(permission_sets: list[tuple[str, list[str]]]) -> Any:

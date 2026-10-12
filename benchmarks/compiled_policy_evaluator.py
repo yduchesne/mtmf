@@ -57,7 +57,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from mtmf_core.authorization.decision import AuthorizationDecision
-from mtmf_core.authorization.permission_evaluator import PermissionEvaluationError
 from mtmf_core.authorization.rust_engine import (
     RustEngineCapabilityError,
     RustEngineUnavailableError,
@@ -68,6 +67,7 @@ from mtmf_core.authorization.rust_engine import (
 from mtmf_core.authorization.rust_permission_evaluator import (
     PermissionEvaluationInfrastructureError,
     _map_native_evaluation,
+    flatten_roles_to_primitive_sets,
 )
 from mtmf_core.domain.action import Action
 from mtmf_core.domain.role import Role
@@ -103,20 +103,7 @@ class CompiledPolicyEvaluator:
             unavailability, capability, parsing, or malformed/incoherent
             response failure; never a policy decision.
         """
-        primitive_sets: list[tuple[str, list[str]]] = []
-        for role in roles:
-            for permission_set in role.permission_sets:
-                if permission_set.role_urn != role.urn:
-                    raise PermissionEvaluationError(
-                        f"PermissionSet {permission_set.id} is owned by "
-                        f"{permission_set.role_urn}, not by supplied Role {role.urn}"
-                    )
-                primitive_sets.append(
-                    (
-                        permission_set.effect.value,
-                        [permission.urn.value for permission in permission_set.permissions],
-                    )
-                )
+        primitive_sets = flatten_roles_to_primitive_sets(roles)
         try:
             compiled = native_compile_policy(primitive_sets)
         except (

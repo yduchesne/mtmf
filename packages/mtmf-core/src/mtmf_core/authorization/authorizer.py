@@ -36,16 +36,17 @@ queries persistence.
 
 from __future__ import annotations
 
-from mtmf_core.authorization.context import AuthorizationRequest, DominanceRequirement
+from mtmf_core.authorization.context import AuthorizationRequest
 from mtmf_core.authorization.decision import AuthorizationDecision, DenyReason
-from mtmf_core.authorization.dominance import strictly_dominates
-from mtmf_core.authorization.management import is_extension_action
+from mtmf_core.authorization.guards import (
+    apply_post_policy_guards,
+    target_is_permitted,
+    validate_request_session,
+)
 from mtmf_core.authorization.policy_resolver import (
     AuthorizationPolicyResolver,
     DefaultAuthorizationPolicyResolver,
 )
-from mtmf_core.domain.errors import SessionContextError
-from mtmf_core.domain.session import validate_session_context
 
 
 class Authorizer:
@@ -103,75 +104,24 @@ class Authorizer:
             mislabeled; callers never receive ALLOW from an exception
             path.
         """
-        context = request.context
-        try:
-            validate_session_context(
-                context.session,
-                context.tenant,
-                context.principal,
-                context.identity,
-                context.principal_tenant_memberships,
-                context.identity_tenant_memberships,
-            )
-        except SessionContextError:
+        invalid = validate_request_session(request)
+        if invalid is not None:
             # Deterministic structurally invalid/unsupported supplied
             # context produces a semantic DENY, never an ALLOW.
-            return AuthorizationDecision.deny(DenyReason.INVALID_CONTEXT)
+            return invalid
 
         # Tenant isolation: ordinary evaluation is same-Tenant. A
         # cross-Tenant target is considered only through an explicitly
         # resolved TenantManagementGroup scope (PR 11), and only when the
         # applicable policy is exactly the approved management Role; no
         # ordinary manager-Tenant Role may be unioned in.
-        if request.target_tenant_id != context.tenant.id and not _management_scope_is_valid(
-            request
-        ):
+        if not target_is_permitted(request):
             return AuthorizationDecision.deny(DenyReason.NO_MANAGEMENT_SCOPE)
 
-        policy = self._policy_resolver.resolve(context)
+        policy = self._policy_resolver.resolve(request.context)
         decision = policy.evaluate(request.action)
-        if not decision.allowed:
-            # Policy DENY (no match or matching DENY) is final: no other
-            # constraint may turn it into ALLOW.
-            return decision
-
-        if request.unsupported_constraints:
-            return AuthorizationDecision.deny(DenyReason.UNSUPPORTED_CONSTRAINT)
-
-        if request.dominance_requirement is DominanceRequirement.STRICT:
-            if request.subject_scope is None or request.target_scope is None:
-                return AuthorizationDecision.deny(DenyReason.INSUFFICIENT_DOMINANCE)
-            if not strictly_dominates(request.subject_scope, request.target_scope):
-                # No alternate dominance (Stewardship/TenantManagementGroup)
-                # fallback exists: strict dominance failure is final.
-                return AuthorizationDecision.deny(DenyReason.INSUFFICIENT_DOMINANCE)
-
-        return decision
-
-
-def _management_scope_is_valid(request: AuthorizationRequest) -> bool:
-    """Validate a trusted cross-Tenant TenantManagementGroup delegation.
-
-    A delegated cross-Tenant evaluation is accepted only when:
-
-    - the request carries a resolved management scope whose
-      ``elevated_scope`` is established (positive coverage *and* explicit
-      actor eligibility);
-    - the action is not an application extension mutation, which a
-      SYSTEM-defined management Role must never authorize; and
-    - ``context.applicable_roles`` is exactly the resolved management Role,
-      so no ordinary manager-Tenant Role policy is silently unioned in.
-
-    The management Role still has to produce a matching ALLOW through the
-    normal policy evaluation; this check only gates the cross-Tenant
-    boundary.
-    """
-    resolution = request.management_scope
-    if resolution is None or resolution.candidate is None:
-        return False
-    if resolution.elevated_scope is None:
-        return False
-    if is_extension_action(request.action):
-        return False
-    expected = resolution.candidate.management_role_urn.value
-    return {role.urn.value for role in request.context.applicable_roles} == {expected}
+        # Policy DENY (no match or matching DENY) is final: no other
+        # constraint may turn it into ALLOW. Only a policy ALLOW is
+        # subject to the declared-but-unresolved constraint and strict
+        # dominance guards, applied in the documented order.
+        return apply_post_policy_guards(request, decision)

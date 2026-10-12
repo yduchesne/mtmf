@@ -299,6 +299,53 @@ list.
 one Role; deterministic URN ordering is diagnostic only and never implies
 precedence. The resolver performs no caching and no invalidation.
 
+### 8.4 Batch authorization (PR 16)
+
+PR 16 adds an internal, private ordered batch authorization seam in
+``mtmf_core.authorization.batch``; the single-Action ``Authorizer`` and
+the pure-Python ``CompiledPolicy`` default are unchanged.
+
+- ``AuthorizationBatch`` is an immutable ordered tuple of 1-100 genuine
+  ``AuthorizationRequest`` values that all share the *exact same*
+  ``AuthorizationContext`` object (identity, not structural equality).
+  Construction validates this frozen contract before any policy
+  resolution or native call. The contract carries no request id, caller
+  identity UUID, Application, subscription, or public wire DTO; PR 17
+  owns authentication, subscription eligibility, and mapping to the
+  PR 15 DTOs.
+- ``BatchAuthorizer`` (pure Python, default) validates the shared
+  session once, per-item checks the target Tenant / resolved management
+  scope in original position, resolves the applicable policy at most
+  once (never when every item is pre-denied), evaluates the surviving
+  ordered Actions through that one resolved policy, then applies the
+  same post-policy guards (declared-but-unresolved constraint, strict
+  dominance) the single Authorizer applies. Policy DENY is final.
+  ``AuthorizationBatchResult`` carries one complete decision per request
+  in original order.
+- ``RustBatchAuthorizer`` is an explicitly selected, experimental /
+  non-default batch path. It ownership-validates and flattens the
+  already-applicable Roles to detached primitives and resolves the whole
+  ordered surviving batch in exactly one PyO3 crossing
+  (``_mtmf_permission_engine.batch_evaluate`` /
+  ``NativeCompiledPolicy.evaluate_batch``): the canonical indexed
+  ``CompiledPolicy`` is compiled once and reused, no per-Action native
+  call is made, and no domain object, session, Tenant, membership,
+  assignment, or SQL crosses the boundary. There is no
+  backend/environment selector, no automatic Rust fallback, and no
+  caching or invocation of the native path by the default
+  ``Authorizer`` or ``BatchAuthorizer``.
+- **Invariant:** for every index ``i``,
+  ``BatchAuthorizer().authorize(batch).decisions[i]`` and
+  ``RustBatchAuthorizer().authorize(batch).decisions[i]`` equal the
+  complete ``Authorizer().authorize(batch.requests[i])`` decision
+  (effect, reason, matched specificity, matched-allow, matched-deny).
+  Any resolver/compilation/native infrastructure failure fails the
+  entire batch: no partial result, no per-item DEFAULT, and no
+  fallback. Malformed native input (unknown effect, malformed
+  Action/Permission URN anywhere in the batch, out-of-range size) and
+  malformed/incoherent native output are infrastructure failures that
+  can never become ``DENY``/``NO_MATCH`` or ALLOW.
+
 Python remains authoritative for authorization-context retrieval and orchestration: session validation, Tenant isolation, context validation, scope/dominance, stewardship/delegation, operation-specific constraints, and fail-closed orchestration all stay in Python, and the `Authorizer` remains the authoritative decision orchestrator.
 
 ### 8.1 Rust permission-policy kernel
@@ -397,6 +444,6 @@ Manager-side TenantManagementGroup actor eligibility is **settled** (PR 11: expl
 
 The existing single-action `Authorizer` and Python indexed `CompiledPolicy` remain the current implemented authorization path. A **future** `POST /v1/authorization/evaluate` endpoint (contract PR 15; implementation PR 17) will evaluate an explicit array of Actions for a verified acting Identity/Tenant/Organization context, with the authenticated Application derived from service credentials (PR 14). Tenant subscription eligibility (PR 13) is a mandatory precondition to ALLOW, not a Role grant.
 
-`mtmf-core` is the authoritative Policy Decision Point (PDP); PR 16 will add a true native Rust batch evaluator and comparable Python batch path, subject to full semantic parity and measured performance. `mtmf-client` (PR 18) will provide a short-lived scoped authorization snapshot and default-deny `require`/`is_allowed` helper, **not** a second policy evaluator. Applications remain Policy Enforcement Points (PEPs) and must enforce domain resource and data isolation.
+`mtmf-core` is the authoritative Policy Decision Point (PDP); PR 16 is **implemented** (section 8.4): an internal ordered Python batch path and an explicitly selected single-crossing native Rust batch path exist, with full complete-decision parity against the single `Authorizer`. The authenticated HTTP endpoint (PR 17) and `mtmf-client` (PR 18) remain future work; `mtmf-client` will provide a short-lived scoped authorization snapshot and default-deny `require`/`is_allowed` helper, **not** a second policy evaluator. Applications remain Policy Enforcement Points (PEPs) and must enforce domain resource and data isolation.
 
-Unknown/omitted Actions, expired/context-mismatched snapshots, unsupported constraints, and evaluation failures never yield ALLOW. Snapshot reuse is bound to user, Application, Tenant, Organization, Action and resource/scope; revocations take effect for new evaluations but existing unexpired decisions can be stale. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md). **None of these batch features is currently implemented.**
+Unknown/omitted Actions, expired/context-mismatched snapshots, unsupported constraints, and evaluation failures never yield ALLOW. Snapshot reuse is bound to user, Application, Tenant, Organization, Action and resource/scope; revocations take effect for new evaluations but existing unexpired decisions can be stale. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md). **The internal batch batch-evaluation seam is implemented (section 8.4); the authenticated HTTP endpoint (PR 17), scoped client snapshots (PR 18), and their end-to-end conformance remain not implemented.**

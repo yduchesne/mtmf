@@ -18,6 +18,12 @@ PR 8G additionally proves the experimental compiled-policy capability
 policy, evaluate an exact Action, evaluate a wildcard Action, and
 reject malformed compile input explicitly.
 
+PR 16 additionally proves the single-crossing native batch capability
+(``batch_evaluate`` and ``NativeCompiledPolicy.evaluate_batch``) in the
+same isolated wheel: compile once and evaluate an ordered batch in one
+call, preserve ordered complete-decision evidence, and reject malformed
+batch input all-or-nothing.
+
 The temporary environment and wheel artifacts are removed when the
 script exits (``--keep`` retains them for debugging). Global Python is
 never mutated, no PostgreSQL/Podman/network service or credential is
@@ -50,7 +56,7 @@ import sys
 
 import _mtmf_permission_engine as native
 
-required = ("engine_version", "match_permission", "evaluate", "compile_policy")
+required = ("engine_version", "match_permission", "evaluate", "compile_policy", "batch_evaluate")
 missing = [name for name in required if not callable(getattr(native, name, None))]
 if missing:
     raise SystemExit("installed module is missing required callables: %r" % (missing,))
@@ -157,6 +163,51 @@ else:
     raise SystemExit("compiled policy object must be opaque/read-only")
 if compiled.evaluate(action) != ("allow", "exact", True, False, None):
     raise SystemExit("compiled evaluation must be deterministic")
+
+# PR 16: the single-crossing native batch capability is present and works.
+batch_action = [
+    action,
+    "urn:mtmf:iam:actions:system:principal:set-alias",
+    "urn:mtmf:iam:actions:system:principal:get-object",
+]
+native_batch = native.batch_evaluate(
+    [
+        ("allow", [exact, wildcard]),
+        ("deny", ["urn:mtmf:iam:permissions:system:principal:set-alias"]),
+    ],
+    batch_action,
+)
+if native_batch != [
+    ("allow", "exact", True, False, None),
+    ("deny", "exact", False, True, "matched-deny"),
+    ("deny", None, False, False, "no-match"),
+]:
+    raise SystemExit("unexpected native batch result: %r" % (native_batch,))
+
+# The opaque compiled object exposes the ordered batch capability too.
+compiled_batch = compiled.evaluate_batch(batch_action[:2])
+if compiled_batch != [
+    ("allow", "exact", True, False, None),
+    ("deny", "exact", False, True, "matched-deny"),
+]:
+    raise SystemExit("unexpected compiled batch result: %r" % (compiled_batch,))
+
+# Batch malformed input is all-or-nothing: a malformed middle Action
+# fails the whole call and never yields a partial result or a decision.
+try:
+    native.batch_evaluate([("allow", [exact])], [action, "not-a-urn", action])
+except ValueError:
+    pass
+else:
+    raise SystemExit("malformed native batch input must fail explicitly")
+
+# An out-of-range native batch size is malformed input, not a decision.
+try:
+    native.batch_evaluate([("allow", [exact])], [])
+except ValueError:
+    pass
+else:
+    raise SystemExit("empty native batch must fail explicitly")
 
 # Private-module boundary: mtmf-api must never import the native module.
 try:
