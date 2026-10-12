@@ -1,8 +1,8 @@
 # PR 17 — Amendment #4 acceptance report
 
 **Branch:** `dev/pr17-http-service`. **Base:** `4eea688`; prior head `df2b8a7`.
-**Amendment #4 feature commit:** `__FILL_AFTER_COMMIT__` (all gates and the
-pre-commit hook ran on this tree).
+**Amendment #4 feature commit:** `ead92c4a943f65df2d99d827c445fdf28c163b9d`
+(all gates and the pre-commit hook ran on this tree).
 **Disposition: IMPLEMENTED (diagnosis/gates); ACCEPTANCE INCOMPLETE — STOPPED, NOT READY FOR MERGE.**
 
 ## 1. Approval gates
