@@ -173,6 +173,14 @@ EXPECTED_FUNCTION_NAMES = {
     "tenant_application_subscription_get",
     "tenant_application_subscription_find_by_application_and_tenant",
     "tenant_application_subscription_find_by_tenant",
+    "guard_service_credential_application",
+    "guard_external_subject_identity",
+    "service_credential_application_add",
+    "service_credential_application_revoke",
+    "service_credential_application_find_active",
+    "external_subject_identity_add",
+    "external_subject_identity_revoke",
+    "external_subject_identity_find_active",
 }
 
 _FORBIDDEN_TABLES = (
@@ -204,7 +212,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0010"
+    assert revision == "0011"
     assert revision == manager.head_revision
 
 

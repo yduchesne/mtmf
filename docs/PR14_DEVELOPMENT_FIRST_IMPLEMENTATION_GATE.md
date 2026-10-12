@@ -96,3 +96,63 @@ Before production authentication changes, the agent must reconcile fresh main/br
 **AUTHORIZED:** The human reviewer explicitly authorized execution of this PR 14 development-only, non-root implementation plan. This supersedes earlier implementation STOP language only for the bounded development implementation described here. The coding agent must follow the sequence, security constraints, mandatory tests and STOP conditions in section 8, with fresh-main reconciliation before edits.
 
 **Excluded:** production issuer configuration/deployment, root authentication and recovery, RFC 8693 delegation, cross-client propagation, public HTTP routes, and unrelated feature work. No implicit authorization to relax security checks, runtime database privileges, or acceptance gates. If a blocking contradiction or unmet security prerequisite is discovered, STOP and report it for human review. Implementation authorization does not imply implementation acceptance or permission to merge.
+
+## 10. Implementation status — development-only, non-root (2026-10-11)
+
+**Delivered (not DONE; production issuer and root remain deferred and blocked).**
+
+- `mtmf-core` provider-neutral contracts: immutable `IssuerProfile`,
+  `VerifiedAccessToken` (service/user class properties), `ServiceCredentialKey`,
+  `ExternalSubjectKey`, `VerifiedActorContext`, typed `AuthenticationError`
+  categories; `TokenVerifier`/`ConfigurationAttestor` ports; and
+  `AuthenticatedActorContextService` (attest → verify both tokens → class and
+  same-client checks → bindings → active FEDERATED Identity/Principal/ordinary
+  ACTIVE Tenant → memberships → ACTIVE registration → PR 13 subscription
+  eligibility; canonical root always fails closed).
+- `mtmf-service` transport: fixed-RS256 verifier with bounded JWKS
+  retrieval/cache, duplicate-claim and duplicate-`kid` rejection, zero positive
+  expiry leeway, required `exp`/`iat`, validated optional `nbf`, no
+  header-selected URL/algorithm; a fresh, zero-positive-cache canonical-manifest
+  attestation against the reviewed `dev/keycloak/expected-config-manifest.json`;
+  and a development composition seam. No HTTP route.
+- Additive `0011` persistence: immutable `service_credential_application` and
+  `external_subject_identity` tables with partial-unique ACTIVE rows and
+  immutability/terminal guards, operator-only mutation functions, two narrowly
+  reviewed runtime `SECURITY DEFINER` reads, updated 77-signature runtime
+  allowlist, and real-PostgreSQL binding/privilege tests.
+- Repository/SPI additions (`create_service_credential_application_repository`,
+  `create_external_subject_binding_repository`, `create_root_registry_repository`)
+  with in-memory and PostgreSQL implementations.
+
+**Acceptance evidence.**
+
+| Gate | Result |
+| --- | --- |
+| `tests/unit/authentication` (24 tests) | PASS |
+| `./build.sh --integration` | PASS — 552 passed plus 7 new binding tests |
+| migration `0011` + runtime privilege verifier | PASS on real PostgreSQL |
+| `./build.sh --qa` | PASS — 1381 unit tests, 86.61% coverage |
+| `./build.sh --sec` | PASS — Bandit 0 medium/high; Semgrep 0 findings |
+| `pre-commit run --all-files` | PASS |
+
+**Explicitly not executed / deferred (must not be reported as PASS).**
+
+- DC05 signed missing `azp`: still NOT EXECUTED (harness predicate only).
+- DC07 full real-token + real-PostgreSQL actor vertical slice: NOT EXECUTED;
+  bindings and privileges are validated on real PostgreSQL, and actor
+  composition is unit-tested with the in-memory SPI, but no end-to-end run
+  issues live Keycloak tokens through the real `PostgresMtmfSpi`.
+- AUTH-01–25 and AUTH-28–36 are covered in part by unit/integration tests; a
+  complete named acceptance mapping is not yet recorded.
+- G0/R12 matrix `NOT EXECUTED` entry remains as such; the separate clean
+  recreate was verified but not merged into the matrix artifact.
+
+**Residual risks.** Attestation is per-operation and fail-closed, but the
+configuration-change TOCTOU window and a privileged issuer administrator remain
+unmitigated; the class predicate is configuration-backed, not a JWT guarantee;
+bearer replay and separate-session acquisition remain; the JWKS cache is bounded
+but not instant on rotation.
+
+**Still closed.** Production issuer trust, root authentication/recovery,
+RFC 8693 actor delegation, cross-client propagation, and public HTTP routes.
+PR 14 must not be marked DONE.

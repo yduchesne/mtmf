@@ -31,6 +31,11 @@ from mtmf_core.domain.application import (
     ApplicationTenantRegistration,
     TenantApplicationSubscription,
 )
+from mtmf_core.domain.authentication_binding import (
+    ExternalSubjectBinding,
+    RootRegistryRecord,
+    ServiceCredentialBinding,
+)
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
@@ -549,4 +554,57 @@ class TenantManagementGroupActorEligibilityRepository(Protocol):
 
     def remove(self, management_group_id: DomainId, identity_id: DomainId) -> None:
         """Physically remove one designation, rejecting an unknown pair."""
+        ...
+
+
+@runtime_checkable
+class ServiceCredentialApplicationRepository(Protocol):
+    """Persistence for immutable ``(issuer, client_id)`` bindings.
+
+    A current binding maps one service credential to exactly one registered
+    Application; the semantic key, target and provenance are immutable and
+    ``REVOKED`` is terminal. Reads are detached; ambiguity fails closed.
+    """
+
+    def add(self, binding: ServiceCredentialBinding) -> None:
+        """Stage a new service-credential binding."""
+        ...
+
+    def find_active_by_key(self, issuer: str, client_id: str) -> ServiceCredentialBinding | None:
+        """Return the single active binding for an exact key, or ``None``."""
+        ...
+
+    def revoke(self, binding_id: DomainId) -> None:
+        """Stage revocation of an active binding, rejecting unknown identities."""
+        ...
+
+
+@runtime_checkable
+class ExternalSubjectBindingRepository(Protocol):
+    """Persistence for immutable ``(issuer, subject)`` bindings.
+
+    A current binding maps one external subject to exactly one MTMF Identity;
+    the semantic key, target and provenance are immutable and ``REVOKED`` is
+    terminal. Reads are detached; ambiguity fails closed.
+    """
+
+    def add(self, binding: ExternalSubjectBinding) -> None:
+        """Stage a new external-subject binding."""
+        ...
+
+    def find_active_by_key(self, issuer: str, subject: str) -> ExternalSubjectBinding | None:
+        """Return the single active binding for an exact key, or ``None``."""
+        ...
+
+    def revoke(self, binding_id: DomainId) -> None:
+        """Stage revocation of an active binding, rejecting unknown identities."""
+        ...
+
+
+@runtime_checkable
+class RootRegistryRepository(Protocol):
+    """Read-only access to the protected canonical root registry."""
+
+    def get(self) -> RootRegistryRecord | None:
+        """Return the canonical root registry record, or ``None`` when absent."""
         ...

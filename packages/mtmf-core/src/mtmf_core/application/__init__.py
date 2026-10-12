@@ -14,6 +14,7 @@ from mtmf_core.application.application_eligibility import (
     ApplicationTenantEligibilityIntegrityError,
     ApplicationTenantEligibilityService,
 )
+from mtmf_core.application.authentication import AuthenticatedActorContextService
 from mtmf_core.application.effective_roles import (
     EffectiveRoleIntegrityError,
     EffectiveRoleResolutionError,
@@ -34,6 +35,7 @@ from mtmf_core.application.management_scope import (
 __all__ = [
     "ApplicationTenantEligibilityIntegrityError",
     "ApplicationTenantEligibilityService",
+    "AuthenticatedActorContextService",
     "EffectiveRoleIntegrityError",
     "EffectiveRoleResolutionError",
     "EffectiveRoleResolver",

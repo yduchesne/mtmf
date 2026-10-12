@@ -342,12 +342,13 @@ def test_expected_removal_signatures_are_exactly_six() -> None:
 def test_expected_runtime_signatures_add_repository_and_assignment_functions() -> None:
     removal = roles.expected_removal_signatures()
     runtime = roles.expected_runtime_signatures()
-    assert len(runtime) == 75
+    assert len(runtime) == 77
     assert removal <= runtime
     # 44 repository functions through v004, 8 role-assignment entry points,
-    # 9 TenantManagementGroup/root-registry reads through v009, and 8
-    # Application-registry reads through v010.
-    assert len(runtime - removal) == 69
+    # 9 TenantManagementGroup/root-registry reads through v009,
+    # 8 Application-registry reads through v010, and 2 authentication-binding
+    # reads through v011.
+    assert len(runtime - removal) == 71
     for name in (
         "mtmf.tenant_add",
         "mtmf.role_add",
@@ -363,6 +364,8 @@ def test_expected_runtime_signatures_add_repository_and_assignment_functions() -
         "mtmf.application_get_by_key",
         "mtmf.application_tenant_registration_find_by_application_and_tenant",
         "mtmf.tenant_application_subscription_find_by_application_and_tenant",
+        "mtmf.service_credential_application_find_active",
+        "mtmf.external_subject_identity_find_active",
     ):
         assert any(signature.startswith(name + "(") for signature in runtime)
     # Privileged management-group mutation entry points are never approved.

@@ -26,6 +26,12 @@ from mtmf_core.domain.application import (
     ApplicationTenantRegistration,
     TenantApplicationSubscription,
 )
+from mtmf_core.domain.authentication_binding import (
+    BindingLifecycle,
+    ExternalSubjectBinding,
+    RootRegistryRecord,
+    ServiceCredentialBinding,
+)
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, PermissionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
@@ -496,4 +502,54 @@ def tenant_management_group_actor_eligibility_from_payload(
         id=_require_uuid(source, "id"),
         management_group_id=_require_uuid(source, "management_group_id"),
         identity_id=_require_uuid(source, "identity_id"),
+    )
+
+
+def service_credential_binding_from_payload(payload: object) -> ServiceCredentialBinding:
+    """Reconstruct a service-credential binding from a detached stored payload."""
+    source = _require_object(payload, "ServiceCredentialBinding")
+    raw_lifecycle = _require_int(source, "lifecycle")
+    try:
+        lifecycle = BindingLifecycle(raw_lifecycle)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored binding lifecycle {raw_lifecycle!r} is not a legal value"
+        ) from exc
+    return ServiceCredentialBinding(
+        id=_require_uuid(source, "id"),
+        issuer=_require_str(source, "issuer"),
+        client_id=_require_str(source, "client_id"),
+        application_id=_require_uuid(source, "application_id"),
+        created_at=_require_timestamp(source, "created_at"),
+        lifecycle=lifecycle,
+    )
+
+
+def external_subject_binding_from_payload(payload: object) -> ExternalSubjectBinding:
+    """Reconstruct an external-subject binding from a detached stored payload."""
+    source = _require_object(payload, "ExternalSubjectBinding")
+    raw_lifecycle = _require_int(source, "lifecycle")
+    try:
+        lifecycle = BindingLifecycle(raw_lifecycle)
+    except ValueError as exc:
+        raise PersistenceDataError(
+            f"stored binding lifecycle {raw_lifecycle!r} is not a legal value"
+        ) from exc
+    return ExternalSubjectBinding(
+        id=_require_uuid(source, "id"),
+        issuer=_require_str(source, "issuer"),
+        subject=_require_str(source, "subject"),
+        identity_id=_require_uuid(source, "identity_id"),
+        created_at=_require_timestamp(source, "created_at"),
+        lifecycle=lifecycle,
+    )
+
+
+def root_registry_from_payload(payload: object) -> RootRegistryRecord:
+    """Reconstruct the canonical root registry record from a stored payload."""
+    source = _require_object(payload, "RootRegistryRecord")
+    return RootRegistryRecord(
+        root_tenant_id=_require_uuid(source, "root_tenant_id"),
+        root_principal_id=_require_uuid(source, "root_principal_id"),
+        root_identity_id=_require_uuid(source, "root_identity_id"),
     )

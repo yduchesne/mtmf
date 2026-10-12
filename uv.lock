@@ -936,12 +936,14 @@ source = { editable = "packages/mtmf-service" }
 dependencies = [
     { name = "mtmf-api" },
     { name = "mtmf-core" },
+    { name = "pyjwt", extra = ["crypto"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mtmf-api", editable = "packages/mtmf-api" },
     { name = "mtmf-core", editable = "packages/mtmf-core" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.13,<3" },
 ]
 
 [[package]]
