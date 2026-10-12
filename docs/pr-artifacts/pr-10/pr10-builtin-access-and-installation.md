@@ -6,7 +6,7 @@
 
 | Topic | Decision | Why it matters |
 | --- | --- | --- |
-| Built-in Roles | Keep the 11 SYSTEM-defined Roles already listed in [Security Model](SECURITY_MODEL.md#16-built-in-roles) | One consistent vocabulary across MTMF |
+| Built-in Roles | Keep the 11 SYSTEM-defined Roles already listed in [Security Model](../../SECURITY_MODEL.md#16-built-in-roles) | One consistent vocabulary across MTMF |
 | Built-in Permissions | Explicit exact-Action ALLOW grants; no wildcard grants in the initial seed | New Actions never become implicitly authorized |
 | PermissionSets | Initially one ALLOW PermissionSet owned by each built-in Role | Simple, inspectable policy; unmatched requests already DENY |
 | SYSTEM-owned Role definitions | Protected from ordinary edits; changed by controlled MTMF migrations | Administrators cannot rewrite global policy |
@@ -57,7 +57,7 @@ A Role assignment is not a blanket delegation right. Assignment of administrativ
 
 ## Action and Permission conventions
 
-The [Security Model](SECURITY_MODEL.md#15-actions-and-permission-rule-grammar) defines an exact Action as `<resource>:<verb>-<qualifier>`, represented by an Action URN such as `urn:mtmf:iam:actions:system:tenant:transfer-stewardship`.
+The [Security Model](../../SECURITY_MODEL.md#15-actions-and-permission-rule-grammar) defines an exact Action as `<resource>:<verb>-<qualifier>`, represented by an Action URN such as `urn:mtmf:iam:actions:system:tenant:transfer-stewardship`.
 
 | Policy element | v0.1 rule |
 | --- | --- |
@@ -135,4 +135,4 @@ These are **design decisions**, not claims of existing implementation. PR 10 Ame
 
 The HTTP service and verified end-user identity propagation are separate architectural work. If they are not delivered in PR 10, privileged user-facing transfer/recovery must remain inaccessible rather than accept caller-supplied actor IDs.
 
-See also [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md), [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md), and [Authorization](AUTHORIZATION.md).
+See also [PR 10 Architecture Decisions](../pr-10/pr10-architecture-decisions.md), [Root Administration and Tenant Stewardship](../../ROOT_AND_STEWARDSHIP.md), and [Authorization](../../AUTHORIZATION.md).
