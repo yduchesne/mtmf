@@ -22,6 +22,7 @@ from mtmf_core.persistence.repositories import (
     ActionRepository,
     ApplicationRepository,
     ApplicationTenantRegistrationRepository,
+    ExternalSubjectBindingRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
     GroupRoleAssignmentRepository,
@@ -35,6 +36,8 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    RootRegistryRepository,
+    ServiceCredentialApplicationRepository,
     TenantApplicationSubscriptionRepository,
     TenantManagementGroupActorEligibilityRepository,
     TenantManagementGroupMembershipRepository,
@@ -169,4 +172,20 @@ class MtmfSpi(Protocol):
         self, uow: UnitOfWork
     ) -> TenantManagementGroupActorEligibilityRepository:
         """Create an eligibility-designation repository bound to ``uow``."""
+        ...
+
+    def create_service_credential_application_repository(
+        self, uow: UnitOfWork
+    ) -> ServiceCredentialApplicationRepository:
+        """Create a service-credential binding repository bound to ``uow``."""
+        ...
+
+    def create_external_subject_binding_repository(
+        self, uow: UnitOfWork
+    ) -> ExternalSubjectBindingRepository:
+        """Create an external-subject binding repository bound to ``uow``."""
+        ...
+
+    def create_root_registry_repository(self, uow: UnitOfWork) -> RootRegistryRepository:
+        """Create a read-only root-registry repository bound to ``uow``."""
         ...

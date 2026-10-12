@@ -214,6 +214,14 @@ _APPLICATION_REGISTRY_FUNCTION_ARGUMENTS = {
     "tenant_application_subscription_find_by_tenant": ("tenant_id_value uuid"),
 }
 
+#: Exact approved runtime EXECUTE signatures introduced by revision 0011
+#: (the two narrowly reviewed authentication-binding reads). Binding mutation
+#: and revocation are operator/installation-only and never granted.
+_AUTHENTICATION_BINDING_FUNCTION_ARGUMENTS = {
+    "service_credential_application_find_active": ("issuer_value text, client_id_value text"),
+    "external_subject_identity_find_active": ("issuer_value text, subject_value text"),
+}
+
 
 class RoleProvisioningError(RuntimeError):
     """The MTMF role topology or effective privileges are unsafe."""
@@ -241,7 +249,8 @@ def expected_runtime_signatures() -> frozenset[str]:
     read/write functions introduced through v004, plus the eight typed
     Role-assignment entry points introduced by v005, plus the nine
     TenantManagementGroup/root-registry reads introduced by v009, plus the
-    eight Application-registry reads introduced by v010. The mandatory
+    eight Application-registry reads introduced by v010, plus the two
+    authentication-binding reads introduced by v011. The mandatory
     post-upgrade verifier compares the runtime's effective EXECUTE set
     against exactly this manifest, so a function is only approved when both
     the migration grants and this manifest are updated in the same
@@ -253,6 +262,7 @@ def expected_runtime_signatures() -> frozenset[str]:
         **_ROLE_ASSIGNMENT_FUNCTION_ARGUMENTS,
         **_TENANT_MANAGEMENT_FUNCTION_ARGUMENTS,
         **_APPLICATION_REGISTRY_FUNCTION_ARGUMENTS,
+        **_AUTHENTICATION_BINDING_FUNCTION_ARGUMENTS,
     }
     return frozenset(
         f"{SCHEMA}.{name}({arguments_text})" for name, arguments_text in arguments.items()

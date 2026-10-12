@@ -183,3 +183,7 @@ PDP evaluation; no automatic renewal.
 **No blocking decisions remain.** PR 12 may be marked `[DONE]` once the
 documentation acceptance matrix D01–D15 in the companion contract is
 satisfied and docs-only QA passes.
+
+## T1 amendment — approved 2026-10-11
+
+The human reviewer approved a narrow v0.1 exception to the T1 consequence requiring a standards-based token-exchange/delegation mechanism in PR 14. PR 14 may use independently verified, signed service and interactive-user access tokens issued to the same registered OAuth client (D1), provided the issuer-specific client-binding semantics are approved, cross-client pairings are rejected, and Application, Identity, Tenant membership, subscription and policy gates are independently enforced. D1 establishes same-client user context, not consent or RFC 8693 actor delegation. Arbitrary service-signed identity assertions remain forbidden. Distinct-client delegation still requires separately approved standards-based delegation. Root authentication is deferred and must fail closed. This amendment does not approve the production issuer or authorize PR 14 implementation.

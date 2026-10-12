@@ -1,0 +1,21 @@
+# PR 14 — Coding-agent execution instructions (authorized 2026-10-11)
+
+## Authority and scope
+Human authorization is recorded in `docs/PR14_DEVELOPMENT_FIRST_IMPLEMENTATION_GATE.md` §9. Implement **development-only, non-root** authentication on `dev/service-auth`. Read that plan in full, including §8, plus `docs/PR14_AUTHENTICATION_SECURITY_DECISIONS.md` §§14D–14H, `docs/PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md`, `docs/PR14_NONROOT_APPROVAL_RECONCILIATION.md` §§10–11, `docs/HTTP_INTEGRATION_BATCH_AUTHORIZATION.md`, and `docs/DETAILED_PR_PLAN_AUTHORING_GUIDE.md`.
+
+## Mandatory first action
+Fetch `origin/main` and `origin/dev/service-auth`, inspect their exact SHAs, current migrations, runtime grants, package seams and tests. Do not assume the older main SHA or migration head remains current. Produce a concise reconciliation report (DONE / PARTIAL / NOT STARTED / BLOCKED), and stop on incompatible changes.
+
+## Implementation phases
+1. Define typed immutable verified service/user tokens, issuer profile, binding keys, actor context and sanitized errors. Keep provider-neutral policy and domain resolution in `mtmf-core`; keep issuer/JWKS transport, configuration, attestation and assembly in `mtmf-service`.
+2. Wire an independently trusted expected Keycloak configuration manifest to fresh live Admin REST attestation **for every authentication operation**. Positive attestation caching is forbidden. Missing/unreadable baseline, transport failure, timeout or configuration drift must reject both token classes. Preserve a test reproducing G0-T09 claim-only spoofing; test R06 drift rejection at the authentication boundary. Record TOCTOU residual risk; do not claim it is eliminated.
+3. Verify signed service and user access tokens independently against the pinned development Keycloak 26.8.0 profile: fixed RS256, exact issuer, distinct expected audiences, required exp and iat, validated optional nbf, zero positive expiry leeway, bounded JWT/JWKS parsing and transport, no untrusted header-selected URLs/algorithms, duplicate claims/kids rejected, safe key rotation/outage handling. Service class requires signed client_id equal to signed azp; user class requires signed azp/sub and absent client_id. Reject wrong-class and cross-client pairs.
+4. Implement additive PostgreSQL mapping persistence through existing SPI/UoW and stored functions only, with unique immutable credential-to-Application and issuer-subject-to-FEDERATED-Identity semantics. Verify real runtime role has only narrowly reviewed read EXECUTE permissions, never direct table access or mapping mutations.
+5. Compose verified D1 actor context only after both tokens, bindings, active Identity/Principal, ordinary Tenant and memberships, Application registration, and independent subscription eligibility pass. Root must always fail closed. Do not emit policy ALLOW from authentication.
+6. Add adversarial, integration, and privilege tests and document exact results. Reconcile R12 separate-run clean-recreation evidence with the matrix's NOT EXECUTED status without manufacturing PASS.
+
+## Required acceptance
+Run DC05 signed missing azp, DC07 real PostgreSQL domain binding, non-root AUTH-01–25 and AUTH-28–36, Keycloak mapper mutation/attestation outage tests, token swap/cross-client tests, malformed JWT/JWKS and key rotation cases, inactive entity/tenant/subscription cases, root exclusion, real PostgreSQL runtime privilege verifier, `./build.sh --qa`, `./build.sh --sec`, and `pre-commit run --all-files`. Report PASS/FAIL/NOT EXECUTED individually with command and evidence; do not equate unit coverage with full acceptance.
+
+## Explicit exclusions and STOP
+Do not implement production issuer trust, root authentication/recovery, RFC 8693 actor delegation, cross-client identity propagation, public HTTP routes/PR15 DTOs/PR17 runtime, client SDK or unrelated policy changes. Stop for security contradictions, issuer-profile drift, root exposure, privilege expansion, missing mandatory acceptance or unreviewed migration changes. Commit and push only verified scoped work to the feature branch; do not merge. Report base/final SHA, files, tests, failures, residual risks, and whether ready for human review.

@@ -22,6 +22,7 @@ from mtmf_core.persistence.postgres.repositories import (
     PostgresActionRepository,
     PostgresApplicationRepository,
     PostgresApplicationTenantRegistrationRepository,
+    PostgresExternalSubjectBindingRepository,
     PostgresGroupOrgMembershipRepository,
     PostgresGroupRepository,
     PostgresGroupRoleAssignmentRepository,
@@ -35,6 +36,8 @@ from mtmf_core.persistence.postgres.repositories import (
     PostgresPrincipalRepository,
     PostgresPrincipalTenantMembershipRepository,
     PostgresRoleRepository,
+    PostgresRootRegistryRepository,
+    PostgresServiceCredentialApplicationRepository,
     PostgresTenantApplicationSubscriptionRepository,
     PostgresTenantManagementGroupActorEligibilityRepository,
     PostgresTenantManagementGroupMembershipRepository,
@@ -46,6 +49,7 @@ from mtmf_core.persistence.repositories import (
     ActionRepository,
     ApplicationRepository,
     ApplicationTenantRegistrationRepository,
+    ExternalSubjectBindingRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
     GroupRoleAssignmentRepository,
@@ -59,6 +63,8 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    RootRegistryRepository,
+    ServiceCredentialApplicationRepository,
     TenantApplicationSubscriptionRepository,
     TenantManagementGroupActorEligibilityRepository,
     TenantManagementGroupMembershipRepository,
@@ -205,6 +211,22 @@ class PostgresMtmfSpi:
     ) -> TenantManagementGroupMembershipRepository:
         """Create a managed-Tenant membership repository bound to ``uow``."""
         return PostgresTenantManagementGroupMembershipRepository(self._require_own_uow(uow))
+
+    def create_service_credential_application_repository(
+        self, uow: UnitOfWork
+    ) -> ServiceCredentialApplicationRepository:
+        """Create a service-credential binding repository bound to ``uow``."""
+        return PostgresServiceCredentialApplicationRepository(self._require_own_uow(uow))
+
+    def create_external_subject_binding_repository(
+        self, uow: UnitOfWork
+    ) -> ExternalSubjectBindingRepository:
+        """Create an external-subject binding repository bound to ``uow``."""
+        return PostgresExternalSubjectBindingRepository(self._require_own_uow(uow))
+
+    def create_root_registry_repository(self, uow: UnitOfWork) -> RootRegistryRepository:
+        """Create a read-only root-registry repository bound to ``uow``."""
+        return PostgresRootRegistryRepository(self._require_own_uow(uow))
 
     def create_tenant_management_group_actor_eligibility_repository(
         self, uow: UnitOfWork

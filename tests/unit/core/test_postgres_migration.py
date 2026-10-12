@@ -107,8 +107,8 @@ def test_migrator_role_is_accepted() -> None:
 
 
 def test_head_revision_and_owner_role_are_the_current_values() -> None:
-    assert HEAD_REVISION == "0010"
-    assert PostgresMigrationManager.head_revision == "0010"
+    assert HEAD_REVISION == "0011"
+    assert PostgresMigrationManager.head_revision == "0011"
     assert OWNER_ROLE == "mtmf_owner"
 
 

@@ -1,0 +1,103 @@
+{
+  "clients": [
+    {
+      "audiences": [
+        "mtmf-service-api"
+      ],
+      "client_id": "mtmf-evidence-service",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "fe64db03-da86-4312-b7d1-0988c3b2d7cf"
+    },
+    {
+      "audiences": [
+        "mtmf-user-api"
+      ],
+      "client_id": "mtmf-evidence-user",
+      "service_account": false,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "b6b5f1da-c90b-41b8-be7c-1e1df6d00de7"
+    },
+    {
+      "audiences": [
+        "mtmf-same-client-api"
+      ],
+      "client_id": "mtmf-evidence-same-client",
+      "service_account": true,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "69f4b20e-0ca2-47d3-bb7f-e250d58a06da"
+    },
+    {
+      "audiences": [
+        "mtmf-root-api"
+      ],
+      "client_id": "mtmf-evidence-root",
+      "service_account": false,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "808796b6-58a2-4f79-895a-d46dad621323"
+    },
+    {
+      "audiences": [
+        "mtmf-exchange-api"
+      ],
+      "client_id": "mtmf-evidence-exchange",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": true,
+      "uuid": "c4e905f9-3433-409b-a346-cbecec82c6f7"
+    },
+    {
+      "audiences": [
+        "mtmf-expiry-api"
+      ],
+      "client_id": "mtmf-evidence-expiry",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "6c0280a7-f66e-4eac-8a12-0bb9d6378d0a"
+    },
+    {
+      "audiences": [
+        "mtmf-user-api",
+        "mtmf-service-api"
+      ],
+      "client_id": "mtmf-evidence-user-cross",
+      "service_account": false,
+      "standard_flow": true,
+      "token_exchange": false,
+      "uuid": "3eba3be2-10b7-425a-9208-33b7f1ef5238"
+    },
+    {
+      "audiences": [
+        "mtmf-service-api",
+        "mtmf-user-api"
+      ],
+      "client_id": "mtmf-evidence-service-cross",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "cac39c22-9d36-4032-88e1-bee76ee5d3ff"
+    },
+    {
+      "audiences": [
+        "mtmf-service-api"
+      ],
+      "client_id": "mtmf-evidence-svc-noclaim",
+      "service_account": true,
+      "standard_flow": false,
+      "token_exchange": false,
+      "uuid": "8340178d-f09a-46ac-a29e-041f2065ac2d"
+    }
+  ],
+  "issuer": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+  "realm": "mtmf-pr14-dev",
+  "users": [
+    "mtmf-user-alice",
+    "mtmf-user-bob",
+    "mtmf-root-admin"
+  ]
+}

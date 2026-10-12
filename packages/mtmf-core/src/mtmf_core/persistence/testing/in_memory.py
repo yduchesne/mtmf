@@ -44,6 +44,12 @@ from mtmf_core.domain.application import (
     validate_subscription_end_change,
     validate_subscription_transition,
 )
+from mtmf_core.domain.authentication_binding import (
+    BindingLifecycle,
+    ExternalSubjectBinding,
+    RootRegistryRecord,
+    ServiceCredentialBinding,
+)
 from mtmf_core.domain.errors import ApplicationRegistryInvariantError
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
@@ -76,6 +82,7 @@ from mtmf_core.domain.tenant import Tenant
 from mtmf_core.persistence.errors import (
     DuplicatePersistenceIdentityError,
     ForeignUnitOfWorkError,
+    PersistenceError,
     UnitOfWorkStateError,
     UnknownPersistenceIdentityError,
 )
@@ -83,6 +90,7 @@ from mtmf_core.persistence.repositories import (
     ActionRepository,
     ApplicationRepository,
     ApplicationTenantRegistrationRepository,
+    ExternalSubjectBindingRepository,
     GroupOrgMembershipRepository,
     GroupRepository,
     GroupRoleAssignmentRepository,
@@ -96,6 +104,8 @@ from mtmf_core.persistence.repositories import (
     PrincipalRepository,
     PrincipalTenantMembershipRepository,
     RoleRepository,
+    RootRegistryRepository,
+    ServiceCredentialApplicationRepository,
     TenantApplicationSubscriptionRepository,
     TenantManagementGroupActorEligibilityRepository,
     TenantManagementGroupMembershipRepository,
@@ -1388,3 +1398,159 @@ class InMemoryMtmfSpi:
     ) -> TenantManagementGroupActorEligibilityRepository:
         """Create an eligibility-designation repository bound to ``uow``."""
         return _InMemoryTenantManagementGroupActorEligibilityRepository(self._require_own_uow(uow))
+
+    def create_service_credential_application_repository(
+        self, uow: UnitOfWork
+    ) -> ServiceCredentialApplicationRepository:
+        """Create a service-credential binding repository bound to ``uow``."""
+        return _InMemoryServiceCredentialApplicationRepository(self._require_own_uow(uow))
+
+    def create_external_subject_binding_repository(
+        self, uow: UnitOfWork
+    ) -> ExternalSubjectBindingRepository:
+        """Create an external-subject binding repository bound to ``uow``."""
+        return _InMemoryExternalSubjectBindingRepository(self._require_own_uow(uow))
+
+    def create_root_registry_repository(self, uow: UnitOfWork) -> RootRegistryRepository:
+        """Create a read-only root-registry repository bound to ``uow``."""
+        return _InMemoryRootRegistryRepository(self._require_own_uow(uow))
+
+    def seed_root_registry(self, record: RootRegistryRecord) -> None:
+        """Seed the protected root registry (test-only provider helper)."""
+        self._committed_state.merge("root_registry", {"root": record})
+
+    def seed_service_credential_binding(self, binding: ServiceCredentialBinding) -> None:
+        """Seed a service-credential binding directly (test-only helper)."""
+        self._committed_state.merge("service_credential_bindings", {binding.id: binding})
+
+    def seed_external_subject_binding(self, binding: ExternalSubjectBinding) -> None:
+        """Seed an external-subject binding directly (test-only helper)."""
+        self._committed_state.merge("external_subject_bindings", {binding.id: binding})
+
+
+class _InMemoryBindingRepository:
+    """Shared read/stage mechanics for immutable authentication bindings."""
+
+    _collection: ClassVar[str]
+
+    def __init__(self, uow: _InMemoryUnitOfWork) -> None:
+        self._uow = uow
+
+    def _all(self) -> dict[object, object]:
+        merged: dict[object, object] = dict(self._uow._committed_state.items(self._collection))
+        merged.update(self._uow._staged_for(self._collection))
+        for key in self._uow._staged_deletions_for(self._collection):
+            merged.pop(key, None)
+        return merged
+
+
+class _InMemoryServiceCredentialApplicationRepository(_InMemoryBindingRepository):
+    """In-memory ``(issuer, client_id)`` binding repository."""
+
+    _collection = "service_credential_bindings"
+
+    def add(self, binding: ServiceCredentialBinding) -> None:
+        self._uow._require_active("ServiceCredentialApplicationRepository.add")
+        staged = self._uow._staged_for(self._collection)
+        if self._uow._committed_state.has(self._collection, binding.id) or binding.id in staged:
+            raise DuplicatePersistenceIdentityError(
+                f"ServiceCredentialBinding: identity {binding.id!r} already exists"
+            )
+        for existing in self._all().values():
+            other = cast(ServiceCredentialBinding, existing)
+            if (
+                other.lifecycle is BindingLifecycle.ACTIVE
+                and other.issuer == binding.issuer
+                and other.client_id == binding.client_id
+            ):
+                raise DuplicatePersistenceIdentityError(
+                    "ServiceCredentialBinding: an active binding already exists for this key"
+                )
+        staged[binding.id] = binding
+
+    def find_active_by_key(self, issuer: str, client_id: str) -> ServiceCredentialBinding | None:
+        matches = [
+            cast(ServiceCredentialBinding, row)
+            for row in self._all().values()
+            if cast(ServiceCredentialBinding, row).lifecycle is BindingLifecycle.ACTIVE
+            and cast(ServiceCredentialBinding, row).issuer == issuer
+            and cast(ServiceCredentialBinding, row).client_id == client_id
+        ]
+        if len(matches) > 1:
+            raise PersistenceError("ServiceCredentialBinding: ambiguous active binding for a key")
+        return matches[0] if matches else None
+
+    def revoke(self, binding_id: DomainId) -> None:
+        self._uow._require_active("ServiceCredentialApplicationRepository.revoke")
+        binding = self._all().get(binding_id)
+        if binding is None:
+            raise UnknownPersistenceIdentityError(
+                f"ServiceCredentialBinding: cannot revoke unknown identity {binding_id!r}"
+            )
+        existing = cast(ServiceCredentialBinding, binding)
+        if existing.lifecycle is not BindingLifecycle.ACTIVE:
+            raise PersistenceError("ServiceCredentialBinding: a terminal binding cannot change")
+        self._uow._staged_for(self._collection)[binding_id] = replace(
+            existing, lifecycle=BindingLifecycle.REVOKED
+        )
+
+
+class _InMemoryExternalSubjectBindingRepository(_InMemoryBindingRepository):
+    """In-memory ``(issuer, subject)`` binding repository."""
+
+    _collection = "external_subject_bindings"
+
+    def add(self, binding: ExternalSubjectBinding) -> None:
+        self._uow._require_active("ExternalSubjectBindingRepository.add")
+        staged = self._uow._staged_for(self._collection)
+        if self._uow._committed_state.has(self._collection, binding.id) or binding.id in staged:
+            raise DuplicatePersistenceIdentityError(
+                f"ExternalSubjectBinding: identity {binding.id!r} already exists"
+            )
+        for existing in self._all().values():
+            other = cast(ExternalSubjectBinding, existing)
+            if (
+                other.lifecycle is BindingLifecycle.ACTIVE
+                and other.issuer == binding.issuer
+                and other.subject == binding.subject
+            ):
+                raise DuplicatePersistenceIdentityError(
+                    "ExternalSubjectBinding: an active binding already exists for this key"
+                )
+        staged[binding.id] = binding
+
+    def find_active_by_key(self, issuer: str, subject: str) -> ExternalSubjectBinding | None:
+        matches = [
+            cast(ExternalSubjectBinding, row)
+            for row in self._all().values()
+            if cast(ExternalSubjectBinding, row).lifecycle is BindingLifecycle.ACTIVE
+            and cast(ExternalSubjectBinding, row).issuer == issuer
+            and cast(ExternalSubjectBinding, row).subject == subject
+        ]
+        if len(matches) > 1:
+            raise PersistenceError("ExternalSubjectBinding: ambiguous active binding for a key")
+        return matches[0] if matches else None
+
+    def revoke(self, binding_id: DomainId) -> None:
+        self._uow._require_active("ExternalSubjectBindingRepository.revoke")
+        binding = self._all().get(binding_id)
+        if binding is None:
+            raise UnknownPersistenceIdentityError(
+                f"ExternalSubjectBinding: cannot revoke unknown identity {binding_id!r}"
+            )
+        existing = cast(ExternalSubjectBinding, binding)
+        if existing.lifecycle is not BindingLifecycle.ACTIVE:
+            raise PersistenceError("ExternalSubjectBinding: a terminal binding cannot change")
+        self._uow._staged_for(self._collection)[binding_id] = replace(
+            existing, lifecycle=BindingLifecycle.REVOKED
+        )
+
+
+class _InMemoryRootRegistryRepository(_InMemoryBindingRepository):
+    """In-memory read-only root registry repository."""
+
+    _collection = "root_registry"
+
+    def get(self) -> RootRegistryRecord | None:
+        rows = self._all()
+        return cast(RootRegistryRecord, rows["root"]) if "root" in rows else None

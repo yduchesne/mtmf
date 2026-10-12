@@ -35,6 +35,11 @@ from mtmf_core.domain.application import (
     ApplicationTenantRegistration,
     TenantApplicationSubscription,
 )
+from mtmf_core.domain.authentication_binding import (
+    ExternalSubjectBinding,
+    RootRegistryRecord,
+    ServiceCredentialBinding,
+)
 from mtmf_core.domain.group import Group
 from mtmf_core.domain.iam_urn import ActionUrn, RoleUrn
 from mtmf_core.domain.identity import DomainId
@@ -65,6 +70,7 @@ from mtmf_core.persistence.errors import (
 from mtmf_core.persistence.postgres.mapping import (
     application_from_payload,
     application_tenant_registration_from_payload,
+    external_subject_binding_from_payload,
     group_from_payload,
     group_role_assignment_from_payload,
     identity_from_payload,
@@ -73,6 +79,8 @@ from mtmf_core.persistence.postgres.mapping import (
     principal_from_payload,
     role_from_payload,
     role_to_payload,
+    root_registry_from_payload,
+    service_credential_binding_from_payload,
     tenant_application_subscription_from_payload,
     tenant_from_payload,
     tenant_management_group_actor_eligibility_from_payload,
@@ -85,6 +93,7 @@ __all__ = [
     "PostgresActionRepository",
     "PostgresApplicationRepository",
     "PostgresApplicationTenantRegistrationRepository",
+    "PostgresExternalSubjectBindingRepository",
     "PostgresGroupOrgMembershipRepository",
     "PostgresGroupRepository",
     "PostgresGroupRoleAssignmentRepository",
@@ -98,6 +107,8 @@ __all__ = [
     "PostgresPrincipalRepository",
     "PostgresPrincipalTenantMembershipRepository",
     "PostgresRoleRepository",
+    "PostgresRootRegistryRepository",
+    "PostgresServiceCredentialApplicationRepository",
     "PostgresTenantApplicationSubscriptionRepository",
     "PostgresTenantManagementGroupActorEligibilityRepository",
     "PostgresTenantManagementGroupMembershipRepository",
@@ -1088,3 +1099,91 @@ class PostgresTenantManagementGroupActorEligibilityRepository(_Repository):
                 "TenantManagementGroupActorEligibility: cannot remove unknown designation "
                 f"({management_group_id!s}, {identity_id!s})"
             )
+
+
+class PostgresServiceCredentialApplicationRepository(_Repository):
+    """PostgreSQL ``(issuer, client_id)`` binding repository."""
+
+    def add(self, binding: ServiceCredentialBinding) -> None:
+        """Stage a new binding, rejecting a duplicate identity or active key."""
+        added = self._bool(
+            "SELECT mtmf.service_credential_application_add(%s, %s, %s, %s, %s, %s)",
+            (
+                binding.id.value,
+                binding.issuer,
+                binding.client_id,
+                binding.application_id.value,
+                int(binding.lifecycle),
+                binding.created_at,
+            ),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                "ServiceCredentialBinding: identity or active key already exists"
+            )
+
+    def find_active_by_key(self, issuer: str, client_id: str) -> ServiceCredentialBinding | None:
+        """Return the single active binding for an exact key, or ``None``."""
+        payload = self._payload(
+            "SELECT mtmf.service_credential_application_find_active(%s, %s)",
+            (issuer, client_id),
+        )
+        return None if payload is None else service_credential_binding_from_payload(payload)
+
+    def revoke(self, binding_id: DomainId) -> None:
+        """Stage revocation of an active binding, rejecting an unknown identity."""
+        revoked = self._bool(
+            "SELECT mtmf.service_credential_application_revoke(%s)", (binding_id.value,)
+        )
+        if not revoked:
+            raise UnknownPersistenceIdentityError(
+                f"ServiceCredentialBinding: no active binding {binding_id!r}"
+            )
+
+
+class PostgresExternalSubjectBindingRepository(_Repository):
+    """PostgreSQL ``(issuer, subject)`` binding repository."""
+
+    def add(self, binding: ExternalSubjectBinding) -> None:
+        """Stage a new binding, rejecting a duplicate identity or active key."""
+        added = self._bool(
+            "SELECT mtmf.external_subject_identity_add(%s, %s, %s, %s, %s, %s)",
+            (
+                binding.id.value,
+                binding.issuer,
+                binding.subject,
+                binding.identity_id.value,
+                int(binding.lifecycle),
+                binding.created_at,
+            ),
+        )
+        if not added:
+            raise DuplicatePersistenceIdentityError(
+                "ExternalSubjectBinding: identity or active key already exists"
+            )
+
+    def find_active_by_key(self, issuer: str, subject: str) -> ExternalSubjectBinding | None:
+        """Return the single active binding for an exact key, or ``None``."""
+        payload = self._payload(
+            "SELECT mtmf.external_subject_identity_find_active(%s, %s)", (issuer, subject)
+        )
+        return None if payload is None else external_subject_binding_from_payload(payload)
+
+    def revoke(self, binding_id: DomainId) -> None:
+        """Stage revocation of an active binding, rejecting an unknown identity."""
+        revoked = self._bool(
+            "SELECT mtmf.external_subject_identity_revoke(%s)", (binding_id.value,)
+        )
+        if not revoked:
+            raise UnknownPersistenceIdentityError(
+                f"ExternalSubjectBinding: no active binding {binding_id!r}"
+            )
+
+
+class PostgresRootRegistryRepository(_Repository):
+    """Read-only PostgreSQL root-registry repository."""
+
+    def get(self) -> RootRegistryRecord | None:
+        """Return the canonical root registry record, or ``None`` when absent."""
+        payload = self._payload("SELECT mtmf.root_registry_get()", ())
+        return None if payload is None else root_registry_from_payload(payload)
