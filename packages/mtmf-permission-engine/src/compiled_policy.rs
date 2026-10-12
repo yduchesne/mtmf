@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use crate::evaluator::EvaluationResult;
 use crate::matcher::MatchSpecificity;
 use crate::model::{PermissionEffect, PermissionSetInput};
-use crate::urn::{UrnParseError, parse_action_urn, parse_permission_urn};
+use crate::urn::{ParsedActionUrn, UrnParseError, parse_action_urn, parse_permission_urn};
 
 /// The pre-aggregated effect evidence for one semantic policy key.
 ///
@@ -259,24 +259,65 @@ impl CompiledPolicy {
     /// deterministic.
     pub fn evaluate(&self, action_urn: &str) -> Result<EvaluationResult, CompiledPolicyError> {
         let parsed = parse_action_urn(action_urn)?;
+        self.evaluate_parsed(&parsed)
+    }
+
+    /// Evaluate one already-parsed exact Action against the compiled policy.
+    ///
+    /// The shared indexed-lookup core of [`Self::evaluate`] and
+    /// [`Self::evaluate_batch`]: at most one EXACT-map and one
+    /// WILDCARD-map lookup, never a scan. The caller owns parsing so a
+    /// batch can validate every Action before resolving any of them.
+    fn evaluate_parsed(
+        &self,
+        parsed: &ParsedActionUrn,
+    ) -> Result<EvaluationResult, CompiledPolicyError> {
         let exact_key = ExactKey {
             namespace: parsed.namespace.clone(),
             resource: parsed.resource.clone(),
             verb: parsed.verb.clone(),
-            qualifier: parsed.qualifier,
+            qualifier: parsed.qualifier.clone(),
         };
         if let Some(aggregate) = self.exact.get(&exact_key) {
             return resolve_aggregate(MatchSpecificity::Exact, aggregate);
         }
         let wildcard_key = WildcardKey {
-            namespace: parsed.namespace,
-            resource: parsed.resource,
-            verb: parsed.verb,
+            namespace: parsed.namespace.clone(),
+            resource: parsed.resource.clone(),
+            verb: parsed.verb.clone(),
         };
         if let Some(aggregate) = self.wildcard.get(&wildcard_key) {
             return resolve_aggregate(MatchSpecificity::QualifierWildcard, aggregate);
         }
         Ok(EvaluationResult::no_match())
+    }
+
+    /// Evaluate an ordered batch of exact Action URNs against the
+    /// compiled policy.
+    ///
+    /// All-or-nothing: every Action URN is parsed and validated before
+    /// any lookup happens, and a malformed Action anywhere in the batch
+    /// fails the whole call with [`CompiledPolicyError::UrnParse`]. On
+    /// success exactly one [`EvaluationResult`] per input Action is
+    /// returned in input order, using the same indexed EXACT/WILDCARD
+    /// lookups as [`Self::evaluate`]. No Permission is re-parsed, no
+    /// policy is rescanned, and the compiled policy is never mutated.
+    ///
+    /// This is the single-crossing native batch core: callers transfer
+    /// the compiled policy once and all ordered Action URNs once.
+    pub fn evaluate_batch(
+        &self,
+        action_urns: &[String],
+    ) -> Result<Vec<EvaluationResult>, CompiledPolicyError> {
+        let mut parsed_actions = Vec::with_capacity(action_urns.len());
+        for action_urn in action_urns {
+            parsed_actions.push(parse_action_urn(action_urn)?);
+        }
+        let mut results = Vec::with_capacity(parsed_actions.len());
+        for parsed in &parsed_actions {
+            results.push(self.evaluate_parsed(parsed)?);
+        }
+        Ok(results)
     }
 
     /// Report the number of distinct EXACT keys in the compiled policy.
@@ -939,6 +980,75 @@ mod tests {
             debug_assert!(bound > 0);
             (self.next() % bound as u64) as usize
         }
+    }
+
+    // --- Batch evaluation -------------------------------------------------
+
+    #[test]
+    fn batch_of_one_matches_single_evaluation() {
+        let compiled = CompiledPolicy::compile(&[allow_set(vec![perm(PERM_SET_ACTIVE)])]).unwrap();
+        let batch = compiled
+            .evaluate_batch(&[ACTION_SET_ACTIVE.to_string()])
+            .unwrap();
+        assert_eq!(batch, vec![expect_allow(MatchSpecificity::Exact)]);
+        assert_eq!(batch[0], compiled.evaluate(ACTION_SET_ACTIVE).unwrap());
+    }
+
+    #[test]
+    fn batch_of_ten_and_hundred_preserves_order_and_duplicates() {
+        let compiled = CompiledPolicy::compile(&[
+            allow_set(vec![perm(PERM_SET_ANY)]),
+            deny_set(vec![perm(PERM_SET_ACTIVE)]),
+        ])
+        .unwrap();
+        let mut actions = Vec::new();
+        for _ in 0..3 {
+            actions.push(ACTION_SET_ACTIVE.to_string());
+        }
+        actions.push(ACTION_SET_ALIAS.to_string());
+        for _ in 0..96 {
+            actions.push(ACTION_GET_OBJECT.to_string());
+        }
+        assert_eq!(actions.len(), 100);
+        let batch = compiled.evaluate_batch(&actions).unwrap();
+        assert_eq!(batch.len(), 100);
+        // Duplicate exact-DENY occurrences stay DENY at their positions.
+        assert_eq!(
+            batch[0],
+            expect_matched_deny(MatchSpecificity::Exact, false)
+        );
+        assert_eq!(
+            batch[2],
+            expect_matched_deny(MatchSpecificity::Exact, false)
+        );
+        // Wildcard ALLOW for set-alias.
+        assert_eq!(batch[3], expect_allow(MatchSpecificity::QualifierWildcard));
+        // No matching permission for get-object.
+        assert_eq!(batch[4], expect_no_match());
+        assert_eq!(batch[99], expect_no_match());
+    }
+
+    #[test]
+    fn batch_malformed_middle_action_fails_whole_batch() {
+        let compiled = CompiledPolicy::compile(&[allow_set(vec![perm(PERM_SET_ACTIVE)])]).unwrap();
+        let actions = vec![
+            ACTION_SET_ACTIVE.to_string(),
+            ACTION_SET_ALIAS.to_string(),
+            "not-a-urn".to_string(),
+            ACTION_SET_ACTIVE.to_string(),
+        ];
+        assert_eq!(
+            compiled.evaluate_batch(&actions),
+            Err(CompiledPolicyError::UrnParse(UrnParseError::InvalidPrefix)),
+        );
+    }
+
+    #[test]
+    fn batch_empty_input_returns_empty_results() {
+        // The Python boundary enforces 1-100; the native core treats an
+        // empty batch as a valid zero-result computation.
+        let compiled = CompiledPolicy::compile(&[]).unwrap();
+        assert_eq!(compiled.evaluate_batch(&[]).unwrap(), Vec::new());
     }
 
     #[test]

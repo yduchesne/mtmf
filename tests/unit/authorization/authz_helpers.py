@@ -24,6 +24,7 @@ from mtmf_core import (
     DominanceRequirement,
     Identity,
     IdentityTenantMembership,
+    ManagementScopeResolution,
     PermissionEffect,
     PermissionSet,
     Principal,
@@ -103,6 +104,68 @@ def corrupt_role(role_urn: RoleUrn, permission_sets: tuple[PermissionSet, ...]) 
     Role.__setattr__(role, "permission_sets", permission_sets)
     Role.__setattr__(role, "extension", {})
     return role
+
+
+def make_authorization_context(
+    *,
+    tenant: Tenant | None = None,
+    principal: Principal | None = None,
+    identity: Identity | None = None,
+    session: SessionContext | None = None,
+    principal_tenant_memberships: tuple[PrincipalTenantMembership, ...] | None = None,
+    identity_tenant_memberships: tuple[IdentityTenantMembership, ...] | None = None,
+    roles: tuple[Role, ...] = (),
+) -> AuthorizationContext:
+    """Build a structurally valid authorization context (all facts overridable)."""
+    tenant = tenant if tenant is not None else make_tenant("A")
+    principal = principal if principal is not None else make_principal()
+    identity = identity if identity is not None else make_identity(principal_id=principal.id)
+    session = (
+        session if session is not None else SessionContext(tenant.id, principal.id, identity.id)
+    )
+    principal_tenant_memberships = (
+        principal_tenant_memberships
+        if principal_tenant_memberships is not None
+        else (PrincipalTenantMembership(principal.id, tenant.id),)
+    )
+    identity_tenant_memberships = (
+        identity_tenant_memberships
+        if identity_tenant_memberships is not None
+        else (IdentityTenantMembership(identity.id, tenant.id),)
+    )
+    return AuthorizationContext(
+        session,
+        tenant,
+        principal,
+        identity,
+        principal_tenant_memberships,
+        identity_tenant_memberships,
+        roles,
+    )
+
+
+def build_request_from_context(
+    context: AuthorizationContext,
+    *,
+    action: Action | None = None,
+    target_tenant_id: DomainId | None = None,
+    dominance_requirement: DominanceRequirement = DominanceRequirement.NONE,
+    subject_scope: SecurityScope | None = None,
+    target_scope: SecurityScope | None = None,
+    unsupported_constraints: tuple[UnsupportedConstraint, ...] = (),
+    management_scope: ManagementScopeResolution | None = None,
+) -> AuthorizationRequest:
+    """Build one request around an already-built (shared) context."""
+    return AuthorizationRequest(
+        context,
+        action if action is not None else make_action(),
+        target_tenant_id if target_tenant_id is not None else context.tenant.id,
+        dominance_requirement,
+        subject_scope,
+        target_scope,
+        unsupported_constraints,
+        management_scope,
+    )
 
 
 def build_authorization_request(

@@ -156,6 +156,8 @@ PY
             tests/unit/authorization/test_compiled_policy_evaluator.py \
             tests/unit/authorization/test_compiled_policy_differential.py \
             tests/unit/authorization/test_python_compiled_policy.py \
+            tests/unit/authorization/test_rust_batch_adapter.py \
+            tests/unit/authorization/test_rust_batch_authorizer.py \
             --no-cov
 
         echo "==> Verifying a clean wheel build/install/import/use (isolated environment)"
@@ -164,6 +166,7 @@ PY
         echo "==> Running benchmark smoke verification (no timing threshold)"
         uv run --no-sync python benchmarks/permission_evaluator_benchmark.py --smoke
         uv run --no-sync python benchmarks/compiled_policy_benchmark.py --smoke
+        uv run --no-sync python benchmarks/batch_authorization_benchmark.py --smoke
         ;;
     --integration)
         echo "==> Running PostgreSQL integration tests (MTMF-owned database only)"

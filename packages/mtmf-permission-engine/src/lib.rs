@@ -30,11 +30,12 @@
 //! equivalence.
 //!
 //! The only surface exposed to Python is the private PyO3 module plus
-//! small primitive bridges (a matcher fact bridge and an evaluator
-//! bridge). Inputs are detached primitive values only: no live MTMF
-//! Python domain object crosses the FFI boundary and no JSON
-//! serialization carries policy. Malformed/incoherent native input or
-//! output is an infrastructure failure, never a policy decision.
+//! small primitive bridges (a matcher fact bridge, a single-Action
+//! evaluator bridge, and a PR 16 ordered batch bridge). Inputs are
+//! detached primitive values only: no live MTMF Python domain object
+//! crosses the FFI boundary and no JSON serialization carries policy.
+//! Malformed/incoherent native input or output is an infrastructure
+//! failure, never a policy decision.
 
 use pyo3::prelude::*;
 
@@ -64,10 +65,11 @@ pub fn native_engine_version() -> &'static str {
 ///
 /// Exposes the deterministic capability API, the smallest primitive
 /// single-Permission matcher bridge, a primitive PermissionSet
-/// evaluator bridge, and (PR 8G experiment only) an opaque
-/// compiled-policy object bridge. No policy classes are exposed and
-/// nothing here authorizes: Python determines which policy is
-/// applicable.
+/// evaluator bridge, (PR 16) a single-crossing ordered batch bridge
+/// (`batch_evaluate`, plus `NativeCompiledPolicy.evaluate_batch`), and
+/// (PR 8G experiment only) an opaque compiled-policy object bridge. No
+/// policy classes are exposed and nothing here authorizes: Python
+/// determines which policy is applicable.
 #[pymodule]
 mod _mtmf_permission_engine {
     use pyo3::exceptions::PyValueError;
@@ -246,6 +248,11 @@ mod _mtmf_permission_engine {
         policy: CompiledPolicy,
     }
 
+    /// Frozen PR 16 native direct-batch bound: 1..=100 ordered Actions
+    /// per single crossing.
+    const NATIVE_BATCH_MIN: usize = 1;
+    const NATIVE_BATCH_MAX: usize = 100;
+
     #[pymethods]
     impl NativeCompiledPolicy {
         /// Evaluate one exact Action URN against the compiled policy.
@@ -259,6 +266,33 @@ mod _mtmf_permission_engine {
         fn evaluate(&self, action_urn: String) -> PyResult<NativeEvaluationResult> {
             match self.policy.evaluate(&action_urn) {
                 Ok(evaluation) => Ok(native_evaluation_result(evaluation)),
+                Err(error) => Err(PyValueError::new_err(error.describe())),
+            }
+        }
+
+        /// Evaluate an ordered batch of exact Action URNs in one crossing.
+        ///
+        /// Accepts 1-100 Actions, parses and validates every Action URN
+        /// before resolving any of them (all-or-nothing), and returns one
+        /// documented primitive 5-tuple per Action in input order. Any
+        /// malformed Action anywhere in the batch raises `ValueError` and
+        /// produces no partial result. Reuses the same indexed
+        /// EXACT/WILDCARD lookups as `evaluate`; no Permission is
+        /// re-parsed and the compiled policy is never mutated.
+        fn evaluate_batch(
+            &self,
+            action_urns: Vec<String>,
+        ) -> PyResult<Vec<NativeEvaluationResult>> {
+            if action_urns.len() < NATIVE_BATCH_MIN || action_urns.len() > NATIVE_BATCH_MAX {
+                return Err(PyValueError::new_err(format!(
+                    "native batch size {} is outside the supported range {NATIVE_BATCH_MIN}..={NATIVE_BATCH_MAX}",
+                    action_urns.len()
+                )));
+            }
+            match self.policy.evaluate_batch(&action_urns) {
+                Ok(evaluations) => Ok(Vec::from_iter(
+                    evaluations.into_iter().map(native_evaluation_result),
+                )),
                 Err(error) => Err(PyValueError::new_err(error.describe())),
             }
         }
@@ -285,6 +319,44 @@ mod _mtmf_permission_engine {
         let policy = CompiledPolicy::compile(&sets)
             .map_err(|error| PyValueError::new_err(error.describe()))?;
         Ok(NativeCompiledPolicy { policy })
+    }
+
+    /// Compile already-applicable PermissionSets and evaluate an ordered
+    /// batch of exact Action URNs in ONE native crossing (PR 16).
+    ///
+    /// This is the batch authorization surface: the caller transfers the
+    /// detached policy primitives once and all ordered Action URNs once;
+    /// the native side compiles the indexed policy once and resolves the
+    /// whole ordered batch, returning one documented primitive 5-tuple
+    /// per Action in input order. It reuses the canonical
+    /// [`CompiledPolicy`] indexed evaluator - there is no second engine,
+    /// no per-Action FFI call, and no scan.
+    ///
+    /// Input is 1-100 Actions. Malformed input is all-or-nothing: an
+    /// unknown effect, a malformed Permission URN, a malformed Action
+    /// URN anywhere in the batch, or an out-of-range size raises
+    /// `ValueError` and no partial result is returned. Malformed input is
+    /// never a policy decision and there is no Python fallback.
+    #[pyfunction]
+    fn batch_evaluate(
+        permission_sets: Vec<(String, Vec<String>)>,
+        action_urns: Vec<String>,
+    ) -> PyResult<Vec<NativeEvaluationResult>> {
+        if action_urns.len() < NATIVE_BATCH_MIN || action_urns.len() > NATIVE_BATCH_MAX {
+            return Err(PyValueError::new_err(format!(
+                "native batch size {} is outside the supported range {NATIVE_BATCH_MIN}..={NATIVE_BATCH_MAX}",
+                action_urns.len()
+            )));
+        }
+        let sets = parse_primitive_sets(permission_sets)?;
+        let policy = CompiledPolicy::compile(&sets)
+            .map_err(|error| PyValueError::new_err(error.describe()))?;
+        match policy.evaluate_batch(&action_urns) {
+            Ok(evaluations) => Ok(Vec::from_iter(
+                evaluations.into_iter().map(native_evaluation_result),
+            )),
+            Err(error) => Err(PyValueError::new_err(error.describe())),
+        }
     }
 }
 
