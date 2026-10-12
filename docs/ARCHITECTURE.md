@@ -418,9 +418,12 @@ no policy internals, credentials, or Tenant-existence distinctions are exposed.
 Synchronous evaluation runs in a worker thread with an explicit process-local
 admission bound (`max_in_flight_evaluations`); a permit is held until the
 worker actually completes, so an HTTP-deadline timeout cannot leave unbounded
-work accumulating. The development one-shot initializer is separate and
-privileged; the HTTP runtime uses only the restricted `mtmf_runtime`
-PostgreSQL identity.
+work accumulating, and a worker whose permit was already released never
+begins. The restricted runtime PostgreSQL identity also carries configurable
+`statement_timeout`/`lock_timeout` session timeouts (`MTMF_RUNTIME_STATEMENT_TIMEOUT_MS`,
+`MTMF_RUNTIME_LOCK_TIMEOUT_MS`) applied to every connection through the DSN.
+The development one-shot initializer is separate and privileged; the HTTP
+runtime uses only the restricted `mtmf_runtime` PostgreSQL identity.
 
 ## 14. Observability
 

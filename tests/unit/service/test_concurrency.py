@@ -28,7 +28,11 @@ from mtmf_api.authorization import (
     DecisionReason,
 )
 from mtmf_service.app import create_app
-from mtmf_service.concurrency import EvaluationAdmission
+from mtmf_service.concurrency import (
+    EvaluationAdmission,
+    EvaluationNotAdmittedError,
+    run_admitted,
+)
 from mtmf_service.rate_limit import TokenBucketRateLimiter
 from mtmf_service.readiness import StaticReadiness
 from mtmf_service.settings import ServiceSettings
@@ -219,3 +223,46 @@ def test_permit_release_if_not_started_releases_once():
 def test_admission_rejects_bad_capacity():
     with pytest.raises(ValueError):
         EvaluationAdmission(0)
+
+
+def test_a2_15_premature_release_prevents_worker_execution():
+    """Cancellation proven to precede execution must prevent any work."""
+    admission = EvaluationAdmission(1)
+    permit = admission.try_acquire()
+    assert permit is not None
+    # The transport wins the race and releases before the worker begins.
+    permit.release_if_not_started()
+    assert admission.in_flight == 0
+    executed: list[str] = []
+    with pytest.raises(EvaluationNotAdmittedError):
+        run_admitted(permit, lambda: executed.append("ran"))
+    assert executed == []
+    # The permit was released exactly once and cannot double-release.
+    permit.release()
+    assert admission.in_flight == 0
+
+
+def test_a2_15_worker_start_blocks_transport_release():
+    """If the worker begins first, the transport cannot release its permit."""
+    admission = EvaluationAdmission(1)
+    permit = admission.try_acquire()
+    assert permit is not None
+    assert permit.mark_started() is True
+    # The transport observes RUNNING and must not release.
+    permit.release_if_not_started()
+    assert admission.in_flight == 1
+    permit.release()
+    assert admission.in_flight == 0
+
+
+def test_a2_15_run_admitted_releases_exactly_once():
+    admission = EvaluationAdmission(1)
+    permit = admission.try_acquire()
+    assert permit is not None
+    assert run_admitted(permit, lambda: 42) == 42
+    assert admission.in_flight == 0
+    permit.release()
+    assert admission.in_flight == 0
+    with pytest.raises(EvaluationNotAdmittedError):
+        run_admitted(permit, lambda: "never")
+    assert admission.in_flight == 0

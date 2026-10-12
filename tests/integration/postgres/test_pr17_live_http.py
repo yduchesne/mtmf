@@ -357,9 +357,14 @@ class _LiveServer:
         self._thread.join(timeout=10)
 
 
-def _live_app(*, expected_manifest: str | None = None) -> Any:
+def _live_app(
+    *,
+    expected_manifest: str | None = None,
+    rate_limiter: Any | None = None,
+    evaluation_timeout_seconds: float = 30.0,
+) -> Any:
     spi = PostgresMtmfSpi(PostgresConfig.from_env(PostgresRole.RUNTIME))
-    settings = ServiceSettings(evaluation_timeout_seconds=30)
+    settings = ServiceSettings(evaluation_timeout_seconds=evaluation_timeout_seconds)
     authorization_service = build_authorization_service(
         spi=spi,
         issuer_config=_issuer_config(expected_manifest=expected_manifest),
@@ -369,7 +374,7 @@ def _live_app(*, expected_manifest: str | None = None) -> Any:
         settings=settings,
         authorization_service=authorization_service,
         readiness=StaticReadiness(True),
-        rate_limiter=TokenBucketRateLimiter(per_minute=100000, burst=100000),
+        rate_limiter=rate_limiter or TokenBucketRateLimiter(per_minute=100000, burst=100000),
     )
 
 
@@ -446,11 +451,28 @@ def test_v02_unknown_action_and_mtmf_owned(db: psycopg.Connection, live_server: 
     assert owned.json()["decisions"][0]["reason"] == "UNSUPPORTED_RESOURCE"
 
 
-def test_v04_suspended_subscription_is_ineligible(db: psycopg.Connection, live_server: Any) -> None:
+@pytest.mark.parametrize("lifecycle", [2, 3, 4])  # SUSPENDED, CANCELLED, EXPIRED
+def test_v04_lifecycle_ineligible(db: psycopg.Connection, live_server: Any, lifecycle: int) -> None:
     subject = ev.decode_unverified(_user_token())[1]["sub"]
     ids = _seed(db, subject)
     db.execute(
-        "UPDATE mtmf.tenant_application_subscription SET lifecycle = 3 WHERE application_id = %s",
+        "UPDATE mtmf.tenant_application_subscription SET lifecycle = %s WHERE application_id = %s",
+        (lifecycle, ids["application_id"]),
+    )
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+        service=_service_token(),
+        user=_user_token(),
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INELIGIBLE_APPLICATION"
+
+
+def test_v04_no_subscription_is_ineligible(db: psycopg.Connection, live_server: Any) -> None:
+    subject = ev.decode_unverified(_user_token())[1]["sub"]
+    ids = _seed(db, subject)
+    db.execute(
+        "DELETE FROM mtmf.tenant_application_subscription WHERE application_id = %s",
         (ids["application_id"],),
     )
     response = _post(
@@ -462,7 +484,25 @@ def test_v04_suspended_subscription_is_ineligible(db: psycopg.Connection, live_s
     assert response.json()["error"]["code"] == "INELIGIBLE_APPLICATION"
 
 
-def test_v05_wrong_tenant_and_cross_client(db: psycopg.Connection, live_server: Any) -> None:
+def test_v04_time_expired_subscription_is_ineligible(
+    db: psycopg.Connection, live_server: Any
+) -> None:
+    subject = ev.decode_unverified(_user_token())[1]["sub"]
+    ids = _seed(db, subject)
+    db.execute(
+        "UPDATE mtmf.tenant_application_subscription SET ends_at = %s WHERE application_id = %s",
+        (datetime.now(UTC) - timedelta(hours=1), ids["application_id"]),
+    )
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+        service=_service_token(),
+        user=_user_token(),
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INELIGIBLE_APPLICATION"
+
+
+def test_v05_wrong_tenant_and_forged_user(db: psycopg.Connection, live_server: Any) -> None:
     subject = ev.decode_unverified(_user_token())[1]["sub"]
     _seed(db, subject)
     mismatched = _post(
@@ -478,6 +518,47 @@ def test_v05_wrong_tenant_and_cross_client(db: psycopg.Connection, live_server: 
         user="not-a-token",
     )
     assert forged.status_code == 403
+
+
+def test_v05_foreign_organization_is_rejected(db: psycopg.Connection, live_server: Any) -> None:
+    subject = ev.decode_unverified(_user_token())[1]["sub"]
+    ids = _seed(db, subject)
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION), organization_id=_uuid()),
+        service=_service_token(),
+        user=_user_token(),
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "UNTRUSTED_ACTOR"
+
+
+def test_v05_different_client_service_token_is_rejected(
+    db: psycopg.Connection, live_server: Any
+) -> None:
+    subject = ev.decode_unverified(_user_token())[1]["sub"]
+    ids = _seed(db, subject)
+    other = ev.Issuer(
+        base=_env("MTMF_PR14_KC_BASE"),
+        realm=REALM,
+        ca_file=os.environ.get("MTMF_PR14_KC_CA_FILE", ""),
+    )
+    other_service = ev.client_credentials_token(
+        other, "mtmf-evidence-service", "mtmf-evidence-service-dev-secret"
+    )["access_token"]
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+        service=other_service,
+        user=_user_token(),
+    )
+    # The different-client service token carries the wrong audience/class for
+    # this profile, so it fails closed at the trust boundary (401/403). The
+    # explicit same-client D1 binding rejection with matching audiences is
+    # covered by the PR 14 live suite (`test_dc07_v05_cross_client_rejected`)
+    # and unit H13. The approved fixture has no second client with the shared
+    # audience, so a same-audience cross-client pair cannot be built here
+    # without a manifest change (STOP-01).
+    assert response.status_code in (401, 403)
+    assert "ALLOW" not in response.text
 
 
 def test_v06_root_subject_is_denied(db: psycopg.Connection, live_server: Any) -> None:
@@ -539,6 +620,31 @@ def test_v15_live_http_limits_and_errors(db: psycopg.Connection, live_server: An
     )
     assert missing_service.status_code == 401
     assert missing_service.headers.get("cache-control") == "no-store"
+
+
+def test_v15_rate_limit_saturation_is_429(db: psycopg.Connection, live_server: Any) -> None:
+    subject = ev.decode_unverified(_user_token())[1]["sub"]
+    ids = _seed(db, subject)
+    rate = f"http://127.0.0.1:{PORT + 2}"
+    with _LiveServer(
+        _live_app(rate_limiter=TokenBucketRateLimiter(per_minute=1, burst=1)), port=PORT + 2
+    ):
+        first = _post(
+            _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+            service=_service_token(),
+            user=_user_token(),
+            base_url=rate,
+        )
+        assert first.status_code == 200
+        second = _post(
+            _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+            service=_service_token(),
+            user=_user_token(),
+            base_url=rate,
+        )
+        assert second.status_code == 429
+        assert second.json()["error"]["code"] == "RATE_LIMITED"
+        assert second.headers.get("cache-control") == "no-store"
 
 
 def test_v07_manifest_mismatch_fails_closed(live_server: Any) -> None:

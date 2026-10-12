@@ -58,6 +58,19 @@ Record reviewer identity, date, reference, and exact approved scope here.
 
 > Reviewer disposition: **_PENDING_** (not supplied during this execution).
 
+## Amendment #2 re-confirmation
+
+Decision: **PENDING**
+Reviewer: (not supplied)
+Date: (not supplied)
+Scope: (not supplied)
+Rationale: (not supplied)
+
+The coding agent did **not** invent a reviewer decision. Under Part E this keeps
+PR 17 blocked for final acceptance; the implementation still enforces
+single-header extraction, duplicate rejection, redaction, and independent
+PR 14 service/user verification (see the Amendment #2 security review).
+
 ## 5. Consequence
 
 Because approval is absent, PR 17 **STOPs before merge** (plan §3, §13). All

@@ -12,6 +12,8 @@ import pytest
 
 from mtmf_core.persistence.postgres.config import (
     DEFAULT_PORT,
+    DEFAULT_RUNTIME_LOCK_TIMEOUT_MS,
+    DEFAULT_RUNTIME_STATEMENT_TIMEOUT_MS,
     PostgresConfig,
     PostgresConfigError,
     PostgresRole,
@@ -27,6 +29,8 @@ def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "MTMF_POSTGRES_DB",
         "MTMF_POSTGRES_USER",
         "MTMF_POSTGRES_PASSWORD",
+        "MTMF_RUNTIME_STATEMENT_TIMEOUT_MS",
+        "MTMF_RUNTIME_LOCK_TIMEOUT_MS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -225,3 +229,81 @@ def test_runtime_only_environment_cannot_build_admin_or_migrator_config(
         PostgresConfig.from_env(PostgresRole.ADMIN)
     with pytest.raises(PostgresConfigError):
         PostgresConfig.from_env(PostgresRole.MIGRATOR)
+
+
+def _runtime_components(**extra: str) -> dict[str, str]:
+    return {
+        "MTMF_RUNTIME_POSTGRES_HOST": "127.0.0.1",
+        "MTMF_RUNTIME_POSTGRES_PORT": "25432",
+        "MTMF_RUNTIME_POSTGRES_DB": "mtmf",
+        "MTMF_RUNTIME_POSTGRES_USER": "mtmf_runtime",
+        "MTMF_RUNTIME_POSTGRES_PASSWORD": "runtime-pw",
+        **extra,
+    }
+
+
+def test_runtime_timeouts_default_and_apply_to_the_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("os.environ", _runtime_components())
+    runtime = PostgresConfig.from_env(PostgresRole.RUNTIME)
+    assert runtime.statement_timeout_ms == DEFAULT_RUNTIME_STATEMENT_TIMEOUT_MS
+    assert runtime.lock_timeout_ms == DEFAULT_RUNTIME_LOCK_TIMEOUT_MS
+    options = runtime.session_options
+    assert options is not None
+    assert f"statement_timeout={DEFAULT_RUNTIME_STATEMENT_TIMEOUT_MS}" in options
+    assert f"lock_timeout={DEFAULT_RUNTIME_LOCK_TIMEOUT_MS}" in options
+    assert "options=" in runtime.psycopg_dsn
+
+
+def test_runtime_timeouts_are_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "os.environ",
+        _runtime_components(
+            MTMF_RUNTIME_STATEMENT_TIMEOUT_MS="8000",
+            MTMF_RUNTIME_LOCK_TIMEOUT_MS="2500",
+        ),
+    )
+    runtime = PostgresConfig.from_env(PostgresRole.RUNTIME)
+    assert runtime.statement_timeout_ms == 8000
+    assert runtime.lock_timeout_ms == 2500
+
+
+def test_admin_and_migrator_have_no_session_timeouts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("os.environ", _components())
+    admin = PostgresConfig.from_env(PostgresRole.ADMIN)
+    assert admin.session_options is None
+    assert "options=" not in admin.psycopg_dsn
+    monkeypatch.setattr(
+        "os.environ",
+        {"MTMF_MIGRATOR_DATABASE_URL": "postgresql+psycopg://mig:pw@h:6001/mtmf"},
+    )
+    migrator = PostgresConfig.from_env(PostgresRole.MIGRATOR)
+    assert migrator.session_options is None
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"MTMF_RUNTIME_STATEMENT_TIMEOUT_MS": "0"},
+        {"MTMF_RUNTIME_STATEMENT_TIMEOUT_MS": "-1"},
+        {"MTMF_RUNTIME_STATEMENT_TIMEOUT_MS": "999999999"},
+        {"MTMF_RUNTIME_LOCK_TIMEOUT_MS": "0"},
+        {
+            "MTMF_RUNTIME_STATEMENT_TIMEOUT_MS": "3000",
+            "MTMF_RUNTIME_LOCK_TIMEOUT_MS": "3000",
+        },
+        {
+            "MTMF_RUNTIME_STATEMENT_TIMEOUT_MS": "3000",
+            "MTMF_RUNTIME_LOCK_TIMEOUT_MS": "5000",
+        },
+    ],
+)
+def test_invalid_runtime_timeouts_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, extra: dict[str, str]
+) -> None:
+    monkeypatch.setattr("os.environ", _runtime_components(**extra))
+    with pytest.raises(PostgresConfigError):
+        PostgresConfig.from_env(PostgresRole.RUNTIME)

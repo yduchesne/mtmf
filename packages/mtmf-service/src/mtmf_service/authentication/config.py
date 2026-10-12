@@ -98,4 +98,7 @@ class IssuerConfig:
             jwks_cache_seconds=float(
                 os.environ.get("MTMF_AUTH_JWKS_CACHE_SECONDS", "300") or "300"
             ),
+            # Development-only, approved decision §14J. Default stays fail-closed
+            # (distinct audiences required) unless explicitly enabled.
+            allow_shared_audience=os.environ.get("MTMF_AUTH_ALLOW_SHARED_AUDIENCE", "") == "1",
         )

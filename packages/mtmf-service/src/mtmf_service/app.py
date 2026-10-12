@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from mtmf_api.authorization import AuthorizationBatchResponse
 from mtmf_api.errors import ApiErrorCode, ApiErrorResponse
 from mtmf_api.json_codec import parse_request_json, serialize_error, serialize_response
-from mtmf_service.concurrency import EvaluationAdmission
+from mtmf_service.concurrency import EvaluationAdmission, run_admitted
 from mtmf_service.errors import PublicError, map_exception
 from mtmf_service.evaluation import AuthorizationService
 from mtmf_service.rate_limit import RateLimiter
@@ -108,18 +108,18 @@ def create_app(
             raise PublicError(ApiErrorCode.DEPENDENCY_UNAVAILABLE)
 
         def _admitted_worker() -> AuthorizationBatchResponse:
-            # Runs in the worker thread. The permit is released only when
-            # the synchronous evaluation actually returns or raises, even
-            # if the HTTP deadline already expired and abandoned the thread.
-            permit.mark_started()
-            try:
-                return authorization_service.evaluate(
+            # Runs in the worker thread. ``run_admitted`` refuses to execute
+            # if the transport already released the permit (cancellation
+            # proven to precede execution) and otherwise releases it only
+            # after the synchronous evaluation actually returns or raises.
+            return run_admitted(
+                permit,
+                lambda: authorization_service.evaluate(
                     service_token=service_token,
                     user_token=user_token,
                     request=parsed,
-                )
-            finally:
-                permit.release()
+                ),
+            )
 
         try:
             response = await asyncio.wait_for(

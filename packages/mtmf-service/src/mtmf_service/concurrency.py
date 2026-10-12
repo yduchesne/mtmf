@@ -22,8 +22,44 @@ work per worker process, not cluster-wide.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 
-__all__ = ["EvaluationAdmission", "EvaluationPermit"]
+__all__ = [
+    "EvaluationAdmission",
+    "EvaluationNotAdmittedError",
+    "EvaluationPermit",
+    "run_admitted",
+]
+
+
+class EvaluationNotAdmittedError(RuntimeError):
+    """The permit was released before the worker began; work must not run.
+
+    Raised inside the abandoned worker thread after the transport already
+    released the permit because cancellation was proven to precede
+    execution. The result is discarded; the important effect is that no
+    authorization logic runs without a valid permit.
+    """
+
+
+def run_admitted[T](permit: EvaluationPermit, work: Callable[[], T]) -> T:
+    """Run ``work`` only if ``permit`` is still held, then release exactly once.
+
+    The admission invariant is enforced here: if the permit was already
+    released by the transport (cancellation proven to precede execution),
+    ``work`` is not invoked. Otherwise the worker owns the permit for the
+    whole synchronous call and releases it in ``finally``.
+
+    :raises EvaluationNotAdmittedError: if the permit was already released.
+    """
+    if not permit.mark_started():
+        raise EvaluationNotAdmittedError(
+            "the evaluation permit was released before the worker began"
+        )
+    try:
+        return work()
+    finally:
+        permit.release()
 
 
 class EvaluationPermit:
