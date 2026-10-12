@@ -76,3 +76,17 @@ Report branch/base/final SHA; exact changed files; each G0 decision and referenc
 ## 7. Immediate next action
 
 **Do only G0 documentation and issuer evidence** until the human reviewer explicitly approves the remaining non-root decisions and authorizes implementation. This plan is not that approval.
+
+## 8. Post-approval execution amendment (2026-10-11)
+
+**Security design decisions approved; implementation authorization remains separate.** See `PR14_AUTHENTICATION_SECURITY_DECISIONS.md` sections 14G–14H and `PR14_NONROOT_APPROVAL_RECONCILIATION.md` sections 10–11. Earlier G0 approval-pending language is historical. This amendment supersedes it only for architectural approval, not authorization to code.
+
+Before production authentication changes, the agent must reconcile fresh main/branch SHAs, actual Alembic head and runtime EXECUTE grants, and the PR 12 package-ownership clarification. The development profile is Keycloak 26.8.0 only; no production issuer or root trust.
+
+**Implementation order after separate authorization:** (1) typed core/service contracts; (2) independent expected-manifest trust and fresh live attestation on *every* authentication operation, with zero positive cache and fail-closed error handling; (3) bounded independent service/user JWT verification and conditional class checks; (4) additive stored-function-only binding persistence and runtime-role privilege proof; (5) same-client D1 actor composition and independent Tenant/Application/subscription checks; (6) feature, security and integration acceptance. Service owns HTTP/JWKS transport, attestation and assembly; core owns provider-neutral verification policy and domain resolution. No public HTTP routes in PR 14.
+
+**Security constraints:** Attestation success must precede acceptance of either token; previous startup/preflight records cannot authorize a later operation. Retain G0-T09 as a demonstrated claim-only failure and R06 as drift detection. Explicitly document the remaining configuration-change TOCTOU race and privileged issuer administrator threat. Reconcile R12's separately executed clean-recreate evidence with the matrix status before claiming full matrix completion.
+
+**Mandatory gates:** DC05 signed missing-azp and DC07 real PostgreSQL domain binding; non-root AUTH-01–25 and AUTH-28–36; adverse mapper drift and unavailable Admin REST; cross-client and wrong-class token swaps; JWT/JWKS edge cases; root fail-closed; actual mtmf_runtime SQL EXECUTE privileges; QA, security and pre-commit. Report each PASS/FAIL/NOT EXECUTED with command and artifact. Do not infer PASS from unit tests or documentation.
+
+**STOP:** No production authentication implementation, schema/migration, dependency or runtime grant changes until explicit implementation authorization. No production deployment or root authentication under this amendment.
