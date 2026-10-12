@@ -135,4 +135,4 @@ These are **design decisions**, not claims of existing implementation. PR 10 Ame
 
 The HTTP service and verified end-user identity propagation are separate architectural work. If they are not delivered in PR 10, privileged user-facing transfer/recovery must remain inaccessible rather than accept caller-supplied actor IDs.
 
-See also [PR 10 Architecture Decisions](../pr-10/pr10-architecture-decisions.md), [Root Administration and Tenant Stewardship](../../ROOT_AND_STEWARDSHIP.md), and [Authorization](../../AUTHORIZATION.md).
+See also [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md), [Root Administration and Tenant Stewardship](../../ROOT_AND_STEWARDSHIP.md), and [Authorization](../../AUTHORIZATION.md).
