@@ -141,3 +141,7 @@ implementation remains stopped.
 ### 10.4 Approval boundary
 
 The reviewer must explicitly approve or amend **all rows in §10.2**, including the §10 ownership reconciliation, before authorizing implementation. A general instruction to prepare this package is not an approval of those rows. After approval, update the normative PR14 decision register and any conflicting PR12 integration text, then issue a separate explicit implementation authorization. Until then, **production authentication code, schema, migration, API and runtime grant changes remain STOPPED**.
+
+## 11. Reviewer approval (2026-10-11)
+
+The reviewer approved all decisions in section 10.2 as written. This approval covers the development-only non-root architecture, including the package ownership split. Production issuer and root authentication remain deferred. Implementation still requires separate authorization.
