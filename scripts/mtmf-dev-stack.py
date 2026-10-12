@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -137,9 +138,70 @@ def up() -> int:
 HOST_NETWORK_SERVICE_NAME = "mtmf-service-hostnet"
 HOST_NETWORK_IMAGE = "localhost/mtmf-service:dev"
 
+#: Deterministic ownership labels applied to the host-network service container.
+OWNERSHIP_LABELS = {
+    "io.mtmf.owner": "mtmf",
+    "io.mtmf.component": "http-service",
+    "io.mtmf.deployment-mode": "development",
+}
+OWNERSHIP_LABELS_ARGS: list[str] = [
+    item for key, value in OWNERSHIP_LABELS.items() for item in ("--label", f"{key}={value}")
+]
+
+
+def _inspect_container(name: str) -> dict[str, object] | None:
+    """Return container metadata, or ``None`` when it is verifiably absent."""
+    result = subprocess.run(
+        ["podman", "inspect", name], cwd=REPO_ROOT, capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        stderr = (result.stderr or "").lower()
+        if "no such" in stderr or "unable to find" in stderr or "does not exist" in stderr:
+            return None
+        raise OrchestrationError(f"cannot inspect container {name!r}")
+    try:
+        payload = json.loads(result.stdout)
+    except ValueError as exc:
+        raise OrchestrationError(f"malformed inspect output for {name!r}") from exc
+    if not isinstance(payload, list) or not payload:
+        return None
+    first = payload[0]
+    return first if isinstance(first, dict) else None
+
+
+def _cleanup_host_network_service() -> None:
+    """Remove the host-network service only when ownership is proven.
+
+    An absent container is an idempotent success. A present container whose
+    ownership labels do not match exactly is a foreign/legacy resource: the
+    cleanup aborts and never removes it. Any removal error propagates.
+    """
+    info = _inspect_container(HOST_NETWORK_SERVICE_NAME)
+    if info is None:
+        return
+    labels = (info.get("Config") or {}).get("Labels") or {}  # type: ignore[union-attr]
+    mismatched = [key for key, value in OWNERSHIP_LABELS.items() if labels.get(key) != value]
+    if mismatched:
+        raise OrchestrationError(
+            f"refusing to remove {HOST_NETWORK_SERVICE_NAME!r}: it is not a proven "
+            "MTMF-owned container (ownership labels do not match)"
+        )
+    result = subprocess.run(
+        ["podman", "rm", "-f", HOST_NETWORK_SERVICE_NAME],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise OrchestrationError(f"failed to remove {HOST_NETWORK_SERVICE_NAME!r}")
+
+
+READER_SECRET_MOUNT = "/run/secrets/mtmf-attestation-reader"
+
 
 def _auth_env() -> list[str]:
-    """Return the approved attestation-reader environment (never migrator)."""
+    """Return the approved attestation-reader environment (never migrator/admin)."""
     names = (
         "MTMF_AUTH_ISSUER",
         "MTMF_AUTH_SERVICE_AUDIENCE",
@@ -149,8 +211,7 @@ def _auth_env() -> list[str]:
         "MTMF_AUTH_EXPECTED_CLIENT_POLICY",
         "MTMF_AUTH_ADMIN_BASE",
         "MTMF_AUTH_ADMIN_REALM",
-        "MTMF_AUTH_ADMIN_USERNAME",
-        "MTMF_AUTH_ADMIN_PASSWORD",
+        "MTMF_AUTH_ATTESTATION_CLIENT_ID",
         "MTMF_AUTH_ALLOW_SHARED_AUDIENCE",
     )
     env: list[str] = []
@@ -159,6 +220,23 @@ def _auth_env() -> list[str]:
         if value:
             env.extend(["-e", f"{name}={value}"])
     return env
+
+
+def _reader_secret_file() -> Path:
+    """Return a 0600 file holding the reader secret, without exposing it in argv."""
+    file_hint = os.environ.get("MTMF_AUTH_ATTESTATION_CLIENT_SECRET_FILE", "").strip()
+    if file_hint:
+        return Path(file_hint)
+    secret = os.environ.get("MTMF_AUTH_ATTESTATION_CLIENT_SECRET", "").strip()
+    if not secret:
+        raise OrchestrationError("MTMF_AUTH_ATTESTATION_CLIENT_SECRET or _FILE is required")
+    directory = Path(os.environ.get("MTMF_DEV_SECRET_DIR", "/tmp/mtmf-dev-secrets"))
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target = directory / "mtmf-attestation-reader.secret"
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w") as handle:
+        handle.write(secret)
+    return target
 
 
 def up_host_network() -> int:
@@ -188,16 +266,22 @@ def up_host_network() -> int:
     )
     _run(_compose("run", "--rm", "--no-deps", "initializer"))
 
-    _run(["podman", "rm", "-f", HOST_NETWORK_SERVICE_NAME], check=False)
+    _cleanup_host_network_service()
+    reader_secret = _reader_secret_file()
     run_args = [
         "podman",
         "run",
         "-d",
         "--name",
         HOST_NETWORK_SERVICE_NAME,
+        *OWNERSHIP_LABELS_ARGS,
         "--network=host",
         "-v",
         f"{ca_file}:/certs/dev-ca.crt:ro",
+        "-v",
+        f"{reader_secret}:{READER_SECRET_MOUNT}:ro",
+        "-e",
+        f"MTMF_AUTH_ATTESTATION_CLIENT_SECRET_FILE={READER_SECRET_MOUNT}",
         "-e",
         "MTMF_SERVICE_DEPLOYMENT_MODE=development",
         "-e",
@@ -238,13 +322,14 @@ def status() -> int:
 
 def down() -> int:
     """Stop the MTMF-owned development stack (volumes preserved)."""
-    _run(["podman", "rm", "-f", HOST_NETWORK_SERVICE_NAME], check=False)
+    _cleanup_host_network_service()
     _run(_compose("down"))
     return 0
 
 
 def down_volumes() -> int:
     """Destroy only MTMF-owned development resources and volumes."""
+    _cleanup_host_network_service()
     _run(_compose("down", "-v"))
     return 0
 

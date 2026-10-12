@@ -470,8 +470,8 @@ def _issuer_config() -> Any:
         expected_manifest_path="dev/keycloak/expected-realm-security.json",
         admin_base_url="https://127.0.0.1:28443",
         admin_realm="mtmf-pr14-dev",
-        admin_username="admin",
-        admin_password="secret",
+        attestation_client_id="mtmf-attestation-reader",
+        attestation_client_secret="mtmf-attestation-reader-dev-secret",
     )
 
 

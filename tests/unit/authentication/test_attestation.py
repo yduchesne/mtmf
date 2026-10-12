@@ -7,6 +7,7 @@ Only the external Admin REST reader is faked; ``canonical_manifest``,
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -372,6 +373,97 @@ def test_two_clients_are_independently_bound(tmp_path: Path):
     with pytest.raises(AuthenticationError) as exc:
         BaselineConfigurationAttestor(drifted, REALM, baseline, policy).attest_client(
             PROFILE, _CLIENT_B
+        )
+    assert exc.value.failure is AuthenticationFailure.ATTESTATION_DRIFT
+
+
+def test_u11_duplicate_json_member_in_policy_rejected(tmp_path: Path):
+    path = tmp_path / "dup.json"
+    path.write_text('{"version":1,"version":1,"clients":[]}', encoding="utf-8")
+    with pytest.raises(ExpectedClientPolicyError):
+        ExpectedClientPolicy.load(str(path))
+
+
+def test_u12_missing_and_extra_client_fields_rejected(tmp_path: Path):
+    reader = _reader()
+    base = _policy_for(reader, [_CLIENT_A])["clients"][0]
+    for mutate in (
+        lambda c: c.pop("enabled"),
+        lambda c: c.update({"unexpected": 1}),
+    ):
+        entry = copy.deepcopy(base)
+        mutate(entry)
+        path = _write(tmp_path, "p.json", {"version": 1, "clients": [entry]})
+        with pytest.raises(ExpectedClientPolicyError):
+            ExpectedClientPolicy.load(path)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda c: c.update({"enabled": 1}),
+        lambda c: c.update({"enabled": "true"}),
+        lambda c: c.update({"protocol": ""}),
+        lambda c: c.update({"redirectUris": "http://x"}),
+        lambda c: c.update({"redirectUris": [1]}),
+        lambda c: c.update({"defaultClientScopes": ["a", "a"]}),
+        lambda c: c.update({"protocolMappers": [{"name": "x"}]}),
+        lambda c: c["protocolMappers"][0]["config"].update({"k": None}),
+    ],
+)
+def test_u13_wrong_types_rejected(tmp_path: Path, mutate: Any):
+    reader = _reader()
+    entry = copy.deepcopy(_policy_for(reader, [_CLIENT_A])["clients"][0])
+    mutate(entry)
+    path = _write(tmp_path, "p.json", {"version": 1, "clients": [entry]})
+    with pytest.raises(ExpectedClientPolicyError):
+        ExpectedClientPolicy.load(path)
+
+
+def test_u11_duplicate_mapper_identity_rejected(tmp_path: Path):
+    reader = _reader()
+    entry = copy.deepcopy(_policy_for(reader, [_CLIENT_A])["clients"][0])
+    entry["protocolMappers"] = [entry["protocolMappers"][0], dict(entry["protocolMappers"][0])]
+    path = _write(tmp_path, "p.json", {"version": 1, "clients": [entry]})
+    with pytest.raises(ExpectedClientPolicyError):
+        ExpectedClientPolicy.load(path)
+
+
+def test_u14_unsupported_version_and_empty_id_rejected(tmp_path: Path):
+    reader = _reader()
+    entry = copy.deepcopy(_policy_for(reader, [_CLIENT_A])["clients"][0])
+    for payload in ({"version": 2, "clients": [entry]}, {"version": 1, "clients": []}):
+        path = _write(tmp_path, "p.json", payload)
+        with pytest.raises(ExpectedClientPolicyError):
+            ExpectedClientPolicy.load(path)
+    entry_empty = copy.deepcopy(entry)
+    entry_empty["clientId"] = ""
+    path = _write(tmp_path, "p2.json", {"version": 1, "clients": [entry_empty]})
+    with pytest.raises(ExpectedClientPolicyError):
+        ExpectedClientPolicy.load(path)
+
+
+def test_u25_read_skew_in_client_projection_is_detected(tmp_path: Path):
+    """A read that changes mid-request must fail the final comparison."""
+    reader = _reader()
+    baseline = _baseline(tmp_path, reader)
+    policy = _policy(tmp_path, reader, [_CLIENT_A])
+    skew = _reader()
+    original_get = skew.get
+    state = {"client_reads": 0}
+
+    def skewed_get(path: str) -> Any:
+        value = original_get(path)
+        if path.endswith("/protocol-mappers/models") and "client-scopes" not in path:
+            state["client_reads"] += 1
+            if state["client_reads"] >= 1:
+                return [*value, {"name": "late", "protocolMapper": "x", "config": {}}]
+        return value
+
+    skew.get = skewed_get  # type: ignore[method-assign]
+    with pytest.raises(AuthenticationError) as exc:
+        BaselineConfigurationAttestor(skew, REALM, baseline, policy).attest_client(
+            PROFILE, _CLIENT_A
         )
     assert exc.value.failure is AuthenticationFailure.ATTESTATION_DRIFT
 

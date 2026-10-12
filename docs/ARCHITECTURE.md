@@ -435,7 +435,11 @@ effective configuration (scopes, mappers, flows, classification, redirect
 origins). Unknown/duplicate/drifted clients fail closed, the baseline is never
 derived from live state, and drift is never auto-repaired. The development
 initializer validates a client against the policy before creating it. The
-approved local development topology runs the service container with Podman
+runtime reads Keycloak through a dedicated, least-privilege
+**client-credentials** reader (read-only `view-realm`/`view-clients`/`query-clients`),
+never a human/admin password grant; the reader secret is delivered through a
+mounted file and the runtime holds no bootstrap/migrator/owner/root credential.
+The approved local development topology runs the service container with Podman
 `--network=host` bound to loopback and the retained issuer
 `https://127.0.0.1:28443`; it is development-only and not a production design.
 

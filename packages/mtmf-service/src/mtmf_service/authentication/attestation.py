@@ -111,57 +111,109 @@ class AdminRestReader(Protocol):
 
 
 class HttpAdminRestReader:
-    """Keycloak Admin REST reader authenticated with a separate credential."""
+    """Keycloak Admin REST reader using a dedicated least-privilege client.
+
+    Authentication is a non-interactive OAuth 2.0 **client-credentials** grant
+    for a dedicated service-account client provisioned read-only roles
+    (``view-realm``/``view-clients``/``query-clients``). No human/admin password
+    grant, no anonymous request, and no fallback exist. Both the token response
+    and every configuration response are read with a hard byte bound, redirects
+    are rejected, and the token endpoint must be the configured loopback issuer.
+    """
 
     def __init__(
         self,
         base_url: str,
         realm: str,
-        username: str,
-        password: str,
+        client_id: str,
+        client_secret: str,
         *,
         timeout: float = 5.0,
+        max_bytes: int = 262144,
+        opener: Any | None = None,
     ) -> None:
+        if not client_id or not client_secret:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE,
+                "the attestation reader client credential is not configured",
+            )
+        parsed = urllib.parse.urlparse(base_url)
+        if parsed.scheme != "https" or (parsed.hostname or "") not in {
+            "127.0.0.1",
+            "localhost",
+            "::1",
+        }:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE,
+                "the attestation reader requires the approved loopback HTTPS issuer",
+            )
+        if not realm:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE,
+                "the attestation realm is not configured",
+            )
+        if timeout <= 0 or max_bytes <= 0:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE, "invalid attestation reader bounds"
+            )
         self._base = base_url.rstrip("/")
         self._realm = realm
-        self._username = username
-        self._password = password
+        self._client_id = client_id
+        self._client_secret = client_secret
         self._timeout = timeout
-        self._opener = urllib.request.build_opener(_NoRedirectHandler())
+        self._max_bytes = max_bytes
+        self._opener = opener or urllib.request.build_opener(_NoRedirectHandler())
 
     def _open(self, request: urllib.request.Request) -> Any:
-        """Open only an http(s) request through the redirect-rejecting opener."""
-        scheme = urllib.parse.urlparse(request.full_url).scheme
-        if scheme not in ("http", "https"):
+        """Open only an https request through the redirect-rejecting opener."""
+        parsed = urllib.parse.urlparse(request.full_url)
+        if parsed.scheme != "https":
             raise AuthenticationError(
                 AuthenticationFailure.ATTESTATION_UNAVAILABLE, "unsupported admin URL scheme"
             )
         return self._opener.open(request, timeout=self._timeout)
 
+    def _read(self, request: urllib.request.Request, *, what: str) -> Any:
+        """Perform one bounded, redirect-free read and parse strict JSON."""
+        try:
+            with self._open(request) as response:
+                payload = response.read(self._max_bytes + 1)
+        except AuthenticationError:
+            raise
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE, f"{what} failed"
+            ) from exc
+        if len(payload) > self._max_bytes:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE, f"{what} exceeded the size bound"
+            )
+        try:
+            return json.loads(payload, object_pairs_hook=_reject_duplicate_pairs)
+        except AuthenticationError:
+            raise
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE, f"{what} was malformed"
+            ) from exc
+
     def _token(self) -> str:
         data = urllib.parse.urlencode(
             {
-                "grant_type": "password",
-                "client_id": "admin-cli",
-                "username": self._username,
-                "password": self._password,
+                "grant_type": "client_credentials",
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
             }
         ).encode()
         request = urllib.request.Request(
-            f"{self._base}/realms/master/protocol/openid-connect/token",
+            f"{self._base}/realms/{self._realm}/protocol/openid-connect/token",
             data=data,
             method="POST",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        try:
-            with self._open(request) as response:
-                payload: dict[str, Any] = json.loads(response.read())
-        except (urllib.error.URLError, OSError, ValueError) as exc:
-            raise AuthenticationError(
-                AuthenticationFailure.ATTESTATION_UNAVAILABLE, "attestation credential failed"
-            ) from exc
-        token = payload.get("access_token")
-        if not isinstance(token, str) or not token:
+        payload = self._read(request, what="attestation credential request")
+        token = payload.get("access_token") if isinstance(payload, dict) else None
+        if not isinstance(token, str) or not token or len(token.encode()) > self._max_bytes:
             raise AuthenticationError(
                 AuthenticationFailure.ATTESTATION_UNAVAILABLE, "attestation credential failed"
             )
@@ -172,13 +224,20 @@ class HttpAdminRestReader:
             f"{self._base}{path}",
             headers={"Authorization": f"Bearer {self._token()}", "Accept": "application/json"},
         )
-        try:
-            with self._open(request) as response:
-                return json.loads(response.read())
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        return self._read(request, what="live configuration read")
+
+
+def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build a JSON object while rejecting duplicate member names."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
             raise AuthenticationError(
-                AuthenticationFailure.ATTESTATION_UNAVAILABLE, "live configuration read failed"
-            ) from exc
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE,
+                "duplicate JSON member in attestation document",
+            )
+        result[key] = value
+    return result
 
 
 def _normalize_mappers(mappers: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -298,6 +357,101 @@ class ExpectedClientPolicyError(ValueError):
     """The independently approved expected-client policy is unusable."""
 
 
+#: Exact fields produced by ``canonical_client_projection`` and therefore
+#: required (no more, no less) on every approved policy entry.
+_CLIENT_ENTRY_FIELDS = frozenset(
+    {
+        *_CLIENT_FIELDS,
+        *_CLIENT_LIST_FIELDS,
+        "defaultClientScopes",
+        "optionalClientScopes",
+        "protocolMappers",
+    }
+)
+_MAPPER_FIELDS = frozenset({"name", "protocolMapper", "config"})
+_BOOL_CLIENT_FIELDS = (
+    "enabled",
+    "publicClient",
+    "serviceAccountsEnabled",
+    "standardFlowEnabled",
+    "directAccessGrantsEnabled",
+    "implicitFlowEnabled",
+)
+_STRING_CLIENT_FIELDS = ("clientId", "protocol", "clientAuthenticatorType")
+_LIST_CLIENT_FIELDS = (
+    "redirectUris",
+    "webOrigins",
+    "defaultClientScopes",
+    "optionalClientScopes",
+)
+
+
+def _reject_duplicate_policy_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build a JSON object while rejecting duplicate member names."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ExpectedClientPolicyError(f"duplicate JSON member {key!r} in policy")
+        result[key] = value
+    return result
+
+
+def _validate_mapper(mapper: Any) -> None:
+    """Validate one protocol-mapper entry against the exact projected shape."""
+    if not isinstance(mapper, dict) or set(mapper) != _MAPPER_FIELDS:
+        raise ExpectedClientPolicyError(
+            "each policy mapper must have exactly name/protocolMapper/config"
+        )
+    for field in ("name", "protocolMapper"):
+        value = mapper[field]
+        if not isinstance(value, str) or not value:
+            raise ExpectedClientPolicyError(f"policy mapper {field} must be a non-empty string")
+    config = mapper["config"]
+    if not isinstance(config, dict):
+        raise ExpectedClientPolicyError("policy mapper config must be an object")
+    for key, value in config.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ExpectedClientPolicyError("policy mapper config must map strings to strings")
+
+
+def _validate_client_entry(entry: Any) -> dict[str, Any]:
+    """Validate one approved client entry against the exact projected schema."""
+    if not isinstance(entry, dict):
+        raise ExpectedClientPolicyError("each expected client must be an object")
+    if set(entry) != _CLIENT_ENTRY_FIELDS:
+        raise ExpectedClientPolicyError(
+            "expected client fields must exactly match the canonical projection"
+        )
+    for field in _STRING_CLIENT_FIELDS:
+        value = entry[field]
+        if not isinstance(value, str) or not value:
+            raise ExpectedClientPolicyError(f"expected client {field} must be a non-empty string")
+    for field in _BOOL_CLIENT_FIELDS:
+        if type(entry[field]) is not bool:
+            raise ExpectedClientPolicyError(f"expected client {field} must be a JSON boolean")
+    for field in _LIST_CLIENT_FIELDS:
+        value = entry[field]
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) or not item for item in value
+        ):
+            raise ExpectedClientPolicyError(
+                f"expected client {field} must be a list of non-empty strings"
+            )
+        if len(set(value)) != len(value):
+            raise ExpectedClientPolicyError(f"expected client {field} must not contain duplicates")
+    mappers = entry["protocolMappers"]
+    if not isinstance(mappers, list):
+        raise ExpectedClientPolicyError("expected client protocolMappers must be a list")
+    seen: set[tuple[str, str]] = set()
+    for mapper in mappers:
+        _validate_mapper(mapper)
+        identity = (mapper["name"], mapper["protocolMapper"])
+        if identity in seen:
+            raise ExpectedClientPolicyError("expected client contains a duplicate mapper identity")
+        seen.add(identity)
+    return dict(entry)
+
+
 @dataclass(frozen=True)
 class ExpectedClientPolicy:
     """An immutable, independently approved expected-client policy."""
@@ -309,32 +463,34 @@ class ExpectedClientPolicy:
         """Load and strictly validate a policy file.
 
         :raises ExpectedClientPolicyError: on unreadable, malformed,
-            unsupported-version, duplicate-id, or invalid-entry content.
+            duplicate-member, unsupported-version, duplicate-id, invalid
+            field/value/type, or duplicate-identity content.
         """
         try:
-            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+            text = Path(path).read_text(encoding="utf-8")
+            payload = json.loads(text, object_pairs_hook=_reject_duplicate_policy_pairs)
+        except ExpectedClientPolicyError:
+            raise
         except (OSError, ValueError) as exc:
             raise ExpectedClientPolicyError("expected-client policy is unreadable") from exc
-        if not isinstance(payload, dict):
-            raise ExpectedClientPolicyError("expected-client policy must be a JSON object")
-        version = payload.get("version")
-        if version != _SUPPORTED_POLICY_VERSION:
+        if not isinstance(payload, dict) or set(payload) != {"version", "clients"}:
+            raise ExpectedClientPolicyError(
+                "expected-client policy must have exactly 'version' and 'clients'"
+            )
+        if payload["version"] != _SUPPORTED_POLICY_VERSION:
             raise ExpectedClientPolicyError(
                 f"expected-client policy version must be {_SUPPORTED_POLICY_VERSION}"
             )
-        clients = payload.get("clients")
+        clients = payload["clients"]
         if not isinstance(clients, list) or not clients:
             raise ExpectedClientPolicyError("expected-client policy must list clients")
         entries: dict[str, Mapping[str, Any]] = {}
         for entry in clients:
-            if not isinstance(entry, dict):
-                raise ExpectedClientPolicyError("each expected client must be an object")
-            client_id = entry.get("clientId")
-            if not isinstance(client_id, str) or not client_id:
-                raise ExpectedClientPolicyError("each expected client needs a clientId")
+            validated = _validate_client_entry(entry)
+            client_id = validated["clientId"]
             if client_id in entries:
                 raise ExpectedClientPolicyError(f"duplicate expected clientId {client_id!r}")
-            entries[client_id] = MappingProxyType(dict(entry))
+            entries[client_id] = MappingProxyType(validated)
         return cls(MappingProxyType(entries))
 
     def require(self, client_id: str) -> Mapping[str, Any]:
@@ -426,7 +582,14 @@ class BaselineConfigurationAttestor:
     # -- loaders -----------------------------------------------------------
     def _load_json(self, path: str, label: str) -> dict[str, Any]:
         try:
-            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+            payload = json.loads(
+                Path(path).read_text(encoding="utf-8"),
+                object_pairs_hook=_reject_duplicate_pairs,
+            )
+        except AuthenticationError as exc:
+            raise AuthenticationError(
+                AuthenticationFailure.ATTESTATION_UNAVAILABLE, f"{label} is malformed"
+            ) from exc
         except (OSError, ValueError) as exc:
             raise AuthenticationError(
                 AuthenticationFailure.ATTESTATION_UNAVAILABLE, f"{label} is unreadable"

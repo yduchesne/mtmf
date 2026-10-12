@@ -387,6 +387,41 @@ def ensure_user(api: AdminApi, realm: str, username: str, password: str) -> dict
     return user
 
 
+#: Dedicated, non-interactive least-privilege attestation reader (SEC-01).
+#: It may perform only the read operations used by `canonical_manifest` and
+#: `canonical_client_projection`; all realm/client/user/scope/mapper mutations
+#: and role escalation are denied (proved by the Amendment #5 permission matrix).
+ATTESTATION_READER_CLIENT_ID = "mtmf-attestation-reader"
+ATTESTATION_READER_REALM_ROLES = ("view-realm", "view-clients", "query-clients")
+
+
+def ensure_attestation_reader(api: AdminApi, realm: str) -> dict[str, Any]:
+    """Provision the least-privilege reader client and its service-account roles."""
+    spec = ClientSpec(
+        client_id=ATTESTATION_READER_CLIENT_ID,
+        audiences=(),
+        service_account=True,
+        standard_flow=False,
+    )
+    client = ensure_client(api, realm, spec)
+    realm_management = api.get(f"/admin/realms/{realm}/clients?clientId=realm-management")
+    if not realm_management:
+        raise SetupError("realm-management client is missing")
+    realm_management_uuid = realm_management[0]["id"]
+    roles = api.get(f"/admin/realms/{realm}/clients/{realm_management_uuid}/roles") or []
+    wanted = [role for role in roles if role["name"] in ATTESTATION_READER_REALM_ROLES]
+    if len(wanted) != len(ATTESTATION_READER_REALM_ROLES):
+        raise SetupError("required realm-management read roles are unavailable")
+    service_account = api.get(f"/admin/realms/{realm}/clients/{client['id']}/service-account-user")
+    api.request(
+        "POST",
+        f"/admin/realms/{realm}/users/{service_account['id']}/role-mappings/clients/"
+        f"{realm_management_uuid}",
+        wanted,
+    )
+    return client
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default=DEFAULT_BASE)
@@ -437,6 +472,12 @@ def main() -> int:
                 "uuid": client.get("id"),
             }
         )
+    reader = ensure_attestation_reader(api, args.realm)
+    manifest["attestation_reader"] = {
+        "client_id": reader.get("clientId"),
+        "roles": list(ATTESTATION_READER_REALM_ROLES),
+        "uuid": reader.get("id"),
+    }
     for username in EVIDENCE_USERS:
         ensure_user(api, args.realm, username, args.user_password)
         manifest["users"].append(username)

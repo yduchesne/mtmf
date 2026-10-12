@@ -102,8 +102,8 @@ def _issuer_config(*, expected_manifest: str | None = None) -> IssuerConfig:
         expected_manifest_path=expected_manifest or "dev/keycloak/expected-realm-security.json",
         admin_base_url=base,
         admin_realm=REALM,
-        admin_username=_env("MTMF_PR14_KC_ADMIN_USERNAME"),
-        admin_password=_env("MTMF_PR14_KC_ADMIN_PASSWORD"),
+        attestation_client_id="mtmf-attestation-reader",
+        attestation_client_secret="mtmf-attestation-reader-dev-secret",
         allow_shared_audience=True,
     )
 

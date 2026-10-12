@@ -106,8 +106,11 @@ services:
       MTMF_AUTH_EXPECTED_CLIENT_POLICY: ${MTMF_AUTH_EXPECTED_CLIENT_POLICY:-dev/keycloak/expected-client-policy.json}
       MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-pr14-dev}
       MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://127.0.0.1:28443}
-      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:?set attestation reader username}
-      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set attestation reader password}
+      # Dedicated least-privilege client-credentials reader; no admin password.
+      # Prefer MTMF_AUTH_ATTESTATION_CLIENT_SECRET_FILE with a mounted secret;
+      # the plain variable is the documented development placeholder.
+      MTMF_AUTH_ATTESTATION_CLIENT_ID: ${MTMF_AUTH_ATTESTATION_CLIENT_ID:?set attestation reader client id}
+      MTMF_AUTH_ATTESTATION_CLIENT_SECRET: ${MTMF_AUTH_ATTESTATION_CLIENT_SECRET:?set attestation reader client secret}
     ports:
       - "127.0.0.1:28001:28001"
     depends_on:
