@@ -56,7 +56,7 @@ Activation and deactivation are explicit state transitions. Setting an object ac
 
 Whether restoration of soft-deleted objects is supported remains **UNRESOLVED**.
 
-For ordinary Tenants, PR 10 specifies explicit PROVISIONING, ACTIVE and SUSPENDED states; only ACTIVE supports ordinary Tenant sessions. The root Tenant is ACTIVE and cannot be suspended. PR 13 defines explicit lifecycles for the Application registry and Tenant subscriptions (Section 20). The exact active/inactive applicability for other domain object types remains **UNRESOLVED**. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md) and [PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+For ordinary Tenants, PR 10 specifies explicit PROVISIONING, ACTIVE and SUSPENDED states; only ACTIVE supports ordinary Tenant sessions. The root Tenant is ACTIVE and cannot be suspended. PR 13 defines explicit lifecycles for the Application registry and Tenant subscriptions (Section 20). The exact active/inactive applicability for other domain object types remains **UNRESOLVED**. See [PR 10 Architecture Decisions](pr-artifacts/pr-10/PR10_ARCHITECTURE_DECISIONS.md) and [PR 13 Application/Subscription Decisions](pr-artifacts/pr-13/PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
 
 ### 2.4 Application extension data
 
@@ -171,7 +171,7 @@ Principal kinds such as human, service, or agent remain **UNRESOLVED**.
 
 ### Local Identity classification (PR 10)
 
-An Identity has an explicit origin classification, LOCAL or FEDERATED. The classification is not inferred from names, UUIDs or the existence of credentials. Legacy unknown-origin Identities require verified classification before satisfying root-local continuity; they must not be defaulted to LOCAL. This is a domain attribute, not an authentication implementation. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
+An Identity has an explicit origin classification, LOCAL or FEDERATED. The classification is not inferred from names, UUIDs or the existence of credentials. Legacy unknown-origin Identities require verified classification before satisfying root-local continuity; they must not be defaulted to LOCAL. This is a domain attribute, not an authentication implementation. See [PR 10 Architecture Decisions](pr-artifacts/pr-10/PR10_ARCHITECTURE_DECISIONS.md).
 
 An Identity is a concrete identity associated with exactly one Principal.
 
@@ -481,7 +481,7 @@ managed Tenants = explicit memberships
 
 Contextual management scope does not mutate the intrinsic scope of the manager Tenant.
 
-The persistence representation is settled by PR 11: each TenantManagementGroup is a distinct typed aggregate (`TenantManagementGroup`) with an immutable identity, one manager Tenant, one approved SYSTEM management Role, and an immutable `ROOT`/`SYSTEM` scope. Explicit SYSTEM coverage uses typed `TenantManagementGroupMembership` rows; the ROOT group never materializes managed-Tenant rows. Manager-side eligibility is an explicit Identity-level `TenantManagementGroupActorEligibility` designation scoped to the group and its manager Tenant; ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership never confers eligibility, and the ROOT group follows the canonical root Identity instead. The approved management Roles are `urn:mtmf:iam:roles:system:root-tenant-management` and `urn:mtmf:iam:roles:system:tenant-management`. Delegated authorization requires all three of coverage, eligibility, and a matching management-Role Permission. See [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
+The persistence representation is settled by PR 11: each TenantManagementGroup is a distinct typed aggregate (`TenantManagementGroup`) with an immutable identity, one manager Tenant, one approved SYSTEM management Role, and an immutable `ROOT`/`SYSTEM` scope. Explicit SYSTEM coverage uses typed `TenantManagementGroupMembership` rows; the ROOT group never materializes managed-Tenant rows. Manager-side eligibility is an explicit Identity-level `TenantManagementGroupActorEligibility` designation scoped to the group and its manager Tenant; ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership never confers eligibility, and the ROOT group follows the canonical root Identity instead. The approved management Roles are `urn:mtmf:iam:roles:system:root-tenant-management` and `urn:mtmf:iam:roles:system:tenant-management`. Delegated authorization requires all three of coverage, eligibility, and a matching management-Role Permission. See [PR 11 TenantManagementGroup delegation policy decisions](pr-artifacts/pr-11/PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
 
 ---
 
@@ -602,7 +602,7 @@ These questions should be resolved deliberately before schema or API choices dep
 
 PR 13 introduces three distinct, independently meaningful aggregates for the
 future HTTP integration boundary. The approved decisions are recorded in
-[PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+[PR 13 Application/Subscription Decisions](pr-artifacts/pr-13/PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
 
 ### 20.1 Application
 
@@ -667,4 +667,4 @@ the pair of the domain methods and by the PostgreSQL guard against the
 locked persisted row. PR 14 owns authenticated service-to-Application
 identity mapping; PRs 15–18 own the batch API and client enforcement. See
 [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
-and [PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).
+and [PR 13 Application/Subscription Decisions](pr-artifacts/pr-13/PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md).

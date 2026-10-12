@@ -26,8 +26,8 @@ a pure request/response conformance check.
 
 ## Normative contract
 
-- [PR 15 HTTP API v1 contract](../../../docs/PR15_HTTP_API_V1_CONTRACT.md)
-- [PR 15 API contract decisions](../../../docs/PR15_API_CONTRACT_DECISIONS.md)
+- [PR 15 HTTP API v1 contract](../../../docs/pr-artifacts/pr-15/PR15_HTTP_API_V1_CONTRACT.md)
+- [PR 15 API contract decisions](../../../docs/pr-artifacts/pr-15/PR15_API_CONTRACT_DECISIONS.md)
 - [Machine-readable schema](schema/authorization-v1.schema.json)
 
 ## Public API

@@ -677,7 +677,7 @@ Roles compose the atomic Permissions required for a persona.
 
 ## 16. Built-In Roles
 
-The initial MTMF built-in Role catalog consists of the following eleven roles. The approved human-readable allocation, contributor exclusions, exact-action seeding policy, and installation assumptions are described in [Built-in Access Policy and Installation](PR10_BUILTIN_ACCESS_AND_INSTALLATION.md).
+The initial MTMF built-in Role catalog consists of the following eleven roles. The approved human-readable allocation, contributor exclusions, exact-action seeding policy, and installation assumptions are described in [Built-in Access Policy and Installation](pr-artifacts/pr-10/PR10_BUILTIN_ACCESS_AND_INSTALLATION.md).
 
 | Role | Intended purpose |
 | --- | --- |
@@ -798,7 +798,7 @@ When an eligible actor of its manager Tenant performs an operation against an ex
 
 Membership in a TenantManagementGroup does not by itself grant an Action. The applicable management Role must also produce an authorization result permitting the requested Action, and all other required invariants must hold.
 
-Manager-side eligibility is settled: delegated authority requires an explicit Identity-level eligibility designation associated with the TenantManagementGroup and scoped to its manager Tenant. Ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership does not confer eligibility. Only the canonical root Identity may exercise the ROOT group, and root Identity recovery replaces the eligible actor without retaining authority for the previous root Identity. Delegated authority is restricted to explicit Actions permitted by the applicable management Role and never authorizes another Tenant's application extension data. The approved management Roles are `urn:mtmf:iam:roles:system:root-tenant-management` (ROOT) and `urn:mtmf:iam:roles:system:tenant-management` (SYSTEM); see [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
+Manager-side eligibility is settled: delegated authority requires an explicit Identity-level eligibility designation associated with the TenantManagementGroup and scoped to its manager Tenant. Ordinary manager-Tenant membership, Tenant Administrator status, stewardship, or IAM Group membership does not confer eligibility. Only the canonical root Identity may exercise the ROOT group, and root Identity recovery replaces the eligible actor without retaining authority for the previous root Identity. Delegated authority is restricted to explicit Actions permitted by the applicable management Role and never authorizes another Tenant's application extension data. The approved management Roles are `urn:mtmf:iam:roles:system:root-tenant-management` (ROOT) and `urn:mtmf:iam:roles:system:tenant-management` (SYSTEM); see [PR 11 TenantManagementGroup delegation policy decisions](pr-artifacts/pr-11/PR11_TMG_DELEGATION_POLICY_DECISIONS.md).
 
 ---
 
@@ -890,7 +890,7 @@ Operations that establish multiple required invariants MUST be atomic where part
 
 PR 10 uses explicit Identity origin classification (LOCAL or FEDERATED); names or existing IDs MUST NOT be treated as evidence of LOCAL origin. Legacy unknown-origin Identities MUST NOT be silently classified LOCAL. Ordinary Tenants use PROVISIONING, ACTIVE and SUSPENDED lifecycle states; only ACTIVE is authorizing. The root Tenant is established ACTIVE and cannot be suspended. A PROVISIONING or SUSPENDED Tenant MUST NOT form an ordinary authorizing session. An ACTIVE ordinary Tenant MUST have a valid steward and explicitly designated acting Identity. These states do not replace soft-deletion semantics.
 
-Privileged bootstrap/root recovery uses separately controlled installation authority. Stewardship transfers require a verified authenticated acting Identity and applicable Permission; a shared runtime PostgreSQL credential or caller-provided actor ID does not establish that authority. Privileged functions MUST NOT be runtime-exposed before the trusted invocation boundary exists. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md) for precise design and implementation checkpoints.
+Privileged bootstrap/root recovery uses separately controlled installation authority. Stewardship transfers require a verified authenticated acting Identity and applicable Permission; a shared runtime PostgreSQL credential or caller-provided actor ID does not establish that authority. Privileged functions MUST NOT be runtime-exposed before the trusted invocation boundary exists. See [PR 10 Architecture Decisions](pr-artifacts/pr-10/PR10_ARCHITECTURE_DECISIONS.md) for precise design and implementation checkpoints.
 
 ---
 
@@ -898,7 +898,7 @@ Privileged bootstrap/root recovery uses separately controlled installation autho
 
 PR 13 implements the trusted internal prerequisite gate that the future HTTP
 integration boundary consumes. The decisions and their provenance are recorded
-in [PR 13 Application/Subscription Decisions](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md);
+in [PR 13 Application/Subscription Decisions](pr-artifacts/pr-13/PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md);
 the PR 13-1 `A1` refinement hardens subscription mutation.
 
 The following are **two independent security facts**:
@@ -1018,6 +1018,6 @@ For future HTTP integration, MTMF is the authoritative Policy Decision Point (PD
 
 Batch authorization (PRs 15–17) MUST preserve existing default-deny, specificity, equal-specificity DENY, scope/dominance, Tenant isolation and management-delegation restrictions for **each** requested Action. Missing, malformed, unknown or context-mismatched decisions MUST NOT authorize. `mtmf-client` snapshots (PR 18) MUST be bounded to the exact verified Application, actor, Tenant, Organization, Action and resource/scope, MUST expire, and MUST NOT extend grants when MTMF is unreachable. Applications MUST enforce the returned decisions and their own data isolation; an ALLOW capability is not universal access to resources. Subscription or Role revocation may leave a bounded stale window until expiry absent active invalidation.
 
-Prerequisite precedence is fail-closed and ordered: (1) service authentication; (2) acting-user/Tenant/Organization verification; (3) Tenant/Application subscription eligibility; (4) per-Action policy evaluation. Failure at any earlier gate prevents later gates from producing an ALLOW, and a subscription never grants a Permission. MTMF does not evaluate arbitrary application-owned resource instances: where MTMF owns resource-scoped policy the required qualifier is mandatory before ALLOW, and otherwise the PEP independently enforces row/resource/Tenant isolation. An authenticated service acting on its own behalf is distinct from a user-delegated call; there is no implicit service-as-user or root fallback. Exact token-format, TTL, resource-qualifier, and binding decisions remain tracked in [PR 12 decisions register](PR12_INTEGRATION_SECURITY_DECISIONS.md).
+Prerequisite precedence is fail-closed and ordered: (1) service authentication; (2) acting-user/Tenant/Organization verification; (3) Tenant/Application subscription eligibility; (4) per-Action policy evaluation. Failure at any earlier gate prevents later gates from producing an ALLOW, and a subscription never grants a Permission. MTMF does not evaluate arbitrary application-owned resource instances: where MTMF owns resource-scoped policy the required qualifier is mandatory before ALLOW, and otherwise the PEP independently enforces row/resource/Tenant isolation. An authenticated service acting on its own behalf is distinct from a user-delegated call; there is no implicit service-as-user or root fallback. Exact token-format, TTL, resource-qualifier, and binding decisions remain tracked in [PR 12 decisions register](pr-artifacts/pr-12/PR12_INTEGRATION_SECURITY_DECISIONS.md).
 
 Implementation ownership and unresolved exact contracts: [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md), [ROADMAP_V01.md](ROADMAP_V01.md).

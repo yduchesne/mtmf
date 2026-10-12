@@ -152,7 +152,7 @@ The PR 11 implementation is:
 - `ManagementAuthorizationResolver` loads the persisted facts in one UnitOfWork and supplies exactly the approved management Role as the sole applicable Role.
 - The `Authorizer` accepts a cross-Tenant target only when the request carries a positively resolved management scope, the action is not an extension mutation, and the applicable policy is exactly the management Role; otherwise it denies with `NO_MANAGEMENT_SCOPE`. The management Role's Permissions then independently constrain the exact Action, and an ordinary manager-Tenant Role can never be unioned in.
 
-See [PR 11 TenantManagementGroup delegation policy decisions](PR11_TMG_DELEGATION_POLICY_DECISIONS.md) for the approved commands.
+See [PR 11 TenantManagementGroup delegation policy decisions](pr-artifacts/pr-11/PR11_TMG_DELEGATION_POLICY_DECISIONS.md) for the approved commands.
 
 ## 8. Implementation Boundary
 
@@ -424,7 +424,7 @@ Root and stewardship are not shortcuts around the existing authorization pipelin
 
 A supplied Principal ID, Identity ID, or membership record is not authentication. The shared PostgreSQL runtime credential cannot independently verify an end user. Until the trusted service identity boundary is implemented, sensitive transfer/recovery functions MUST NOT be broadly exposed as ordinary runtime capabilities. See [Root Administration and Tenant Stewardship](ROOT_AND_STEWARDSHIP.md) and [Database Architecture](DATABASE.md).
 
-The PR 10 design explicitly separates installation authority, verified application actor context and database integrity enforcement. PROVISIONING/SUSPENDED Tenants are non-authorizing, and steward designation is not an independent grant of Permission. Until the trusted invocation boundary exists, privileged transfer/recovery entry points remain inaccessible to ordinary runtime callers. See [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md).
+The PR 10 design explicitly separates installation authority, verified application actor context and database integrity enforcement. PROVISIONING/SUSPENDED Tenants are non-authorizing, and steward designation is not an independent grant of Permission. Until the trusted invocation boundary exists, privileged transfer/recovery entry points remain inaccessible to ordinary runtime callers. See [PR 10 Architecture Decisions](pr-artifacts/pr-10/PR10_ARCHITECTURE_DECISIONS.md).
 
 ## 11. Open Design Items
 
@@ -436,7 +436,7 @@ The following remain intentionally unresolved:
 - built-in Role-to-PermissionSet/Permission mappings;
 - exact audit decision record;
 - caching, invalidation, and compiled permission-index design;
-- the PR 12 integration security decisions (verified acting-user assertion protocol, snapshot TTL/clock semantics, resource-qualifier ownership, Application/credential/Tenant binding), tracked in [PR 12 decisions register](PR12_INTEGRATION_SECURITY_DECISIONS.md).
+- the PR 12 integration security decisions (verified acting-user assertion protocol, snapshot TTL/clock semantics, resource-qualifier ownership, Application/credential/Tenant binding), tracked in [PR 12 decisions register](pr-artifacts/pr-12/PR12_INTEGRATION_SECURITY_DECISIONS.md).
 
 Manager-side TenantManagementGroup actor eligibility is **settled** (PR 11: explicit Identity-level designation, canonical root Identity for ROOT); it is no longer an open item.
 
