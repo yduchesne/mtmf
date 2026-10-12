@@ -998,6 +998,21 @@ recreate deterministic). The G0-T09 negative result is preserved.
 unapproved** pending human approval of the conditional predicate contract and
 attestation controls (report §5/§7). The approval log below is unchanged.
 
+## 14G. Human approval — zero-cache development attestation contract (2026-10-11)
+
+**APPROVED: A14-02/§7 DESIGN CONTRACT, CONDITIONAL; NOT IMPLEMENTATION ACCEPTANCE OR AUTHORIZATION.**
+
+For the pinned Keycloak 26.8.0 **development-only** profile, the reviewer approves the conditional signed-token service/user class predicates in `docs/PR14_G0A_MAPPER_LOCKDOWN_EVIDENCE_REPORT.md` §5 **only when** a trusted, independently provisioned canonical issuer configuration baseline has just been checked against the live issuer and no drift exists.
+
+- **Zero positive attestation cache lifetime:** a previous successful preflight, startup check, persisted record, or positive TTL cannot authorize a later authentication attempt. Each authentication operation must obtain a fresh successful attestation before accepting either token. No fallback to claim-only classification on checker failure, timeout, stale/unreadable baseline, unavailable Admin REST, or drift.
+- **Class predicates:** after independent cryptographic and profile verification, service access token `typ=Bearer` with required service audience and signed `client_id == azp`; user access token `typ=Bearer` with required user audience, signed `azp` and `sub`, and absent `client_id`. A user token cannot become a service token merely by presenting a service audience. Verify both tokens independently; preserve same-client D1 binding.
+- **Baseline trust:** expected manifest is reviewed, independently controlled, never learned from the live issuer; attestation observes live configuration through a separately controlled credential. Any unauthorized protocol mapper or grant/scope configuration drift fails closed. This is a configuration-backed guarantee, not an unconditional property of signed JWTs.
+- **Residual risk:** a configuration change after the attestation read but before token verification (TOCTOU), or a privileged issuer administrator with control of signing and configuration, remains a risk. Implementation planning must document the race and available mitigations; do not claim zero-cache eliminates it.
+- **Evidence reconciliation:** R12's separate successful recreate/attestation must be linked to explicit command output or recorded as separately verified; the matrix's `NOT EXECUTED` entry must not silently be relabeled PASS without evidence.
+- **Production:** no production attestation freshness policy or issuer profile is approved; production trust remains disabled. Root authentication and AUTH-26/27 remain deferred and fail closed.
+
+This approval resolves the **development A14-02 design choice**, not completion of its runtime enforcement or AUTH acceptance tests. Other non-root A14 approvals, §10 package ownership/dependencies, and explicit authorization to implement production authentication code remain pending. **PR 14 implementation STOP remains active.**
+
 ## 15. Approval log
 
 All rows are **PENDING HUMAN REVIEW**. No decision is approved.
