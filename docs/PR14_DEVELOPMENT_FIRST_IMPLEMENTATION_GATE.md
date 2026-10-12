@@ -90,3 +90,9 @@ Before production authentication changes, the agent must reconcile fresh main/br
 **Mandatory gates:** DC05 signed missing-azp and DC07 real PostgreSQL domain binding; non-root AUTH-01–25 and AUTH-28–36; adverse mapper drift and unavailable Admin REST; cross-client and wrong-class token swaps; JWT/JWKS edge cases; root fail-closed; actual mtmf_runtime SQL EXECUTE privileges; QA, security and pre-commit. Report each PASS/FAIL/NOT EXECUTED with command and artifact. Do not infer PASS from unit tests or documentation.
 
 **STOP:** No production authentication implementation, schema/migration, dependency or runtime grant changes until explicit implementation authorization. No production deployment or root authentication under this amendment.
+
+## 9. Human implementation authorization (2026-10-11)
+
+**AUTHORIZED:** The human reviewer explicitly authorized execution of this PR 14 development-only, non-root implementation plan. This supersedes earlier implementation STOP language only for the bounded development implementation described here. The coding agent must follow the sequence, security constraints, mandatory tests and STOP conditions in section 8, with fresh-main reconciliation before edits.
+
+**Excluded:** production issuer configuration/deployment, root authentication and recovery, RFC 8693 delegation, cross-client propagation, public HTTP routes, and unrelated feature work. No implicit authorization to relax security checks, runtime database privileges, or acceptance gates. If a blocking contradiction or unmet security prerequisite is discovered, STOP and report it for human review. Implementation authorization does not imply implementation acceptance or permission to merge.
