@@ -2,12 +2,13 @@
 
 > **STATUS: APPROVED / IMPLEMENTED — contract-only package.**
 > Source of approval: the human reviewer instructed the coding agent to
-> implement `PR15_DETAILED_EXECUTION_PLAN.md` on 2026-10-12. That
-> instruction is recorded here as approval of the recommended decisions
-> below. `W3` contains one **explicit deviation** from the plan's
-> illustrative proposal that must be confirmed at review; it is not
-> hidden. No HTTP runtime, route, evaluator, migration, grant, or
-> dependency was added.
+> implement `PR15_DETAILED_EXECUTION_PLAN.md` on 2026-10-12, and during
+> PR 15 review on 2026-10-11 explicitly confirmed `W3` (exact canonical
+> MTMF Action URNs as the public Action identifier). All W1–W7 decisions
+> are approved; no contract decision remains open. The historical
+> reasoning for preferring the canonical Action URN over the plan's
+> illustrative short-name proposal is retained under `W3`. No HTTP
+> runtime, route, evaluator, migration, grant, or dependency was added.
 
 This register freezes the PR 15 wire decisions that PR 12 explicitly
 delegated (`T2`) and that `ROADMAP_V01.md` assigns to PR 15. It does not
@@ -26,7 +27,7 @@ C01–C11, [PR 12 Integration Security Decisions](PR12_INTEGRATION_SECURITY_DECI
 | --- | --- | --- |
 | W1 | Route `/v1/authorization/evaluate`; URL-selected version; strict JSON with unknown/duplicate-member rejection | APPROVED |
 | W2 | 1–100 actions; unique per-occurrence `request_id`; stable order; exact one-to-one response correlation including duplicates | APPROVED |
-| W3 | Exact public Action **URN** grammar (see deviation) | APPROVED WITH DEVIATION |
+| W3 | Exact canonical public Action **URN** grammar (final; historical deviation recorded below) | APPROVED |
 | W4 | Tagged resource union `capability` / `application_owned` / `mtmf_owned`; no free-form qualifiers; MTMF-owned fails closed until PR 17 validates | APPROVED |
 | W5 | Public reason/error taxonomy, reserved HTTP mapping, static safe messages; `INELIGIBLE_CONTEXT` omitted per-item | APPROVED |
 | W6 | UTC `issued_at`/`expires_at`, positive TTL ≤ 300s; 60s default / 15s sensitive are PR 17/18 limits | APPROVED |
@@ -56,7 +57,7 @@ C01–C11, [PR 12 Integration Security Decisions](PR12_INTEGRATION_SECURITY_DECI
   length/order/uniqueness and Tenant/organization equality with no policy
   evaluation.
 
-## W3 — exact public Action URN (explicit deviation)
+## W3 — exact public Action URN (approved)
 
 **Plan proposal.** The plan's §4.2 table proposed a short public name
 grammar `[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+` (example `document.read`),
@@ -74,21 +75,27 @@ exists. Implementing the short-name grammar would therefore silently
 narrow the contract and fail the plan's own reviewer check
 ("Exact Action grammar agrees with core").
 
-**Resolution (implemented).** The public `action` field is the **exact
-canonical Action URN**, validated by a detached grammar in `mtmf-api`
-that mirrors the core grammar without importing core:
-`urn:mtmf:iam:actions:system:<resource>:<verb>-<qualifier>`, ASCII,
-≤ 256 characters, no whitespace, no `*`, non-empty components, and a
-`<verb>-<qualifier>` operation. This is a *widening* to the canonical
-identity, not a narrowing. A syntactically valid but unregistered Action
-is **not** a DTO error; it becomes a per-item `DENY/UNKNOWN_ACTION`
-downstream.
+**Approved resolution (implemented).** The final public Action grammar is
+the **exact canonical MTMF Action URN**:
+
+```text
+urn:mtmf:iam:actions:system:<resource>:<verb>-<qualifier>
+```
+
+It is validated by a detached grammar in `mtmf-api` that mirrors the core
+grammar without importing core: ASCII, ≤ 256 characters, no whitespace,
+no `*`, non-empty components, and a `<verb>-<qualifier>` operation. This
+is a *widening* to the canonical identity, not a narrowing. A
+syntactically valid but unregistered Action is **not** a DTO error; it
+becomes a per-item `DENY/UNKNOWN_ACTION` downstream.
 
 **Why it is safe.** AGENTS.md requires callers to request exact Actions
 identified by immutable Action URNs; the reviewer checklist requires the
 public Action grammar to agree with core. The DTO package still imports
-no core type and resolves no catalog. **Reviewer confirmation of this
-deviation is requested before PR 15 merge.**
+no core type and resolves no catalog. **The human reviewer explicitly
+approved this resolution during PR 15 review (2026-10-11); the canonical
+Action URN preserves compatibility with `mtmf-core` and avoids an
+unnecessary public-name translation layer. W3 is final.**
 
 ## W4 — resource union
 
@@ -149,4 +156,5 @@ deviation is requested before PR 15 merge.**
 
 | ID | Status | Approved by | Date | Reference |
 | --- | --- | --- | --- | --- |
-| W1–W7 | APPROVED (W3 deviation flagged) | human reviewer | 2026-10-12 | instruction to implement `PR15_DETAILED_EXECUTION_PLAN.md` |
+| W1–W7 | APPROVED | human reviewer | 2026-10-12 | instruction to implement `PR15_DETAILED_EXECUTION_PLAN.md` |
+| W3 | APPROVED | human reviewer | 2026-10-11 | explicit human confirmation during PR 15 review: exact canonical MTMF Action URNs as the public Action identifier |

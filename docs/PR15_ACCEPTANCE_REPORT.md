@@ -28,13 +28,16 @@ native change was added.
 
 Recorded in [`PR15_API_CONTRACT_DECISIONS.md`](PR15_API_CONTRACT_DECISIONS.md).
 Approval source: the human reviewer instructed the coding agent to
-implement the detailed execution plan (2026-10-12).
+implement the detailed execution plan (2026-10-12) and explicitly
+confirmed W3 (exact canonical Action URNs) during PR 15 review
+(2026-10-11). All W1–W7 decisions are now approved; no contract decision
+remains open.
 
 | ID | Status | Note |
 | --- | --- | --- |
 | W1 | APPROVED | route/versioning/strict JSON |
 | W2 | APPROVED | 1–100 batch, unique ordered correlation |
-| W3 | APPROVED WITH DEVIATION | exact Action URN instead of the illustrative short name — flagged for reviewer confirmation |
+| W3 | APPROVED | exact canonical Action URN instead of the illustrative short name — explicitly confirmed by the human reviewer during PR 15 review (2026-10-11) |
 | W4 | APPROVED | tagged resource union; MTMF-owned fails closed |
 | W5 | APPROVED | public reasons/errors/status mapping |
 | W6 | APPROVED | UTC TTL handoff |

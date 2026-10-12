@@ -118,7 +118,8 @@ urn:mtmf:iam:actions:system:<resource>:<verb>-<qualifier>
   error; it produces a per-item `DENY/UNKNOWN_ACTION`.
 
 See the [decision register W3](PR15_API_CONTRACT_DECISIONS.md) for why
-the exact URN (rather than a short public name) is the frozen choice.
+the exact canonical URN (rather than the plan's illustrative short public
+name) is the approved, frozen choice.
 
 ## 7. Resource union
 
