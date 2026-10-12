@@ -98,7 +98,13 @@ It depends on `mtmf-api` and `mtmf-core` and provides the transport adapter arou
 
 The service layer MUST NOT duplicate business or security logic implemented by core.
 
-FastAPI/Uvicorn are expected service technologies, subject to implementation planning.
+**PR 17 implementation note.** `mtmf-service` now owns the FastAPI/Uvicorn HTTP
+adapter for the frozen PR 15 batch contract (`mtmf_service.app.create_app`,
+ASGI entry `mtmf_service.asgi:app`). It composes the PR 14 verified actor
+service, the PR 13 eligibility gate, the PR 9 effective-Role resolver and the
+PR 16 pure-Python batch evaluator. It adds no independent authorization model
+and no dependency on `mtmf-api` for anything but the detached wire contract.
+The production profile remains disabled pending separate release gates.
 
 ## 4. Dependency Direction
 
@@ -401,6 +407,17 @@ It MUST NOT implement an independent authorization model.
 
 Both local and HTTP deployment modes ultimately use the same `mtmf-core` Authorizer.
 
+**PR 17 implementation note.** The implemented boundary is
+transport-independent in `mtmf_service.evaluation.AuthorizationService` and
+HTTP-facing in `mtmf_service.app`. It applies, in order: rate/media/byte gates,
+strict PR 15 decode, PR 14 service+user verification (fresh per-request issuer
+attestation), PR 13 eligibility, one shared core `AuthorizationContext`, one PR
+16 Python batch call, exact PR 15 decision/error mapping, and a bounded UTC
+snapshot TTL. Errors are static PR 15 envelopes (400/401/403/413/415/429/500/503);
+no policy internals, credentials, or Tenant-existence distinctions are exposed.
+The development one-shot initializer is separate and privileged; the HTTP
+runtime uses only the restricted `mtmf_runtime` PostgreSQL identity.
+
 ## 14. Observability
 
 OpenTelemetry is the cross-cutting instrumentation model.
@@ -461,7 +478,7 @@ The following are intentionally not settled here:
 - Rust optimization details (the Rust evaluators are experimental and non-default since PR 8H; the production default is the pure-Python indexed `CompiledPolicy`).
 - HTTP API shape and versioning strategy.
 
-## Planned HTTP-only integration and package responsibilities (PRs 12–20; HTTP NOT IMPLEMENTED)
+## HTTP-only integration and package responsibilities (PRs 12–20)
 
 The v0.1 target integration architecture is an independently deployed MTMF HTTPS **PDP** with external consuming applications as **PEPs**. The earlier in-process/LocalConnector and location-transparent architecture statements in this document describe historical planning, not the newly agreed external integration target. Existing internal Python APIs remain implementation details. The planned public boundary is versioned HTTP only.
 
@@ -475,5 +492,10 @@ The PR 13 global Application registry, explicit Application–Tenant
 registration, Tenant subscription lifecycle, PostgreSQL persistence, and
 trusted internal eligibility gate are **implemented** (Section 8); this is a
 prerequisite input consumed before policy evaluation, not an HTTP decision
-layer. The HTTP service boundary, batch endpoint, and client snapshot helper
-remain **not implemented**. See [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md) and [ROADMAP_V01.md](ROADMAP_V01.md).
+layer. The PR 17 authenticated HTTP batch endpoint and the opt-in development
+initializer are **implemented and unit/real-PostgreSQL verified**, but the
+live Keycloak + real-ASGI end-to-end acceptance matrix and the production
+issuer/root recovery gates remain outstanding, so PR 17 is not yet DONE. The
+PR 18 client snapshot helper remains **not implemented**. See
+[HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
+and [ROADMAP_V01.md](ROADMAP_V01.md).

@@ -1,0 +1,27 @@
+# MTMF development service image (PR 17).
+#
+# DEVELOPMENT ONLY. Builds the Python workspace (no Rust native module is
+# required by the default pure-Python PDP path). No secret is baked into
+# this image: credentials are supplied at runtime through the environment
+# and, for consumer client secrets, an MTMF-owned secret mechanism.
+FROM python:3.14-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH=/app/.venv/bin:$PATH
+
+RUN pip install --no-cache-dir "uv==0.12.17"
+
+WORKDIR /app
+
+# Dependency layer first for cache friendliness.
+COPY pyproject.toml uv.lock ./
+COPY packages ./packages
+RUN uv sync --locked --no-dev
+
+COPY scripts ./scripts
+COPY dev ./dev
+
+EXPOSE 28001
+CMD ["python", "-m", "mtmf_service"]

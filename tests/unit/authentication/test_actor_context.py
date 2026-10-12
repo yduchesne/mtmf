@@ -334,14 +334,14 @@ def test_missing_tenant_membership_is_rejected():
     world = World(InMemoryMtmfSpi(), memberships=False).seed()
     with pytest.raises(AuthenticationError) as exc:
         resolve(make_service(world.spi)[0], world.tenant.id)
-    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_TENANT
 
 
 def test_ineligible_subscription_is_rejected():
     world = World(InMemoryMtmfSpi(), subscription_lifecycle=SubscriptionLifecycle.PENDING).seed()
     with pytest.raises(AuthenticationError) as exc:
         resolve(make_service(world.spi)[0], world.tenant.id)
-    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_SUBSCRIPTION
 
 
 def test_missing_service_token_is_rejected():
@@ -371,7 +371,7 @@ def test_inactive_tenant_is_rejected():
         uow.commit()
     with pytest.raises(AuthenticationError) as exc:
         resolve(make_service(world.spi)[0], world.tenant.id)
-    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_TENANT
 
 
 def test_missing_active_registration_is_rejected():
@@ -385,7 +385,7 @@ def test_missing_active_registration_is_rejected():
         uow.commit()
     with pytest.raises(AuthenticationError) as exc:
         resolve(make_service(world.spi)[0], world.tenant.id)
-    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_REGISTRATION
 
 
 def test_other_tenant_without_membership_is_rejected():
@@ -402,7 +402,7 @@ def test_other_tenant_without_membership_is_rejected():
         uow.commit()
     with pytest.raises(AuthenticationError) as exc:
         resolve(make_service(world.spi)[0], other_tenant.id)
-    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_TENANT
 
 
 class FailingSpi:

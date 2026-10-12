@@ -150,9 +150,9 @@ Tenant context, and cannot be mixed or overridden by a request-body field.
 
 **No new PR is needed:** PR 14 and PR 18 already own these responsibilities. The refresh-token exclusion does not prohibit external IdP-managed interactive user refresh tokens. Neither an external user's refresh token nor a service access token can be substituted for a verified MTMF authorization decision.
 
-## 3B. Application-neutral Podman development bootstrap and OAuth service credentials (PRs 13, 14, 17, 18 and 20; NOT IMPLEMENTED)
+## 3B. Application-neutral Podman development bootstrap and OAuth service credentials (PRs 13, 14, 17, 18 and 20)
 
-**Status: future development deployment contract, not an implemented startup behavior.** This section is application-neutral: a *consuming Application* is any independently deployed PEP that integrates with MTMF. The SYSTEM/root Tenant is reserved for MTMF control-plane administration. **No consuming Application may operate, subscribe, or obtain authorization decisions in the SYSTEM/root Tenant**, even if its registration was performed by a root administrator. An Application may serve multiple explicitly subscribed **ordinary** Tenants; a request is bound to one verified Application and one ordinary Tenant. PR 13 must enforce this at the authoritative domain/database boundary, PR 14 at the authenticated request boundary, and PR 20 in negative end-to-end tests.
+**Status: PR 17 implements the opt-in, idempotent, privileged one-shot initializer and the development Compose override; the live Keycloak end-to-end acceptance (`V01`–`V16`) and the production profile remain outstanding, so this is not production-ready.** PR 18/20 integration remains future work. This section is application-neutral: a *consuming Application* is any independently deployed PEP that integrates with MTMF. The SYSTEM/root Tenant is reserved for MTMF control-plane administration. **No consuming Application may operate, subscribe, or obtain authorization decisions in the SYSTEM/root Tenant**, even if its registration was performed by a root administrator. An Application may serve multiple explicitly subscribed **ordinary** Tenants; a request is bound to one verified Application and one ordinary Tenant. PR 13 must enforce this at the authoritative domain/database boundary, PR 14 at the authenticated request boundary, and PR 20 in negative end-to-end tests.
 
 ### Initialization sequence (PR 17 orchestration)
 
@@ -170,7 +170,7 @@ The development profile MUST run a privileged, one-shot, idempotent initializer 
 
 **Idempotency and failure policy:** fresh state creates the expected objects; a fully matching state is validated/reused without duplicate resources, secret resets or unnecessary mutations; new configured Applications can be added without changing existing ones. Concurrent startup must serialize provisioning. Missing prerequisites, partial/corrupt state, incompatible registry or subscription mappings, or issuer provisioning errors fail closed and prevent readiness. Do not silently recreate privileged identities, elevate an Application, or recover root credentials. Use deterministic development fixture identities/configuration, but generate secrets securely. The development fixture is opt-in and cannot run in production; production bootstrap requires a separate explicit privileged deployment operation.
 
-**Implementation ownership:** PR 10 already provides the root bootstrap primitive; PR 13 provides Application/subscription persistence and SYSTEM Tenant exclusion; PR 14 provides external OAuth trust and Application mapping; PR 17 owns Podman initialization orchestration, local Keycloak development integration and readiness; PR 18 owns provider-neutral Client Credentials token acquisition/renewal; PR 20 owns generic integration conformance, including negative SYSTEM Tenant tests. This documentation does not assert any of these future integrations exist today.
+**Implementation ownership:** PR 10 already provides the root bootstrap primitive; PR 13 provides Application/subscription persistence and SYSTEM Tenant exclusion; PR 14 provides external OAuth trust and Application mapping; PR 17 owns Podman initialization orchestration, local Keycloak development integration and readiness; PR 18 owns provider-neutral Client Credentials token acquisition/renewal; PR 20 owns generic integration conformance, including negative SYSTEM Tenant tests. The PR 17 initializer orchestration, privileged PostgreSQL provisioning and Compose override are implemented; the live Keycloak + real-ASGI end-to-end acceptance is not yet executed, and PR 18/20 integrations do not exist today.
 
 ### Development service credential contract
 
@@ -329,7 +329,7 @@ sensitive access.
 | 14 | Trusted service/end-user authentication boundary | No |
 | 15 | Versioned HTTP batch API DTO contract | Partial — detached DTOs, strict codecs, stable errors, JSON Schema, and conformance shipped in `mtmf-api`; no HTTP runtime |
 | 16 | Python/Rust native batch and parity benchmarks | No |
-| 17 | Authenticated HTTP service endpoint | No |
+| 17 | Authenticated HTTP service endpoint | Partial — FastAPI/Uvicorn PDP for the frozen PR 15 batch contract, PR 14 trust composition, PR 13 eligibility, PR 16 Python batch, bounded TTL/limits/readiness, and an opt-in development initializer are implemented and unit/real-PostgreSQL verified; live Keycloak + real-ASGI acceptance is NOT EXECUTED and the production issuer/root gates remain deferred |
 | 18 | HTTP client and scoped snapshot helper | No |
 | 19 | Decision observability/audit | No |
 | 20 | ATI PEP reference integration and E2E validation | No |

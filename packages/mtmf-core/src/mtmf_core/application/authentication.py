@@ -101,8 +101,10 @@ class AuthenticatedActorContextService:
         # Fresh, zero-cache attestation precedes acceptance of either token.
         self._attestor.attest(self._service_profile)
 
-        service = self._verify(service_token, self._service_verifier, self._service_profile)
-        user = self._verify(user_token, self._user_verifier, self._user_profile)
+        service = self._verify(
+            service_token, self._service_verifier, self._service_profile, slot="service"
+        )
+        user = self._verify(user_token, self._user_verifier, self._user_profile, slot="user")
         self._require_service_class(service)
         self._require_user_class(user)
         if service.azp != user.azp:
@@ -133,10 +135,26 @@ class AuthenticatedActorContextService:
 
     # -- verification ------------------------------------------------------
     @staticmethod
-    def _verify(token: str, verifier: TokenVerifier, profile: IssuerProfile) -> VerifiedAccessToken:
+    def _verify(
+        token: str,
+        verifier: TokenVerifier,
+        profile: IssuerProfile,
+        *,
+        slot: str,
+    ) -> VerifiedAccessToken:
         if not token:
-            raise AuthenticationError(AuthenticationFailure.INVALID_REQUEST, "a token is required")
-        return verifier.verify(token, profile)
+            raise AuthenticationError(
+                AuthenticationFailure.INVALID_REQUEST, "a token is required", slot=slot
+            )
+        try:
+            return verifier.verify(token, profile)
+        except AuthenticationError as exc:
+            # Preserve the verifier's category but attribute the slot so the
+            # HTTP adapter can distinguish a service-credential failure (401)
+            # from a user-proof failure (403 unauthenticated acting user).
+            if exc.slot is None:
+                exc.slot = slot
+            raise
 
     @staticmethod
     def _require_service_class(token: VerifiedAccessToken) -> None:
@@ -144,6 +162,7 @@ class AuthenticatedActorContextService:
             raise AuthenticationError(
                 AuthenticationFailure.WRONG_TOKEN_CLASS,
                 "the service token did not carry client-credentials class evidence",
+                slot="service",
             )
 
     @staticmethod
@@ -152,6 +171,7 @@ class AuthenticatedActorContextService:
             raise AuthenticationError(
                 AuthenticationFailure.WRONG_TOKEN_CLASS,
                 "the user token did not carry interactive-user class evidence",
+                slot="user",
             )
 
     # -- composition -------------------------------------------------------
@@ -194,7 +214,7 @@ class AuthenticatedActorContextService:
             or tenant.scope is not SecurityScope.TENANT
         ):
             raise AuthenticationError(
-                AuthenticationFailure.INELIGIBLE_CONTEXT,
+                AuthenticationFailure.INELIGIBLE_TENANT,
                 "the Tenant is not an active ordinary Tenant",
             )
 
@@ -205,7 +225,7 @@ class AuthenticatedActorContextService:
             is None
         ):
             raise AuthenticationError(
-                AuthenticationFailure.INELIGIBLE_CONTEXT,
+                AuthenticationFailure.INELIGIBLE_TENANT,
                 "the Identity is not a member of the selected Tenant",
             )
         if (
@@ -215,7 +235,7 @@ class AuthenticatedActorContextService:
             is None
         ):
             raise AuthenticationError(
-                AuthenticationFailure.INELIGIBLE_CONTEXT,
+                AuthenticationFailure.INELIGIBLE_TENANT,
                 "the Principal is not a member of the selected Tenant",
             )
 
@@ -224,7 +244,7 @@ class AuthenticatedActorContextService:
         ).find_by_application_and_tenant(application_id, tenant_id)
         if not any(row.lifecycle is RegistrationLifecycle.ACTIVE for row in registration):
             raise AuthenticationError(
-                AuthenticationFailure.INELIGIBLE_CONTEXT,
+                AuthenticationFailure.INELIGIBLE_REGISTRATION,
                 "the Application is not actively registered for the Tenant",
             )
 
@@ -233,7 +253,7 @@ class AuthenticatedActorContextService:
         )
         if not eligibility.eligible:
             raise AuthenticationError(
-                AuthenticationFailure.INELIGIBLE_CONTEXT,
+                AuthenticationFailure.INELIGIBLE_SUBSCRIPTION,
                 "the Application subscription is not eligible",
             )
 

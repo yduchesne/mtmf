@@ -49,6 +49,18 @@ class AuthenticationFailure(StrEnum):
     UNKNOWN_APPLICATION = "unknown_application"
     UNKNOWN_SUBJECT = "unknown_subject"
     INACTIVE_ACTOR = "inactive_actor"
+    #: Requested ordinary-Tenant context is unusable: the Tenant is missing,
+    #: non-ordinary/inactive, or the verified actor lacks the required
+    #: memberships. PR 17 maps this to the public ``UNTRUSTED_ACTOR`` code.
+    INELIGIBLE_TENANT = "ineligible_tenant"
+    #: No ACTIVE Application-Tenant registration covers the exact pair. PR 17
+    #: maps this to the public ``INELIGIBLE_APPLICATION`` code.
+    INELIGIBLE_REGISTRATION = "ineligible_registration"
+    #: No currently in-window ACTIVE subscription covers the exact pair. PR 17
+    #: maps this to the public ``INELIGIBLE_APPLICATION`` code.
+    INELIGIBLE_SUBSCRIPTION = "ineligible_subscription"
+    #: Retained for compatibility with the pre-PR-17 coarse category. New code
+    #: must raise one of the three precise categories above instead.
     INELIGIBLE_CONTEXT = "ineligible_context"
     ROOT_FORBIDDEN = "root_forbidden"
     INFRASTRUCTURE = "infrastructure_unavailable"
@@ -59,12 +71,25 @@ class AuthenticationError(Exception):
 
     This is never a policy ``DENY`` and never an ``ALLOW``; it carries a
     stable category and a short non-sensitive message only.
+
+    :attr:`slot` optionally identifies which independently verified token
+    slot produced the failure (``"service"`` or ``"user"``). It is
+    additive, non-sensitive routing evidence for the HTTP adapter's error
+    mapping; it is never part of a public wire body and never changes the
+    authenticated/denied outcome.
     """
 
-    __slots__ = ("failure",)
+    __slots__ = ("failure", "slot")
 
-    def __init__(self, failure: AuthenticationFailure, message: str = "") -> None:
+    def __init__(
+        self,
+        failure: AuthenticationFailure,
+        message: str = "",
+        *,
+        slot: str | None = None,
+    ) -> None:
         self.failure = failure
+        self.slot = slot
         super().__init__(message or failure.value)
 
 

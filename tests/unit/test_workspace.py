@@ -86,12 +86,17 @@ def test_client_metadata_depends_on_workspace_api_only() -> None:
     assert not any("mtmf-core" in dependency for dependency in dependencies)
 
 
-def test_service_metadata_depends_on_api_and_core_without_http_framework() -> None:
+def test_service_metadata_depends_on_api_and_core_and_owns_the_http_framework() -> None:
+    # PR 17 makes mtmf-service the only owner of an HTTP framework. The
+    # frozen mtmf-api wire-contract package must remain framework-free.
     dependencies = _dependencies("mtmf-service")
     assert any("mtmf-api" in dependency for dependency in dependencies)
     assert any("mtmf-core" in dependency for dependency in dependencies)
+    assert any("fastapi" in dependency for dependency in dependencies)
+    assert any("uvicorn" in dependency for dependency in dependencies)
+    api_dependencies = _dependencies("mtmf-api")
     assert not any(
-        name in dependency for dependency in dependencies for name in ("fastapi", "uvicorn")
+        name in dependency for dependency in api_dependencies for name in ("fastapi", "uvicorn")
     )
 
 
