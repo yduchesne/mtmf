@@ -37,7 +37,7 @@ Normalize the roadmap identifier to lowercase, replace spaces with hyphens, and 
 
 **Do not leave `<pr-id>` as a placeholder in the delivered plan.** Put the exact resolved path near the beginning of the plan under a heading such as **Required PR artifact directory**, and repeat it in the documentation/acceptance instructions. Explicitly direct the coding agent to create that directory, commit every PR-specific report and supporting documentation it produces there, and use descriptive lowercase hyphenated filenames and working repository-relative links. This includes baseline/reconciliation, acceptance, security, benchmark, STOP/deviation, and review/fixup reports. Reports must not exist only in local `Downloads` or `/tmp` paths.
 
-Keep shared normative/architecture documentation in its established `docs/` location. Do not relocate unrelated historical PR artifacts. The directory identifier is based on the **roadmap PR ID**, not the GitHub PR number. See `AGENTS.md` for the repository-wide rule.
+Keep shared normative/architecture documentation in its established `docs/` location. Existing PR-specific reports may be relocated in a dedicated documentation migration; retain valid links. Do not move unrelated or shared normative documentation. The directory identifier is based on the **roadmap PR ID**, not the GitHub PR number. See `AGENTS.md` for the repository-wide rule.
 
 ---
 
