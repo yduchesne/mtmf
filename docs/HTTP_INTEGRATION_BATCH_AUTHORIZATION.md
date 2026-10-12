@@ -478,3 +478,7 @@ envelope; (8) infrastructure failure → none yields `ALLOW`.
 | D13 | No migration, runtime code, dependency, API/HTTP/client implementation | `git diff` review |
 | D14 | Historical connector contradictions resolved/labelled | `ARCHITECTURE.md` labels |
 | D15 | Examples labelled non-normative | status banner, §13 |
+
+## PR 14 package ownership clarification (approved 2026-10-11)
+
+The PR 14 decision register section 14H approves the package ownership split: mtmf-service owns HTTP extraction, issuer/JWKS transport, configuration and attestation; mtmf-core owns provider-neutral verification policy, immutable verified claims, Application/Identity resolution and actor composition through SPI/UoW. The ownership matrix in section 2 describes end-to-end service responsibility and must be read with this clarification. This does not approve root or production issuer authentication.
