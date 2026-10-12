@@ -159,8 +159,8 @@ PR 14 must not be marked DONE.
 
 ## 11. Amendment #1 acceptance status (2026-10-11)
 
-Status only; see [PR14_AMENDMENT1_ACCEPTANCE_REPORT.md](PR14_AMENDMENT1_ACCEPTANCE_REPORT.md)
-and [PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md).
+Status only; see [PR14_AMENDMENT1_ACCEPTANCE_REPORT.md](../pr-14/pr14-amendment1-acceptance-report.md)
+and [PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md](../pr-14/pr14-amendment1-acceptance-matrix.md).
 
 - Shipped `jwt_verifier` defects fixed: strict payload parsing rejects duplicate
   JSON members before verification; malformed base64url segments are rejected;
@@ -180,8 +180,8 @@ and [PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md)
 
 ## 12. Amendment #2 acceptance status (2026-10-11)
 
-Status only; see [PR14_AMENDMENT2_ACCEPTANCE_REPORT.md](PR14_AMENDMENT2_ACCEPTANCE_REPORT.md)
-and [PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md).
+Status only; see [PR14_AMENDMENT2_ACCEPTANCE_REPORT.md](../pr-14/pr14-amendment2-acceptance-report.md)
+and [PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md](../pr-14/pr14-amendment2-acceptance-matrix.md).
 
 - **STOPPED at Phase 1:** on pinned Keycloak 26.8.0, a same client cannot issue
   service and user tokens with **distinct** per-grant audiences (audience mappers
@@ -199,8 +199,8 @@ and [PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md)
 
 ## 13. Amendment #3 shared-audience D1 status (2026-10-11)
 
-Status only; see [PR14_AMENDMENT3_ACCEPTANCE_REPORT.md](PR14_AMENDMENT3_ACCEPTANCE_REPORT.md)
-and [PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md).
+Status only; see [PR14_AMENDMENT3_ACCEPTANCE_REPORT.md](../pr-14/pr14-amendment3-acceptance-report.md)
+and [PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md](../pr-14/pr14-amendment3-acceptance-matrix.md).
 
 - §14J supersedes the distinct-audience requirement for the development D1
   profile; the shared audience is a recipient check only. The signed, freshly
@@ -223,8 +223,8 @@ and [PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md)
 
 ## 14. Amendment #4 final live acceptance status (2026-10-11)
 
-Status only; see [PR14_AMENDMENT4_ACCEPTANCE_REPORT.md](PR14_AMENDMENT4_ACCEPTANCE_REPORT.md)
-and [PR14_AMENDMENT4_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT4_ACCEPTANCE_MATRIX.md).
+Status only; see [PR14_AMENDMENT4_ACCEPTANCE_REPORT.md](../pr-14/pr14-amendment4-acceptance-report.md)
+and [PR14_AMENDMENT4_ACCEPTANCE_MATRIX.md](../pr-14/pr14-amendment4-acceptance-matrix.md).
 
 - The extended live harness executes **22 cases with zero skips** against pinned
   Keycloak 26.8.0 and real PostgreSQL 18 through the shipped composition:
