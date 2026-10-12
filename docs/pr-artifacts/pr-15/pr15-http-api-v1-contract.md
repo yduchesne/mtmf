@@ -8,11 +8,11 @@
 > snapshots belong to PR 18. `mtmf-api` is a data contract, not a server,
 > and never makes an authorization decision.
 
-Decision provenance: [PR 15 API contract decisions](PR15_API_CONTRACT_DECISIONS.md).
-Semantic sources: [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
-C01–C11, [PR 12 Integration Security Decisions](PR12_INTEGRATION_SECURITY_DECISIONS.md),
-[Security Model](SECURITY_MODEL.md), [Authorization](AUTHORIZATION.md),
-[Architecture](ARCHITECTURE.md).
+Decision provenance: [PR 15 API contract decisions](../pr-15/pr15-api-contract-decisions.md).
+Semantic sources: [HTTP Integration and Batch Authorization](../../HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
+C01–C11, [PR 12 Integration Security Decisions](../pr-12/pr12-integration-security-decisions.md),
+[Security Model](../../SECURITY_MODEL.md), [Authorization](../../AUTHORIZATION.md),
+[Architecture](../../ARCHITECTURE.md).
 
 ## 1. Purpose and dominant invariant
 
@@ -117,7 +117,7 @@ urn:mtmf:iam:actions:system:<resource>:<verb>-<qualifier>
 - A syntactically valid but unregistered/unknown Action is **not** a DTO
   error; it produces a per-item `DENY/UNKNOWN_ACTION`.
 
-See the [decision register W3](PR15_API_CONTRACT_DECISIONS.md) for why
+See the [decision register W3](../pr-15/pr15-api-contract-decisions.md) for why
 the exact canonical URN (rather than the plan's illustrative short public
 name) is the approved, frozen choice.
 
