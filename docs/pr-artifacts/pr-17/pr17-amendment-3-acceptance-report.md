@@ -1,8 +1,8 @@
 # PR 17 — Amendment #3 acceptance report
 
 **Branch:** `dev/pr17-http-service`. **Base:** `4eea688`; prior head `040f8d0`.
-**Amendment #3 feature commit:** `__FILL_AFTER_COMMIT__` (all gates and the
-pre-commit hook ran on this tree).
+**Amendment #3 feature commit:** `8f2e879b60b6e9bda9ff15071e9457a634dd1ac1`
+(all gates and the pre-commit hook ran on this tree).
 **Disposition: IMPLEMENTED; ACCEPTANCE INCOMPLETE — STOPPED, NOT READY FOR MERGE.**
 
 ## 1. Human decision gates (required)
