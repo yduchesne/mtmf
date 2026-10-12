@@ -1068,3 +1068,9 @@ no `amr`).
 A14-07, A14-08, and §7–§9 are updated. No decision is approved; the
 approval log in §15 remains **PENDING HUMAN REVIEW**, and PR 14
 implementation remains stopped.
+
+## 14H. Reviewer approval of remaining non-root decisions (2026-10-11)
+
+The reviewer explicitly approved the entire package in `docs/PR14_NONROOT_APPROVAL_RECONCILIATION.md` section 10.2, as written. Approved: A14-01, A14-03, A14-04, A14-05, A14-06, A14-07, A14-09, A14-10, section 10 JWT/JWKS policy, and the `mtmf-service` / `mtmf-core` ownership reconciliation. These approvals apply only to the previously selected development-first, conditional-attestation, same-client D1 non-root scope. Earlier PENDING entries are superseded for this scope.
+
+The production issuer, production attestation freshness, and root authentication remain deferred. Runtime acceptance evidence (including DC05, DC07 and the applicable AUTH cases) remains required. This approval does not authorize implementation; the separate implementation STOP remains active.
