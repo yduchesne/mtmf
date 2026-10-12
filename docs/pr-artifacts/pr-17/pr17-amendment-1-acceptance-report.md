@@ -104,7 +104,7 @@ every operation.
 
 ## 7. Final SHA and integration count
 
-- Amendment feature commit: recorded at the branch head after the commit below.
+- Amendment feature commit: `9c7f7da5065022f3af31e28309dfe30d24442ce8` (all gates and the pre-commit hook ran on this tree).
 - `./build.sh --integration`: **559 passed, 34 skipped** (the 34 skipped are the opt-in PR 14 live actor suite (22) and PR 17 live HTTP suite (12), both executed separately and passing).
 
 ## 8. Remaining risks and disposition
