@@ -40,6 +40,7 @@ from typing import Any
 
 import psycopg
 
+from mtmf_core.authentication.contracts import IssuerProfile
 from mtmf_core.domain.authentication_binding import BindingLifecycle
 from mtmf_core.domain.lifecycle import (
     ApplicationLifecycle,
@@ -54,6 +55,12 @@ from mtmf_core.persistence.postgres import (
     PostgresConfig,
     PostgresMigrationManager,
     PostgresRole,
+)
+from mtmf_service.authentication.attestation import (
+    BaselineConfigurationAttestor,
+    ExpectedClientPolicy,
+    ExpectedClientPolicyError,
+    canonical_client_projection,
 )
 from mtmf_service.development_bootstrap import (
     ApplicationFixture,
@@ -425,15 +432,31 @@ class KeycloakCredentialProvisioner:
             payload = response.read()
         return json.loads(payload) if payload else None
 
-    def ensure_client(self, fixture: BootstrapFixture, application: ApplicationFixture) -> str:
-        """Create or reuse one confidential Client Credentials client.
+    def _approved_policy(self) -> ExpectedClientPolicy:
+        path = os.environ.get(
+            "MTMF_AUTH_EXPECTED_CLIENT_POLICY", "dev/keycloak/expected-client-policy.json"
+        )
+        try:
+            return ExpectedClientPolicy.load(path)
+        except ExpectedClientPolicyError as exc:
+            raise BootstrapError("the approved expected-client policy is unusable") from exc
 
-        An existing client is never reset. The current secret is delivered
-        to an owner-only file (mode ``0600``) under ``MTMF_DEV_SECRET_DIR``
-        for the intended consumer; it is never printed or logged.
+    def ensure_client(self, fixture: BootstrapFixture, application: ApplicationFixture) -> str:
+        """Create or validate one confidential client against the approved policy.
+
+        The client must have an independently approved expected-client entry.
+        A missing approved client is created; an existing client is compared to
+        the approved projection and any drift fails closed (no automatic repair,
+        no secret rotation). The current secret is delivered to an owner-only
+        file (mode ``0600``) under ``MTMF_DEV_SECRET_DIR``; it is never printed.
         """
         client_id = f"mtmf-{application.application_key}"
-        rows = self._request("GET", f"/admin/realms/{self.realm}/clients?clientId={client_id}")
+        expected = self._approved_policy().require(client_id)
+        reader = _AdminReadAdapter(self)
+        lookup = (
+            f"/admin/realms/{self.realm}/clients?clientId={urllib.parse.quote(client_id, safe='')}"
+        )
+        rows = self._request("GET", lookup)
         if not rows:
             self._request(
                 "POST",
@@ -448,7 +471,15 @@ class KeycloakCredentialProvisioner:
                     "directAccessGrantsEnabled": False,
                 },
             )
-            rows = self._request("GET", f"/admin/realms/{self.realm}/clients?clientId={client_id}")
+            rows = self._request("GET", lookup)
+        if len(rows) != 1:
+            raise BootstrapError(f"client {client_id!r} is missing or ambiguous in the live realm")
+        actual = canonical_client_projection(reader, self.realm, rows[0])
+        if dict(expected) != actual:
+            raise BootstrapError(
+                f"client {client_id!r} drifted from the approved expected-client policy; "
+                "no automatic repair is performed"
+            )
         client_uuid = rows[0]["id"]
         secret_payload = self._request(
             "GET", f"/admin/realms/{self.realm}/clients/{client_uuid}/client-secret"
@@ -470,11 +501,38 @@ class KeycloakCredentialProvisioner:
         os.chmod(target, 0o600)
 
     def verify_issuer(self, fixture: BootstrapFixture) -> None:
-        """Validate that the pinmed issuer serves discovery and JWKS."""
+        """Freshly attest the realm projection and every approved client."""
         discovery = self._request("GET", f"/realms/{self.realm}/.well-known/openid-configuration")
         if discovery.get("issuer") != fixture.issuer:
             raise BootstrapError("the live issuer does not match the configured trust anchor")
         self._request("GET", f"/realms/{self.realm}/protocol/openid-connect/certs")
+        manifest_path = os.environ.get(
+            "MTMF_AUTH_EXPECTED_MANIFEST", "dev/keycloak/expected-realm-security.json"
+        )
+        policy_path = os.environ.get(
+            "MTMF_AUTH_EXPECTED_CLIENT_POLICY", "dev/keycloak/expected-client-policy.json"
+        )
+        attestor = BaselineConfigurationAttestor(
+            _AdminReadAdapter(self), self.realm, manifest_path, policy_path
+        )
+        profile = IssuerProfile(
+            issuer=fixture.issuer,
+            audience=fixture.service_audience,
+            jwks_uri=f"{fixture.issuer}/protocol/openid-connect/certs",
+        )
+        attestor.attest(profile)
+        for approved_client_id in self._approved_policy().entries:
+            attestor.attest_client(profile, approved_client_id)
+
+
+class _AdminReadAdapter:
+    """Adapt the initializer's Admin REST client to the read-only reader port."""
+
+    def __init__(self, provisioner: KeycloakCredentialProvisioner) -> None:
+        self._provisioner = provisioner
+
+    def get(self, path: str) -> Any:
+        return self._provisioner._request("GET", path)
 
 
 def _dev_fixture() -> BootstrapFixture:

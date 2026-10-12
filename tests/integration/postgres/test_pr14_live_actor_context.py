@@ -237,7 +237,7 @@ def _config(
         service_audience=service_audience,
         user_audience=user_audience,
         jwks_uri=f"{issuer}/protocol/openid-connect/certs",
-        expected_manifest_path="dev/keycloak/expected-config-manifest.json",
+        expected_manifest_path="dev/keycloak/expected-realm-security.json",
         admin_base_url=base,
         admin_realm=REALM,
         admin_username=_env("MTMF_PR14_KC_ADMIN_USERNAME"),

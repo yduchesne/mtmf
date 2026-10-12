@@ -56,6 +56,9 @@ SHARED_AUDIENCE = "mtmf-same-client-api"
 SAME_CLIENT = "mtmf-evidence-same-client"
 SAME_SECRET = "mtmf-evidence-same-client-dev-secret"
 USER = "mtmf-user-bob"
+SECOND_CLIENT = "mtmf-evidence-same-client-b"
+SECOND_SECRET = "mtmf-evidence-same-client-b-dev-secret"
+SECOND_USER = "mtmf-user-carol"
 PORT = 28011
 BASE_URL = f"http://127.0.0.1:{PORT}"
 
@@ -96,7 +99,7 @@ def _issuer_config(*, expected_manifest: str | None = None) -> IssuerConfig:
         service_audience=SHARED_AUDIENCE,
         user_audience=SHARED_AUDIENCE,
         jwks_uri=f"{issuer}/protocol/openid-connect/certs",
-        expected_manifest_path=expected_manifest or "dev/keycloak/expected-config-manifest.json",
+        expected_manifest_path=expected_manifest or "dev/keycloak/expected-realm-security.json",
         admin_base_url=base,
         admin_realm=REALM,
         admin_username=_env("MTMF_PR14_KC_ADMIN_USERNAME"),
@@ -105,26 +108,26 @@ def _issuer_config(*, expected_manifest: str | None = None) -> IssuerConfig:
     )
 
 
-def _service_token() -> str:
-    issuer = ev.Issuer(
+def _issuer() -> ev.Issuer:
+    return ev.Issuer(
         base=_env("MTMF_PR14_KC_BASE"),
         realm=REALM,
         ca_file=os.environ.get("MTMF_PR14_KC_CA_FILE", ""),
     )
-    return ev.client_credentials_token(issuer, SAME_CLIENT, SAME_SECRET)["access_token"]
 
 
-def _user_token() -> str:
-    issuer = ev.Issuer(
-        base=_env("MTMF_PR14_KC_BASE"),
-        realm=REALM,
-        ca_file=os.environ.get("MTMF_PR14_KC_CA_FILE", ""),
-    )
+def _service_token(client_id: str = SAME_CLIENT, client_secret: str = SAME_SECRET) -> str:
+    return ev.client_credentials_token(_issuer(), client_id, client_secret)["access_token"]
+
+
+def _user_token(
+    *, client_id: str = SAME_CLIENT, client_secret: str = SAME_SECRET, user: str = USER
+) -> str:
     token = ev.authorization_code_token(
-        issuer,
-        SAME_CLIENT,
-        SAME_SECRET,
-        USER,
+        _issuer(),
+        client_id,
+        client_secret,
+        user,
         _env("MTMF_PR14_KC_USER_PASSWORD"),
         "http://127.0.0.1:28400/callback",
         28400,
@@ -132,7 +135,9 @@ def _user_token() -> str:
     return str(token["access_token"])
 
 
-def _seed(db: psycopg.Connection, subject: str, *, memberships: bool = True) -> dict[str, str]:
+def _seed(
+    db: psycopg.Connection, subject: str, *, memberships: bool = True, client_id: str = SAME_CLIENT
+) -> dict[str, str]:
     """Seed one ordinary Tenant, Application, Role and policy graph."""
     principal_id, identity_id, tenant_id = _uuid(), _uuid(), _uuid()
     db.execute(
@@ -179,7 +184,7 @@ def _seed(db: psycopg.Connection, subject: str, *, memberships: bool = True) -> 
     )
     db.execute(
         "SELECT mtmf.service_credential_application_add(%s,%s,%s,%s,1::smallint,now())",
-        (_uuid(), _issuer_str(), SAME_CLIENT, application_id),
+        (_uuid(), _issuer_str(), client_id, application_id),
     )
     db.execute(
         "SELECT mtmf.external_subject_identity_add(%s,%s,%s,%s,1::smallint,now())",
@@ -189,16 +194,17 @@ def _seed(db: psycopg.Connection, subject: str, *, memberships: bool = True) -> 
     # ``principal:get-object``.
     for urn in (ALLOW_ACTION, DENY_ACTION, NO_PERMISSION_ACTION):
         db.execute("SELECT mtmf.action_add(%s)", (urn,))
+    role_urn = f"{ROLE_URN}-{_uuid()[:8]}"
     db.execute(
         "INSERT INTO mtmf.role (urn, name, description, defining_tenant_id) "
         "VALUES (%s, 'Dev Admin', '', NULL)",
-        (ROLE_URN,),
+        (role_urn,),
     )
     permission_set_id = _uuid()
     db.execute(
         "INSERT INTO mtmf.permission_set (id, role_urn, effect, position) "
         "VALUES (%s, %s, 'allow', 0)",
-        (permission_set_id, ROLE_URN),
+        (permission_set_id, role_urn),
     )
     db.execute(
         "INSERT INTO mtmf.permission (id, permission_set_id, urn, position) VALUES (%s, %s, %s, 0)",
@@ -206,7 +212,7 @@ def _seed(db: psycopg.Connection, subject: str, *, memberships: bool = True) -> 
     )
     db.execute(
         "SELECT mtmf.identity_role_assignment_add(%s,%s,%s,%s,NULL)",
-        (_uuid(), tenant_id, identity_id, ROLE_URN),
+        (_uuid(), tenant_id, identity_id, role_urn),
     )
     return {
         "principal_id": principal_id,
@@ -670,44 +676,159 @@ def test_v07_no_positive_attestation_cache(db: psycopg.Connection, live_server: 
         user=_user_token(),
     )
     assert first.status_code == 200
-    # Remove a client mapper; the next request must freshly detect drift.
+    # Mutate a security-relevant client field that does not affect verifying an
+    # already-issued token; the next request must freshly detect the drift from
+    # the approved client policy (no positive attestation cache).
     admin = _Admin()
     client = admin.client()
-    admin.add_mapper(client["id"], "aud")
+    original = list(client.get("webOrigins") or [])
+    admin._request(
+        "PUT",
+        f"/admin/realms/{REALM}/clients/{client['id']}",
+        {**client, "webOrigins": [*original, "http://drift.example"]},
+    )
     try:
         drifted = _post(
             _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
             service=_service_token(),
             user=_user_token(),
         )
-        assert drifted.status_code == 503
+        assert drifted.status_code == 503, drifted.text
+        assert drifted.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+        assert "ALLOW" not in drifted.text
     finally:
-        admin.remove_mapper(client["id"], "aud")
+        admin._request(
+            "PUT",
+            f"/admin/realms/{REALM}/clients/{client['id']}",
+            {**client, "webOrigins": original},
+        )
 
 
-def test_v12_two_applications_have_isolated_bindings(
-    db: psycopg.Connection, live_server: Any
-) -> None:
-    # The live fixture maps one credential to one Application; a second
-    # Application with no matching credential binding must not be reachable.
-    subject = ev.decode_unverified(_user_token())[1]["sub"]
-    ids = _seed(db, subject)
-    second_application = _uuid()
-    db.execute(
-        "SELECT mtmf.application_add(%s,%s,'Second',%s,1::smallint,'{}'::jsonb)",
-        (second_application, f"second-{_uuid()[:8]}", ids["identity_id"]),
-    )
+def _subject(username: str) -> str:
+    token = _user_token(user=username)
+    return ev.decode_unverified(token)[1]["sub"]
+
+
+def test_cl01_client_a_allows(db: psycopg.Connection, live_server: Any) -> None:
+    ids = _seed(db, ev.decode_unverified(_user_token())[1]["sub"])
     response = _post(
         _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
         service=_service_token(),
         user=_user_token(),
     )
-    assert response.status_code == 200
-    bound = db.execute(
-        "SELECT count(*) FROM mtmf.service_credential_application WHERE application_id = %s",
-        (second_application,),
+    assert response.status_code == 200, response.text
+    assert response.json()["decisions"][0]["effect"] == "ALLOW"
+
+
+def test_cl02_client_b_allows(db: psycopg.Connection, live_server: Any) -> None:
+    ids = _seed(
+        db,
+        _subject(SECOND_USER),
+        client_id=SECOND_CLIENT,
+    )
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+        service=_service_token(SECOND_CLIENT, SECOND_SECRET),
+        user=_user_token(client_id=SECOND_CLIENT, client_secret=SECOND_SECRET, user=SECOND_USER),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["decisions"][0]["effect"] == "ALLOW"
+
+
+def test_cl03_client_a_service_with_client_b_user_is_rejected(
+    db: psycopg.Connection, live_server: Any
+) -> None:
+    ids = _seed(db, ev.decode_unverified(_user_token())[1]["sub"])
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+        service=_service_token(),
+        user=_user_token(client_id=SECOND_CLIENT, client_secret=SECOND_SECRET, user=SECOND_USER),
+    )
+    assert response.status_code == 403
+    assert "ALLOW" not in response.text
+
+
+def test_cl04_client_b_service_with_client_a_user_is_rejected(
+    db: psycopg.Connection, live_server: Any
+) -> None:
+    ids = _seed(db, _subject(SECOND_USER), client_id=SECOND_CLIENT)
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+        service=_service_token(SECOND_CLIENT, SECOND_SECRET),
+        user=_user_token(),
+    )
+    assert response.status_code == 403
+    assert "ALLOW" not in response.text
+
+
+def test_cl05_client_a_with_foreign_tenant_is_rejected(
+    db: psycopg.Connection, live_server: Any
+) -> None:
+    _seed(db, ev.decode_unverified(_user_token())[1]["sub"])
+    _seed(db, _subject(SECOND_USER), client_id=SECOND_CLIENT)
+    foreign_tenant = db.execute(
+        "SELECT r.tenant_id FROM mtmf.service_credential_application s "
+        "JOIN mtmf.application_tenant_registration r "
+        "ON r.application_id = s.application_id "
+        "WHERE s.client_id = %s AND r.lifecycle = 1",
+        (SECOND_CLIENT,),
     ).fetchone()[0]
-    assert bound == 0
+    # Client A's service token presented with Client B's Tenant selector.
+    response = _post(
+        _body(str(foreign_tenant), ("r1", ALLOW_ACTION)),
+        service=_service_token(),
+        user=_user_token(),
+    )
+    assert response.status_code == 403
+    assert "ALLOW" not in response.text
+
+
+def test_cl06_unapproved_client_is_rejected(db: psycopg.Connection, live_server: Any) -> None:
+    ids = _seed(db, ev.decode_unverified(_user_token())[1]["sub"])
+    response = _post(
+        _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+        service=_service_token("mtmf-evidence-service", "mtmf-evidence-service-dev-secret"),
+        user=_user_token(),
+    )
+    assert response.status_code in (401, 403, 503)
+    assert "ALLOW" not in response.text
+
+
+def test_cl07_client_b_drift_does_not_affect_client_a(
+    db: psycopg.Connection, live_server: Any
+) -> None:
+    ids_a = _seed(db, ev.decode_unverified(_user_token())[1]["sub"])
+    ids_b = _seed(db, _subject(SECOND_USER), client_id=SECOND_CLIENT)
+    admin = _Admin()
+    rows = admin._request("GET", f"/admin/realms/{REALM}/clients?clientId={SECOND_CLIENT}")
+    client = rows[0]
+    original = list(client.get("webOrigins") or [])
+    admin._request(
+        "PUT",
+        f"/admin/realms/{REALM}/clients/{client['id']}",
+        {**client, "webOrigins": [*original, "http://drift.example"]},
+    )
+    try:
+        b = _post(
+            _body(ids_b["tenant_id"], ("r1", ALLOW_ACTION)),
+            service=_service_token(SECOND_CLIENT, SECOND_SECRET),
+            user=_user_token(
+                client_id=SECOND_CLIENT, client_secret=SECOND_SECRET, user=SECOND_USER
+            ),
+        )
+        assert b.status_code == 503, b.text
+        a = _post(
+            _body(ids_a["tenant_id"], ("r1", ALLOW_ACTION)),
+            service=_service_token(),
+            user=_user_token(),
+        )
+        assert a.status_code == 200, a.text
+    finally:
+        admin._request(
+            "PUT",
+            f"/admin/realms/{REALM}/clients/{client['id']}",
+            {**client, "webOrigins": original},
+        )
 
 
 def _live_app_with_db_readiness(port: int) -> Any:

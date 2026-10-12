@@ -53,7 +53,10 @@ def build_actor_context_service(
         timeout=config.transport_timeout_seconds,
     )
     attestor = BaselineConfigurationAttestor(
-        reader, config.admin_realm, config.expected_manifest_path
+        reader,
+        config.admin_realm,
+        config.expected_manifest_path,
+        config.expected_client_policy_path,
     )
     return AuthenticatedActorContextService(
         spi=spi,

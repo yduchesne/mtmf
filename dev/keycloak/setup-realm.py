@@ -43,7 +43,7 @@ DEFAULT_REDIRECT = "http://127.0.0.1:28400/callback"
 
 #: Synthetic, clearly non-production fixture users. Passwords are generated
 #: by the operator and supplied through the environment / runtime.
-EVIDENCE_USERS = ("mtmf-user-alice", "mtmf-user-bob", "mtmf-root-admin")
+EVIDENCE_USERS = ("mtmf-user-alice", "mtmf-user-bob", "mtmf-root-admin", "mtmf-user-carol")
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +83,15 @@ CLIENTS = (
     ),
     ClientSpec(
         client_id="mtmf-evidence-same-client",
+        audiences=("mtmf-same-client-api",),
+        service_account=True,
+        standard_flow=True,
+        redirect_uris=(DEFAULT_REDIRECT,),
+    ),
+    # A second, independent same-client development credential for the V12
+    # two-Application isolation acceptance (distinct client id and `azp`).
+    ClientSpec(
+        client_id="mtmf-evidence-same-client-b",
         audiences=("mtmf-same-client-api",),
         service_account=True,
         standard_flow=True,

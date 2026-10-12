@@ -15,7 +15,7 @@ def _config(**overrides: object) -> IssuerConfig:
         "service_audience": "mtmf-service-api",
         "user_audience": "mtmf-user-api",
         "jwks_uri": f"{ISS}/protocol/openid-connect/certs",
-        "expected_manifest_path": "dev/keycloak/expected-config-manifest.json",
+        "expected_manifest_path": "dev/keycloak/expected-realm-security.json",
         "admin_base_url": "https://127.0.0.1:28443",
         "admin_realm": "mtmf-pr14-dev",
         "admin_username": "admin",

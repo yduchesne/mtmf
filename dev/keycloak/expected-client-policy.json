@@ -1,0 +1,123 @@
+{
+  "clients": [
+    {
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "mtmf-evidence-same-client",
+      "defaultClientScopes": [
+        "acr",
+        "basic",
+        "email",
+        "profile",
+        "roles",
+        "service_account",
+        "web-origins"
+      ],
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "optionalClientScopes": [
+        "address",
+        "microprofile-jwt",
+        "offline_access",
+        "organization",
+        "phone"
+      ],
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "included.custom.audience": "mtmf-same-client-api",
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false"
+          },
+          "name": "aud-mtmf-same-client-api",
+          "protocolMapper": "oidc-audience-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "http://127.0.0.1:28400/callback"
+      ],
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "webOrigins": []
+    },
+    {
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "mtmf-evidence-same-client-b",
+      "defaultClientScopes": [
+        "acr",
+        "basic",
+        "email",
+        "profile",
+        "roles",
+        "service_account",
+        "web-origins"
+      ],
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "optionalClientScopes": [
+        "address",
+        "microprofile-jwt",
+        "offline_access",
+        "organization",
+        "phone"
+      ],
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "included.custom.audience": "mtmf-same-client-api",
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false"
+          },
+          "name": "aud-mtmf-same-client-api",
+          "protocolMapper": "oidc-audience-mapper"
+        }
+      ],
+      "publicClient": false,
+      "redirectUris": [
+        "http://127.0.0.1:28400/callback"
+      ],
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "webOrigins": []
+    },
+    {
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "mtmf-sample-app",
+      "defaultClientScopes": [
+        "acr",
+        "basic",
+        "email",
+        "profile",
+        "roles",
+        "service_account",
+        "web-origins"
+      ],
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "implicitFlowEnabled": false,
+      "optionalClientScopes": [
+        "address",
+        "microprofile-jwt",
+        "offline_access",
+        "organization",
+        "phone"
+      ],
+      "protocol": "openid-connect",
+      "protocolMappers": [],
+      "publicClient": false,
+      "redirectUris": [],
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "webOrigins": []
+    }
+  ],
+  "version": 1
+}

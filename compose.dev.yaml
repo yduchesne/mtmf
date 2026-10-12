@@ -102,7 +102,8 @@ services:
       MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
       MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
       MTMF_AUTH_JWKS_URI: ${MTMF_AUTH_JWKS_URI:?set JWKS URI}
-      MTMF_AUTH_EXPECTED_MANIFEST: ${MTMF_AUTH_EXPECTED_MANIFEST:-dev/keycloak/expected-config-manifest.json}
+      MTMF_AUTH_EXPECTED_MANIFEST: ${MTMF_AUTH_EXPECTED_MANIFEST:-dev/keycloak/expected-realm-security.json}
+      MTMF_AUTH_EXPECTED_CLIENT_POLICY: ${MTMF_AUTH_EXPECTED_CLIENT_POLICY:-dev/keycloak/expected-client-policy.json}
       MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-pr14-dev}
       MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://127.0.0.1:28443}
       MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:?set attestation reader username}

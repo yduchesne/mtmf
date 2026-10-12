@@ -134,6 +134,96 @@ def up() -> int:
     return 0
 
 
+HOST_NETWORK_SERVICE_NAME = "mtmf-service-hostnet"
+HOST_NETWORK_IMAGE = "localhost/mtmf-service:dev"
+
+
+def _auth_env() -> list[str]:
+    """Return the approved attestation-reader environment (never migrator)."""
+    names = (
+        "MTMF_AUTH_ISSUER",
+        "MTMF_AUTH_SERVICE_AUDIENCE",
+        "MTMF_AUTH_USER_AUDIENCE",
+        "MTMF_AUTH_JWKS_URI",
+        "MTMF_AUTH_EXPECTED_MANIFEST",
+        "MTMF_AUTH_EXPECTED_CLIENT_POLICY",
+        "MTMF_AUTH_ADMIN_BASE",
+        "MTMF_AUTH_ADMIN_REALM",
+        "MTMF_AUTH_ADMIN_USERNAME",
+        "MTMF_AUTH_ADMIN_PASSWORD",
+        "MTMF_AUTH_ALLOW_SHARED_AUDIENCE",
+    )
+    env: list[str] = []
+    for name in names:
+        value = os.environ.get(name, "")
+        if value:
+            env.extend(["-e", f"{name}={value}"])
+    return env
+
+
+def up_host_network() -> int:
+    """Approved development-only host-network topology (D3, 2026-10-12).
+
+    Starts PostgreSQL + Keycloak, runs the privileged one-shot initializer, then
+    runs the unprivileged HTTP service in a Podman host-network container bound
+    to ``127.0.0.1`` only. The runtime container receives the restricted runtime
+    database credential and the approved attestation-reader credential, never a
+    migrator/owner/root/bootstrap credential. Development profile only.
+    """
+    _require_development()
+    _required_env("MTMF_RUNTIME_DATABASE_URL")
+    _required_env("MTMF_MIGRATOR_DATABASE_URL")
+    _required_env("MTMF_AUTH_ISSUER")
+    ca_file = os.environ.get("MTMF_PR14_KC_CA_FILE", "")
+    if not ca_file:
+        raise OrchestrationError("MTMF_PR14_KC_CA_FILE is required for the host-network mode")
+
+    _run(_compose("up", "-d", "postgres", "keycloak"))
+    _postgres_inspect()
+    _wait_http(
+        f"{_required_env('MTMF_AUTH_ADMIN_BASE').rstrip('/')}/realms/master/.well-known/"
+        "openid-configuration",
+        timeout=180,
+        ca_file=ca_file,
+    )
+    _run(_compose("run", "--rm", "--no-deps", "initializer"))
+
+    _run(["podman", "rm", "-f", HOST_NETWORK_SERVICE_NAME], check=False)
+    run_args = [
+        "podman",
+        "run",
+        "-d",
+        "--name",
+        HOST_NETWORK_SERVICE_NAME,
+        "--network=host",
+        "-v",
+        f"{ca_file}:/certs/dev-ca.crt:ro",
+        "-e",
+        "MTMF_SERVICE_DEPLOYMENT_MODE=development",
+        "-e",
+        "MTMF_SERVICE_HOST=127.0.0.1",
+        "-e",
+        "MTMF_SERVICE_PORT=28001",
+        "-e",
+        "MTMF_SERVICE_INITIALIZED=1",
+        "-e",
+        f"MTMF_RUNTIME_DATABASE_URL={os.environ['MTMF_RUNTIME_DATABASE_URL']}",
+        "-e",
+        "MTMF_RUNTIME_STATEMENT_TIMEOUT_MS="
+        + os.environ.get("MTMF_RUNTIME_STATEMENT_TIMEOUT_MS", "10000"),
+        "-e",
+        "MTMF_RUNTIME_LOCK_TIMEOUT_MS=" + os.environ.get("MTMF_RUNTIME_LOCK_TIMEOUT_MS", "3000"),
+        "-e",
+        "SSL_CERT_FILE=/certs/dev-ca.crt",
+        *_auth_env(),
+        HOST_NETWORK_IMAGE,
+    ]
+    _run(run_args)
+    _wait_http(SERVICE_READY_URL, timeout=120)
+    print("MTMF development host-network service is ready on 127.0.0.1:28001", flush=True)
+    return 0
+
+
 def status() -> int:
     """Print project-scoped container status and liveness/readiness."""
     _run(_compose("ps"), check=False)
@@ -148,6 +238,7 @@ def status() -> int:
 
 def down() -> int:
     """Stop the MTMF-owned development stack (volumes preserved)."""
+    _run(["podman", "rm", "-f", HOST_NETWORK_SERVICE_NAME], check=False)
     _run(_compose("down"))
     return 0
 
@@ -161,11 +252,13 @@ def down_volumes() -> int:
 def main(argv: list[str] | None = None) -> int:
     """Parse a subcommand and run the development stack operation."""
     parser = argparse.ArgumentParser(description="MTMF development stack orchestrator")
-    parser.add_argument("command", choices=("up", "status", "down", "destroy"))
+    parser.add_argument("command", choices=("up", "up-host-network", "status", "down", "destroy"))
     args = parser.parse_args(argv)
     try:
         if args.command == "up":
             return up()
+        if args.command == "up-host-network":
+            return up_host_network()
         if args.command == "status":
             return status()
         if args.command == "down":

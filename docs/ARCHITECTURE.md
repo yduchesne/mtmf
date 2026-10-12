@@ -425,6 +425,20 @@ begins. The restricted runtime PostgreSQL identity also carries configurable
 The development one-shot initializer is separate and privileged; the HTTP
 runtime uses only the restricted `mtmf_runtime` PostgreSQL identity.
 
+**Issuer attestation (Amendment #4, approved 2026-10-12).** Fresh per-operation
+issuer trust is split into two independently approved, committed expectations:
+a realm-security projection (`expected-realm-security.json`) and an
+expected-client policy (`expected-client-policy.json`). The realm projection is
+compared on every authentication operation; the exact client(s) resolved from
+**verified signed** `azp` claims are then compared against their approved
+effective configuration (scopes, mappers, flows, classification, redirect
+origins). Unknown/duplicate/drifted clients fail closed, the baseline is never
+derived from live state, and drift is never auto-repaired. The development
+initializer validates a client against the policy before creating it. The
+approved local development topology runs the service container with Podman
+`--network=host` bound to loopback and the retained issuer
+`https://127.0.0.1:28443`; it is development-only and not a production design.
+
 ## 14. Observability
 
 OpenTelemetry is the cross-cutting instrumentation model.

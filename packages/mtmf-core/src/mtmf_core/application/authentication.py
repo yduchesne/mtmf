@@ -119,6 +119,13 @@ class AuthenticatedActorContextService:
             raise AuthenticationError(
                 AuthenticationFailure.UNTRUSTED_ISSUER, "issuer did not match the trusted profile"
             )
+        # Fresh, independently approved per-client expectation, resolved from the
+        # verified signed ``azp`` claims (never from headers or caller input).
+        # Same-client D1 means both tokens resolve to the same client; each is
+        # still attested explicitly so a mismatched claim can never bypass the
+        # approved-client check.
+        self._attestor.attest_client(self._service_profile, service.azp)
+        self._attestor.attest_client(self._user_profile, user.azp)
 
         service_key = ServiceCredentialKey(issuer=service.issuer, client_id=service.azp)
         subject_key = ExternalSubjectKey(issuer=user.issuer, subject=user.subject)

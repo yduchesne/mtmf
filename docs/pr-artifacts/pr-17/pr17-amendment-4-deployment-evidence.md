@@ -1,36 +1,44 @@
-# PR 17 — Amendment #4 deployment evidence (Phase 2, D3 PENDING)
+# PR 17 — Amendment #4 deployment evidence (D3 APPROVED 2026-10-12)
 
-**Status: D3 PENDING. The launcher and `compose.dev.yaml` were not changed.**
+**Status: IMPLEMENTED and VERIFIED (development only).** D3 approved by the
+human reviewer on 2026-10-12 — development-only `--network=host`, loopback
+binding, retained issuer.
 
-## 1. Proposal (not approved)
+## 1. Launcher
 
-Development-only `podman run --network=host` service container, HTTP bound to
-`127.0.0.1`, retained approved issuer `https://127.0.0.1:28443`, connecting to
-MTMF PostgreSQL/Keycloak over host loopback. Development profile only; not
-production.
+`scripts/mtmf-dev-stack.py` gained an explicit `up-host-network` path:
 
-## 2. Verified platform facts
+1. validates the development profile and requires the runtime/migrator URLs and
+   issuer config;
+2. starts PostgreSQL + Keycloak and waits for health;
+3. runs the privileged one-shot initializer (migrations + postflight + fixture);
+4. runs the unprivileged service with `podman run --network=host`, binding
+   `MTMF_SERVICE_HOST=127.0.0.1` / port `28001`, with only the restricted runtime
+   DB credential and the approved attestation-reader credential;
+5. waits for `/health/ready`.
 
-| Fact | Observed |
+`down` removes the host-network container and stops the MTMF-owned Compose
+project; no other project is touched.
+
+## 2. Executed container verification (new D2 code, image `localhost/mtmf-service:dev`)
+
+| Check | Result |
 | --- | --- |
-| OS/runtime | Linux (WSL2), rootless Podman 4.9.3, `podman-compose` 1.0.6 |
-| `--network=host` behavior | container shares the host namespace; `127.0.0.1:25432`/`:28443` reachable |
-| Issuer under host networking | discovery advertises exactly `https://127.0.0.1:28443/realms/mtmf-pr14-dev` |
-| TLS | model CA mounted read-only; validation + hostname checks enabled |
-| Loopback bind | the Amendment #2 container ran with the service host bound to `127.0.0.1` |
+| Image build | exit 0 |
+| `/health/ready` | `{"status":"ready"}` HTTP 200 |
+| Real-token `POST /v1/authorization/evaluate` | HTTP 200 `ALLOW`/`PERMITTED`, `Cache-Control: no-store` |
+| Loopback bind | service host bound to `127.0.0.1` (host-network mode ignores `ports:`) |
+| Issuer / TLS | retained `https://127.0.0.1:28443`, CA-trusted, verification enabled |
+| Runtime env | only `MTMF_RUNTIME_*`, `MTMF_AUTH_*` (attestation reader), `MTMF_SERVICE_*`; **no** `MTMF_MIGRATOR_*`, `MTMF_POSTGRES_*` admin/owner, root or bootstrap variable |
 
-## 3. Not executed (D3 pending)
+The container used the real `expected-realm-security.json` +
+`expected-client-policy.json` artifacts and freshly attested per request.
 
-- No launcher change to select host networking (plan: do not finalize the
-  host-network path without D3).
-- `compose.dev.yaml` network topology still cannot reach the trusted issuer from
-  the service container (loopback namespace).
-- Real container ALLOW/DENY under an official launcher path is not re-run; the
-  Amendment #2 candidate evidence stands and is not promoted.
+## 3. Residual / limits
 
-## 4. Runtime credential isolation (unchanged)
-
-The Amendment #2 container run received only the restricted runtime DB
-credential and the issuer attestation credential; no migrator/owner/root/admin/
-bootstrap variable was present. Residual: the attestation credential is the
-realm admin, not a dedicated read-only reader (recorded in the STOP register).
+- `--network=host` removes the service container's network-namespace isolation;
+  approved for local development only, never production.
+- The attestation reader is the realm admin credential (not yet a dedicated
+  read-only reader) — recorded in the STOP register.
+- The canonical-hostname/isolated-network topology remains a future hardening
+  option.

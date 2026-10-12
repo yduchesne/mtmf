@@ -122,9 +122,15 @@ class AttestorSpy:
     def __init__(self, *, failure: AuthenticationFailure | None = None) -> None:
         self.failure = failure
         self.calls = 0
+        self.client_calls: list[str] = []
 
     def attest(self, profile: IssuerProfile) -> None:
         self.calls += 1
+        if self.failure is not None:
+            raise AuthenticationError(self.failure, "forced attestation failure")
+
+    def attest_client(self, profile: IssuerProfile, client_id: str) -> None:
+        self.client_calls.append(client_id)
         if self.failure is not None:
             raise AuthenticationError(self.failure, "forced attestation failure")
 
@@ -461,7 +467,7 @@ def _issuer_config() -> Any:
         service_audience=SERVICE_AUD,
         user_audience=USER_AUD,
         jwks_uri=JWKS,
-        expected_manifest_path="dev/keycloak/expected-config-manifest.json",
+        expected_manifest_path="dev/keycloak/expected-realm-security.json",
         admin_base_url="https://127.0.0.1:28443",
         admin_realm="mtmf-pr14-dev",
         admin_username="admin",

@@ -1,40 +1,38 @@
 # PR 17 — Amendment #4 attestation security matrix (AT01–AT18)
 
-**D2 is PENDING; no trust semantics changed.** Rows that require the approved
-design are BLOCKED. PASS rows were executed against the **current** verifier
-(production `canonical_manifest` + `BaselineConfigurationAttestor`, only the
-Admin REST reader faked for unit tests).
+D2 is **APPROVED** (2026-10-12) and implemented. Rows were executed against the
+production `canonical_manifest`/`canonical_client_projection`/
+`BaselineConfigurationAttestor` (unit, deterministic) and the live Keycloak
+fixture (integration).
 
 | ID | Case | Status | Evidence |
 | --- | --- | --- | --- |
-| AT01 | Approved realm + approved clients | PASS (unit) | `test_attestation_succeeds_on_matching_baseline` |
-| AT02 | Initializer adds approved client; fresh attestation passes | **BLOCKED (D2)** | current whole-realm mismatch (diagnosis) |
-| AT03 | Unapproved extra client → fail closed | PASS (current semantics) | `test_at03_unknown_extra_client_is_rejected` (extra client ⇒ drift) |
-| AT04 | Duplicate/ambiguous client ID → fail closed | PASS (current semantics) | `test_at04_duplicate_client_identity_is_detected_as_drift`; explicit guard is D2 |
-| AT05 | Disable approved client | PASS (unit + live) | `test_client_drift_is_detected`; live baseline/disable/restore |
-| AT06 | Change grant/flow/client-auth type | PASS (unit) | `test_client_drift_is_detected[standardFlowEnabled]`; `clientAuthenticatorType` projection is D2 |
-| AT07 | Change direct mapper/audience | PASS (unit) | `test_scope_and_mapper_drift_is_detected`, `test_client_drift_is_detected[audience]` |
-| AT08 | Change inherited/default effective mapper/scope | **BLOCKED (D2)** | default/optional scope names are compared today, but effective inherited mappers are not separately proven |
-| AT09 | Change relevant realm security setting | **BLOCKED (D2)** | realm representation not projected (baseline §3) |
-| AT10 | Admin REST unavailable after success | PASS (unit) | `test_reader_error_and_transport_failure_fail_closed`, `test_attestation_never_reuses_a_prior_success` |
-| AT11 | Malformed/missing/duplicate expected-client policy | PASS for missing/malformed baseline; duplicate policy is D2 | `test_missing_and_malformed_baseline_fail_closed` |
-| AT12 | Repeat initializer unchanged | PASS (real PG + live, single client) | `test_pr17_dev_initializer.py`, live re-run |
-| AT13 | Repeat initializer with drifted client | **BLOCKED (D2)** | explicit client-drift reconciliation is D2 |
-| AT14 | Two approved independent clients | PARTIAL | `test_at13_two_clients_are_independently_bound` (unit); live two-client is D2 |
-| AT15 | Cross-client service/user pairing | PASS | unit H13; PR 14 live `test_dc07_*`; live V05 fail-closed |
-| AT16 | Unknown security-relevant realm field | **BLOCKED (D2)** | no realm-field projection |
-| AT17 | Existing PR 14 drift vectors | PASS | `test_client_drift_is_detected`, `test_scope_and_mapper_drift_is_detected`, `test_attestation_never_reuses_a_prior_success` |
-| AT18 | Token/log/error redaction | PASS | unit H21/H28; live V15 static envelopes; no policy detail on the wire |
+| AT01 | Approved realm + approved clients | PASS | `test_realm_attestation_succeeds_on_matching_baseline`, `test_attest_client_succeeds_for_approved_client` |
+| AT02 | Initializer adds `mtmf-sample-app` matching approved policy; fresh attestation passes | PASS (live) | initializer run + `attest_client` OK; live PR17 suites |
+| AT03 | Unapproved client → fail closed | PASS | unit `test_attest_client_rejects_unapproved_client`; live `test_cl06_unapproved_client_is_rejected` |
+| AT04 | Duplicate/ambiguous client id → fail closed | PASS | `test_attest_client_rejects_duplicate_client_id` |
+| AT05 | Disable approved client → next auth fails | PASS | `test_attest_client_detects_security_field_drift[enabled]`; live initializer drift fails closed |
+| AT06 | Change grant/flow/client-auth type | PASS | `test_attest_client_detects_security_field_drift[standardFlowEnabled/clientAuthenticatorType/publicClient]` |
+| AT07 | Change direct mapper/audience | PASS | `test_attest_client_detects_security_field_drift[...]`, `test_client_scope_mapper_drift_is_detected` |
+| AT08 | Change inherited/default effective mapper/scope | PASS | client projection includes default/optional scope names; realm projection includes all `clientScopes` mappers (`test_client_scope_mapper_drift_is_detected`) |
+| AT09 | Change relevant realm security setting | PASS | `test_realm_security_drift_is_detected` (6 realms fields) |
+| AT10 | Admin REST unavailable after success → fail, no cache | PASS | `test_reader_transport_failure_fail_closed`, `test_attestation_never_reuses_a_prior_success` |
+| AT11 | Malformed/missing/duplicate expected-client policy | PASS | `test_policy_validation_fails_closed` |
+| AT12 | Repeat initializer unchanged → same ids/secret, no rewrite | PASS (live) | initializer idempotent re-run; `test_pr17_dev_initializer.py` |
+| AT13 | Repeat initializer with drifted client → fail, no auto-repair | PASS (live) | demonstrated: `client 'mtmf-sample-app' drifted … no automatic repair` |
+| AT14 | Two approved independent clients | PASS | unit `test_two_clients_are_independently_bound`; live CL01–CL07 |
+| AT15 | Cross-client service/user pairing | PASS (live) | `test_cl03_client_a_service_with_client_b_user_is_rejected`, `test_cl04_...` |
+| AT16 | Unknown security-relevant realm field | PARTIAL | the projection is a documented curated 18-field allowlist; a new realm field not on the list is not compared (recorded residual) |
+| AT17 | Existing PR 14 drift vectors | PASS (live) | PR 14 live actor suite 22/22 |
+| AT18 | Token/log/error redaction | PASS | static PR 15 envelopes; live no-store; no policy detail on the wire |
 
 ## Fresh per-authentication check
 
-`test_attestation_never_reuses_a_prior_success` proves a mutation after a
-successful attestation causes the next `attest()` to fail with
-`ATTESTATION_DRIFT` and that the reader is called again — i.e. no cross-request
-positive cache. This satisfies the invariant even while the broader D2 design is
-pending.
+`test_attestation_never_reuses_a_prior_success` and the live
+`test_v07_no_positive_attestation_cache` prove a mutation after a success makes
+the next operation fail closed with a fresh read.
 
-## Not PASS
+## Residual
 
-AT02, AT08, AT09, AT13, AT14 (live), AT16 are BLOCKED/partial and are not
-promoted to PASS.
+AT16: the realm projection is an explicit allowlist; expanding it requires a
+reviewed field-list update. No case is marked PASS from absence of a check.

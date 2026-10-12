@@ -75,9 +75,15 @@ class AttestorSpy:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.calls = 0
+        self.client_calls: list[str] = []
 
     def attest(self, profile: IssuerProfile) -> None:
         self.calls += 1
+        if self.fail:
+            raise AuthenticationError(AuthenticationFailure.ATTESTATION_DRIFT, "forced drift")
+
+    def attest_client(self, profile: IssuerProfile, client_id: str) -> None:
+        self.client_calls.append(client_id)
         if self.fail:
             raise AuthenticationError(AuthenticationFailure.ATTESTATION_DRIFT, "forced drift")
 

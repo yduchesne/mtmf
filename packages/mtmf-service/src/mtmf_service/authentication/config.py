@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
 
 __all__ = ["AuthenticationConfigError", "IssuerConfig"]
 
@@ -44,6 +45,9 @@ class IssuerConfig:
     admin_realm: str
     admin_username: str
     admin_password: str
+    #: Independently approved expected-client policy. Empty means derive
+    #: ``expected-client-policy.json`` beside the manifest path.
+    expected_client_policy_path: str = ""
     algorithm: str = "RS256"
     transport_timeout_seconds: float = 5.0
     max_token_bytes: int = 8192
@@ -58,6 +62,14 @@ class IssuerConfig:
     allow_shared_audience: bool = False
 
     def __post_init__(self) -> None:
+        if not self.expected_client_policy_path:
+            # Deterministic default beside the reviewed manifest; never derived
+            # from live issuer state.
+            object.__setattr__(
+                self,
+                "expected_client_policy_path",
+                str(Path(self.expected_manifest_path).with_name("expected-client-policy.json")),
+            )
         if self.algorithm != "RS256":
             raise AuthenticationConfigError("only the reviewed RS256 algorithm is supported")
         if self.service_audience == self.user_audience and not self.allow_shared_audience:
@@ -88,6 +100,9 @@ class IssuerConfig:
             user_audience=_required("MTMF_AUTH_USER_AUDIENCE"),
             jwks_uri=_required("MTMF_AUTH_JWKS_URI"),
             expected_manifest_path=_required("MTMF_AUTH_EXPECTED_MANIFEST"),
+            expected_client_policy_path=os.environ.get(
+                "MTMF_AUTH_EXPECTED_CLIENT_POLICY", ""
+            ).strip(),
             admin_base_url=_required("MTMF_AUTH_ADMIN_BASE").rstrip("/"),
             admin_realm=realm,
             admin_username=_required("MTMF_AUTH_ADMIN_USERNAME"),

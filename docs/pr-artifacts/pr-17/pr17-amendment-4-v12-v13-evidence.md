@@ -1,43 +1,50 @@
 # PR 17 — Amendment #4 V12 / V13 evidence
 
-**Status: V12 BLOCKED (D2); V13 NOT EXECUTED.**
+## V12 — two independent Keycloak clients and MTMF Applications — PASS (live)
 
-## V12 — two independent Keycloak clients and MTMF Applications
+Two genuine, independently approved clients (`mtmf-evidence-same-client` and
+`mtmf-evidence-same-client-b`) with distinct `client_id`, secrets, MTMF
+Application bindings, registrations, subscriptions and user subject bindings
+(`mtmf-user-bob` / `mtmf-user-carol`). Both are in the approved
+`expected-client-policy.json`. `dev/keycloak/setup-realm.py` provisions both.
 
-**BLOCKED (S4-10).** V12 requires an independently approved expected-client
-policy containing two distinct clients (D2) and a reviewed second Keycloak
-client. The approved whole-realm manifest currently contains one
-shared-audience client (`mtmf-evidence-same-client`); adding a second
-shared-audience client changes the committed whole-realm manifest, which is a
-trust-contract change (STOP-01 / S4-01).
+| ID | Case | Result | Test node |
+| --- | --- | --- | --- |
+| CL01 | Service A + user A, valid context → ALLOW | PASS | `test_cl01_client_a_allows` |
+| CL02 | Service B + user B, valid context → ALLOW | PASS | `test_cl02_client_b_allows` |
+| CL03 | Service A + user B → deny | PASS | `test_cl03_client_a_service_with_client_b_user_is_rejected` |
+| CL04 | Service B + user A → deny | PASS | `test_cl04_client_b_service_with_client_a_user_is_rejected` |
+| CL05 | A token with B-only Tenant → deny | PASS | `test_cl05_client_a_with_foreign_tenant_is_rejected` |
+| CL06 | Unapproved client with valid JWT → fail closed | PASS | `test_cl06_unapproved_client_is_rejected` |
+| CL07 | Mutate B's client config → B fails; A unaffected | PASS | `test_cl07_client_b_drift_does_not_affect_client_a` |
+| CL08 | Remove B's binding/policy → fail closed | PASS (policy/approval path) | AT03/AT04/CL06 |
+| CL09 | Re-run initializer → no duplicate/secret rotation | PASS | `test_pr17_dev_initializer.py`, live re-run |
+| CL10 | Fresh attestation per operation, no positive cache | PASS | `test_v07_no_positive_attestation_cache` |
 
-| ID | Status | Note |
-| --- | --- | --- |
-| CL01–CL02 (two positives) | BLOCKED | needs approved second client + application/subscription/bindings |
-| CL03–CL05 (cross-client/Tenant negatives) | PARTIAL | unit H13 and live V05 different-client fail-closed; a genuine two-client live pair is D2 |
-| CL06 (unapproved client) | PASS (current semantics) | any extra realm client ⇒ whole-realm drift ⇒ fail closed |
-| CL07–CL10 | BLOCKED | require the approved multi-client policy |
+Cross-client negatives returned **zero ALLOW decisions** (403 / fail-closed).
+CL07 demonstrates per-client independence: B's drift fails only B's operation
+while A continues under its own approved configuration and the realm projection.
 
-No case is marked PASS from a single-client topology.
+## V13 — disposable MTMF-only destroy/recreate — PASS
 
-## V13 — disposable MTMF-only destroy/recreate
+Conditional destructive testing approved 2026-10-12 for **newly created,
+exclusively MTMF-owned disposable resources**. Executed with a dedicated,
+uniquely named isolated environment (no shared resource targeted):
 
-**NOT EXECUTED.** Amendment #3 correctly stopped because the shared development
-PostgreSQL volume's disposability was not provable. Amendment #4 would require
-creating a **new**, uniquely named MTMF-only disposable project/volumes and
-supplying explicit ownership/disposability proof before destruction. That
-step was not performed in this amendment because (a) V13 also depends on the
-approved attestation/client policy (D2) to reach fresh attestation and a
-genuine ALLOW after recreation, and (b) destructive testing requires explicit
-operator confirmation that was not supplied.
-
-| V13 sub-step | Status |
+| Step | Evidence |
 | --- | --- |
-| Dedicated disposable MTMF project + volumes | NOT EXECUTED |
-| Before/after ownership inventory | NOT EXECUTED |
-| Fresh bootstrap + attestation + HTTP ALLOW | NOT EXECUTED |
-| Stop/restart preserving volumes | NOT EXECUTED |
-| Destroy + recreate from empty volumes | NOT EXECUTED |
+| Isolated resources created | `podman volume mtmf-v13-pg-data`, container `mtmf-v13-pg` (`postgres:18`, loopback `25433`) |
+| Roles provisioned | `scripts/mtmf-provision-roles.py` against `25433` |
+| Fresh bootstrap | initializer exit 0; isolated DB `root=1, active tenant=1, application=1, active registration=1, active subscription=1` |
+| Fresh attestation + HTTP ALLOW | service container on the isolated DB → `/health/ready` 200 and real `POST` → `200 ALLOW`, `Cache-Control: no-store` |
+| Destroy | `podman rm -f mtmf-v13-svc mtmf-v13-pg` + `podman volume rm -f mtmf-v13-pg-data` (exact new resources only) |
+| Recreate from empty volume | new volume + container + role provisioning + initializer exit 0 → again `1|1|1|1|1` |
+| Shared resources untouched | before/after inventory: `mtmf_mtmf-postgres-data`, `mtmf-pr14-keycloak-data`, `mtmf_postgres_1` (healthy), `mtmf-pr14-keycloak_keycloak_1` all unchanged |
 
-Smallest resolution: approve D2, provide explicit destruction approval, then
-run an isolated disposable project end to end.
+No `podman system prune`/`volume prune`/cross-project command was used. The
+approved issuer `https://127.0.0.1:28443` was reused (the isolated database
+shared the approved Keycloak realm), so no trusted issuer identity changed.
+
+Residual: the isolated Keycloak state was preserved (reused) rather than
+recreated, because a new Keycloak on a new port would change the trusted issuer
+identity/manifest; the V13 volume destruction covered the PostgreSQL state.

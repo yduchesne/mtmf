@@ -5,10 +5,12 @@
 
 ## 1. Gate status at start
 
-**D1 (acting-user carrier), D2 (attestation architecture) and D3 (development
-topology) are PENDING human approval.** Preparing this plan is not approval.
-Per the gate rule, no PR 14 trust-semantics change is implemented in this
-amendment while D2 is pending.
+**D1 (acting-user carrier), D2 (attestation architecture), D3 (development
+topology) and conditional V13 destructive testing were APPROVED by the human
+reviewer on 2026-10-12** (see `pr17-amendment-4-decision-register.md`). The
+baseline below records the pre-implementation state; the implementation is
+recorded in `pr17-amendment-4-attestation-implementation.md`,
+`pr17-amendment-4-deployment-evidence.md` and the `-v12-v13-evidence` report.
 
 ## 2. Verified source state
 
@@ -46,12 +48,12 @@ fields that are currently **not** compared include (observed values):
 | --- | --- |
 | HTTP PDP, PR 15 contract, PR 14 verification, PR 16 Python batch | IMPLEMENTED + VERIFIED |
 | Runtime DB timeouts, admission bound, permit race | IMPLEMENTED + VERIFIED |
-| Whole-realm attestation vs initializer client | **BLOCKED (D2)** — reproduced (below) |
-| Realm/effective-client security projection | **NOT IMPLEMENTED (D2)** |
-| Host-network launcher reconciliation | **BLOCKED (D3)** |
-| V12 two-client isolation | **BLOCKED (D2)** |
-| V13 disposable destroy/recreate | **NOT EXECUTED** |
-| V08 DB outage/recovery | EXECUTED + PASS (Amendment #3) |
+| Whole-realm attestation vs initializer client | **RESOLVED** (D2 implemented) |
+| Realm/effective-client security projection | **IMPLEMENTED + VERIFIED** |
+| Host-network launcher reconciliation | **IMPLEMENTED + VERIFIED** (dev) |
+| V12 two-client isolation | **PASS** (CL01–CL07) |
+| V13 disposable destroy/recreate | **PASS** (isolated volume) |
+| V08 DB outage/recovery | EXECUTED + PASS |
 
 ## 5. Reproduced drift (fresh, this amendment)
 

@@ -45,5 +45,17 @@ class ConfigurationAttestor(Protocol):
     """
 
     def attest(self, profile: IssuerProfile) -> None:
-        """Fail closed on any unavailable, unreadable, or drifted config."""
+        """Fail closed on any unavailable, unreadable, or drifted realm config."""
+        ...
+
+    def attest_client(self, profile: IssuerProfile, client_id: str) -> None:
+        """Fail closed unless one admitted client matches its approved entry.
+
+        Called for the client(s) resolved from verified signed claims. An
+        unapproved, missing, or ambiguous client, or any security-relevant
+        configuration difference, must raise
+        :class:`~mtmf_core.authentication.contracts.AuthenticationError` with
+        ``ATTESTATION_DRIFT`` or ``ATTESTATION_UNAVAILABLE``. Implementations
+        must perform a fresh live read (no positive cache).
+        """
         ...
