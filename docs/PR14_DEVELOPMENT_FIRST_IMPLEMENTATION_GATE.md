@@ -177,3 +177,22 @@ and [PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md)
   completed). No substitute evidence was fabricated.
 - **Merge not recommended**; production issuer, root and HTTP routes remain
   unimplemented.
+
+## 12. Amendment #2 acceptance status (2026-10-11)
+
+Status only; see [PR14_AMENDMENT2_ACCEPTANCE_REPORT.md](PR14_AMENDMENT2_ACCEPTANCE_REPORT.md)
+and [PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT2_ACCEPTANCE_MATRIX.md).
+
+- **STOPPED at Phase 1:** on pinned Keycloak 26.8.0, a same client cannot issue
+  service and user tokens with **distinct** per-grant audiences (audience mappers
+  apply to both grants; both tokens carried both audiences). DC07/V01–V16 remain
+  NOT EXECUTED; no permissive policy or custom mapper was introduced.
+- Completed independently: DC05-LOCAL-KEY PASS (isolated test key; issuer-signed
+  DC05 remains NOT EXECUTED); JOSE `crit` rejection and typed malformed-JWKS
+  handling; AUTH-16/17/29/30 real-PostgreSQL uniqueness/concurrency/terminal;
+  AUTH-32/33/35/36 deterministic closures.
+- Gates: 55 auth unit tests, 11 binding integration tests, 556 integration,
+  1412 QA at 87.88% coverage, security 0, pre-commit pass.
+- **Merge not recommended**; smallest decision is the Phase 1 audience-predicate
+  disposition (shared-audience predicate, distinct clients, or a reviewed
+  conditional mapper).

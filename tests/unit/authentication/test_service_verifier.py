@@ -381,3 +381,114 @@ def test_class_predicates_reject_mismatched_binding_and_injected_claims():
     # User class requires no client_id.
     injected = _verifier().verify(_mint(aud=USER_AUD, client_id="client-1"), _user_profile())
     assert injected.is_user_class is False
+
+
+def _unsigned_user_payload(*, azp: str | None) -> str:
+    now = int(time.time())
+    claims = {
+        "iss": ISS,
+        "aud": USER_AUD,
+        "sub": "user-1",
+        "typ": "Bearer",
+        "iat": now,
+        "exp": now + 300,
+    }
+    if azp is not None:
+        claims["azp"] = azp
+    return json.dumps(claims)
+
+
+def test_dc05_local_key_missing_azp_is_rejected_with_signature_proof():
+    """DC05-LOCAL-KEY: an isolated test key signs a real missing-azp token.
+
+    This is explicitly NOT issuer evidence; the Keycloak-signed DC05 remains
+    NOT EXECUTED.
+    """
+    token = _sign_raw_payload(_unsigned_user_payload(azp=None))
+    # Prove the signature verifies normally against the trusted test public key.
+    proven = pyjwt.decode(
+        token,
+        _PRIVATE_KEY.public_key(),
+        algorithms=["RS256"],
+        audience=USER_AUD,
+        issuer=ISS,
+        leeway=0,
+        options={"require": ["exp", "iat"]},
+    )
+    assert "azp" not in proven
+    # The shipped production verifier rejects it with the intended typed failure.
+    with pytest.raises(AuthenticationError) as exc:
+        _verifier().verify(token, _user_profile())
+    assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+    # Positive control: the same key/profile with azp verifies.
+    assert (
+        _verifier()
+        .verify(_sign_raw_payload(_unsigned_user_payload(azp="client-1")), _user_profile())
+        .is_user_class
+    )
+
+
+def test_dc05_local_key_negative_controls():
+    token = _sign_raw_payload(_unsigned_user_payload(azp="client-1"))
+    # Tampered signature.
+    tampered = token[:-2] + ("AA" if token[-2:] != "AA" else "BB")
+    with pytest.raises(AuthenticationError):
+        _verifier().verify(tampered, _user_profile())
+    # Missing sub.
+    no_sub = _sign_raw_payload(
+        json.dumps(
+            {
+                "iss": ISS,
+                "aud": USER_AUD,
+                "azp": "c",
+                "typ": "Bearer",
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 300,
+            }
+        )
+    )
+    with pytest.raises(AuthenticationError):
+        _verifier().verify(no_sub, _user_profile())
+    # Duplicate azp.
+    dup = (
+        '{"iss":"' + ISS + '","aud":"' + USER_AUD + '","sub":"u","azp":"a","azp":"b",'
+        '"typ":"Bearer","iat":'
+        + str(int(time.time()))
+        + ',"exp":'
+        + str(int(time.time()) + 300)
+        + "}"
+    )
+    with pytest.raises(AuthenticationError):
+        _verifier().verify(_sign_raw_payload(dup), _user_profile())
+    # Wrong audience.
+    with pytest.raises(AuthenticationError):
+        _verifier().verify(token, _service_profile())
+    # Untrusted key (kid not in JWKS).
+    with pytest.raises(AuthenticationError):
+        _verifier().verify(_mint(headers={"kid": "untrusted"}), _service_profile())
+
+
+def test_unsupported_critical_header_is_rejected():
+    token = _mint(headers={"kid": KID, "crit": ["custom"]})
+    with pytest.raises(AuthenticationError) as exc:
+        _verifier().verify(token, _service_profile())
+    assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+
+
+def test_malformed_jwks_is_rejected():
+    with pytest.raises(AuthenticationError) as unusable:
+        _verifier({"keys": [{"kid": KID, "kty": "RSA"}]}).verify(_mint(), _service_profile())
+    assert unusable.value.failure is AuthenticationFailure.INVALID_TOKEN
+    with pytest.raises(AuthenticationError) as malformed:
+        _verifier({"keys": "not-a-list"}).verify(_mint(), _service_profile())
+    assert malformed.value.failure is AuthenticationFailure.INFRASTRUCTURE
+
+
+def test_tokens_are_never_exposed_in_errors_or_repr():
+    token = _mint(client_id="client-1")
+    verified = _verifier().verify(token, _service_profile())
+    assert token not in repr(verified)
+    bad = _mint(headers={"kid": "unknown"})
+    with pytest.raises(AuthenticationError) as exc:
+        _verifier().verify(bad, _service_profile())
+    assert bad not in str(exc.value)

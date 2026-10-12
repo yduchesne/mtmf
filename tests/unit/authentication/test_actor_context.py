@@ -403,3 +403,46 @@ def test_other_tenant_without_membership_is_rejected():
     with pytest.raises(AuthenticationError) as exc:
         resolve(make_service(world.spi)[0], other_tenant.id)
     assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+
+
+class FailingSpi:
+    """SPI whose UnitOfWork acquisition fails, simulating database outage."""
+
+    def create_unit_of_work(self):
+        from mtmf_core.persistence.errors import PersistenceError
+
+        raise PersistenceError("database unavailable")
+
+    def __getattr__(self, name: str):
+        raise AssertionError(f"unexpected SPI access: {name}")
+
+
+def test_database_unavailable_is_typed_infrastructure_failure():
+    world = World(InMemoryMtmfSpi()).seed()
+    service = AuthenticatedActorContextService(
+        spi=FailingSpi(),  # type: ignore[arg-type]
+        attestor=AttestorSpy(),
+        service_verifier=VerifierSpy({"service": token(subject="sa", client_id=CLIENT)}),
+        service_profile=IssuerProfile(issuer=ISS, audience=SERVICE_AUD, jwks_uri=f"{ISS}/certs"),
+        user_verifier=VerifierSpy({"user": token(subject=SUBJECT, client_id=None)}),
+        user_profile=IssuerProfile(issuer=ISS, audience=USER_AUD, jwks_uri=f"{ISS}/certs"),
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        resolve(service, world.tenant.id)
+    assert exc.value.failure is AuthenticationFailure.INFRASTRUCTURE
+
+
+def test_revoked_binding_is_not_reused_on_next_resolution():
+    world = World(InMemoryMtmfSpi()).seed()
+    service = make_service(world.spi)[0]
+    first = resolve(service, world.tenant.id)
+    assert first.application_id == world.application.id
+    with world.spi.create_unit_of_work() as uow:
+        repo = world.spi.create_service_credential_application_repository(uow)
+        binding = repo.find_active_by_key(ISS, CLIENT)
+        assert binding is not None
+        repo.revoke(binding.id)
+        uow.commit()
+    with pytest.raises(AuthenticationError) as exc:
+        resolve(service, world.tenant.id)
+    assert exc.value.failure is AuthenticationFailure.UNKNOWN_APPLICATION

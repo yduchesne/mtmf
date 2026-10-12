@@ -181,3 +181,90 @@ def test_pr14_binding07_domain_objects_round_trip() -> None:
         created_at=now,
     )
     assert subject.is_active is True
+
+
+def test_pr14_binding08_two_credentials_map_to_one_application(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    _, application_id, _ = _seed(db)
+    issuer = "https://127.0.0.1:28443/realms/mtmf-pr14-dev"
+    _add_service_binding(db, issuer, "client-a", application_id)
+    _add_service_binding(db, issuer, "client-b", application_id)
+    with postgres_spi.create_unit_of_work() as uow:
+        repo = postgres_spi.create_service_credential_application_repository(uow)
+        a = repo.find_active_by_key(issuer, "client-a")
+        b = repo.find_active_by_key(issuer, "client-b")
+    assert a is not None and b is not None
+    assert a.application_id == b.application_id == DomainId.from_str(application_id)
+
+
+def test_pr14_binding09_same_key_cannot_map_to_two_applications(db: psycopg.Connection) -> None:
+    _, app_a, _ = _seed(db)
+    _, app_b, _ = _seed(db)
+    issuer = "https://127.0.0.1:28443/realms/mtmf-pr14-dev"
+    _add_service_binding(db, issuer, "one-key", app_a)
+    second = db.execute(
+        "SELECT mtmf.service_credential_application_add(%s, %s, %s, %s, %s::smallint, now())",
+        (_uuid(), issuer, "one-key", app_b, _ACTIVE),
+    ).fetchone()[0]
+    assert second is False
+
+
+def test_pr14_binding10_terminal_revocation_cannot_reactivate(db: psycopg.Connection) -> None:
+    _, application_id, _ = _seed(db)
+    issuer = "https://127.0.0.1:28443/realms/mtmf-pr14-dev"
+    binding_id = _add_service_binding(db, issuer, "client-terminal", application_id)
+    assert (
+        db.execute(
+            "SELECT mtmf.service_credential_application_revoke(%s)", (binding_id,)
+        ).fetchone()[0]
+        is True
+    )
+    # A second revoke is a no-op false, and Reactivation must be rejected by the guard.
+    assert (
+        db.execute(
+            "SELECT mtmf.service_credential_application_revoke(%s)", (binding_id,)
+        ).fetchone()[0]
+        is False
+    )
+    with pytest.raises(psycopg.Error):
+        db.execute(
+            "UPDATE mtmf.service_credential_application SET lifecycle = 1 WHERE id = %s",
+            (binding_id,),
+        )
+
+
+def test_pr14_binding11_concurrent_same_key_has_one_winner(
+    db: psycopg.Connection, mtmf_config: PostgresConfig
+) -> None:
+    _, application_id, _ = _seed(db)
+    issuer = "https://127.0.0.1:28443/realms/mtmf-pr14-dev"
+    dsn = mtmf_config.psycopg_dsn
+    winner = psycopg.connect(dsn)
+    loser = psycopg.connect(dsn)
+    try:
+        winner.execute("BEGIN")
+        winner.execute(
+            "SELECT mtmf.service_credential_application_add(%s, %s, %s, %s, 1::smallint, now())",
+            (_uuid(), issuer, "concurrent-key", application_id),
+        )
+        loser.execute("BEGIN")
+        loser.execute("SET LOCAL lock_timeout = '2s'")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            loser.execute(
+                "SELECT mtmf.service_credential_application_add("
+                "%s, %s, %s, %s, 1::smallint, now())",
+                (_uuid(), issuer, "concurrent-key", application_id),
+            )
+        loser.rollback()
+        winner.commit()
+        loser.execute("BEGIN")
+        after = loser.execute(
+            "SELECT mtmf.service_credential_application_add(%s, %s, %s, %s, 1::smallint, now())",
+            (_uuid(), issuer, "concurrent-key", application_id),
+        ).fetchone()[0]
+        loser.commit()
+        assert after is False
+    finally:
+        winner.close()
+        loser.close()

@@ -189,6 +189,10 @@ class PyJWTTokenVerifier:
             raise AuthenticationError(
                 AuthenticationFailure.INVALID_TOKEN, "untrusted key URL in header"
             )
+        if header.get("crit"):
+            raise AuthenticationError(
+                AuthenticationFailure.INVALID_TOKEN, "unsupported critical header"
+            )
         algorithm = header.get("alg")
         kid = header.get("kid")
         if algorithm not in profile.algorithms or not isinstance(kid, str) or not kid:
@@ -198,7 +202,9 @@ class PyJWTTokenVerifier:
         jwk = self._keys.get_jwk(kid)
         try:
             key: Any = pyjwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
-        except (ValueError, KeyError) as exc:
+        except AuthenticationError:
+            raise
+        except Exception as exc:  # malformed key material must fail closed
             raise AuthenticationError(
                 AuthenticationFailure.INVALID_TOKEN, "unusable signing key"
             ) from exc
