@@ -1,0 +1,7 @@
+{
+  "schema_version": "1",
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Request rate limit exceeded"
+  }
+}

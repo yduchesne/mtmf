@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mtmf.example/schema/authorization-v1.schema.json",
+  "title": "MTMF v1 detached batch authorization contract",
+  "description": "Contract-only JSON Schema for the PR 15 v1 request, response, and error messages. It mirrors the runtime strict codecs in mtmf_api. Correlation, uniqueness of request_id, and issued_at < expires_at ordering are cross-field constraints enforced programmatically by mtmf_api.conformance and the DTO constructors.",
+  "oneOf": [
+    { "$ref": "#/$defs/AuthorizationBatchRequest" },
+    { "$ref": "#/$defs/AuthorizationBatchResponse" },
+    { "$ref": "#/$defs/ApiErrorResponse" }
+  ],
+  "$defs": {
+    "Uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "allOf": [
+        { "not": { "const": "00000000-0000-0000-0000-000000000000" } }
+      ]
+    },
+    "RequestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "ActionUrn": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^urn:mtmf:iam:actions:system:[^:*\\s]+:[^:*\\s-]+-[^:*\\s]+$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$"
+    },
+    "ResourceTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "capability" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "type", "id"],
+          "properties": {
+            "kind": { "const": "application_owned" },
+            "type": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x20-\\x7e]+$"
+            },
+            "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "type", "id"],
+          "properties": {
+            "kind": { "const": "mtmf_owned" },
+            "type": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x20-\\x7e]+$"
+            },
+            "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        }
+      ]
+    },
+    "ActionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "action", "resource"],
+      "properties": {
+        "request_id": { "$ref": "#/$defs/RequestId" },
+        "action": { "$ref": "#/$defs/ActionUrn" },
+        "resource": { "$ref": "#/$defs/ResourceTarget" }
+      }
+    },
+    "AuthorizationBatchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "actions"],
+      "properties": {
+        "tenant_id": { "$ref": "#/$defs/Uuid" },
+        "organization_id": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/Uuid" }]
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/ActionRequest" }
+        }
+      }
+    },
+    "ActionDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "effect", "reason"],
+      "properties": {
+        "request_id": { "$ref": "#/$defs/RequestId" },
+        "effect": { "enum": ["ALLOW", "DENY"] },
+        "reason": {
+          "enum": [
+            "PERMITTED",
+            "NO_PERMISSION",
+            "EXPLICIT_DENY",
+            "UNKNOWN_ACTION",
+            "INVALID_SCOPE",
+            "UNSUPPORTED_RESOURCE"
+          ]
+        }
+      }
+    },
+    "AuthorizationBatchResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "tenant_id",
+        "organization_id",
+        "issued_at",
+        "expires_at",
+        "decisions"
+      ],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "tenant_id": { "$ref": "#/$defs/Uuid" },
+        "organization_id": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/Uuid" }]
+        },
+        "issued_at": { "$ref": "#/$defs/Timestamp" },
+        "expires_at": { "$ref": "#/$defs/Timestamp" },
+        "decisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ActionDecision" }
+        }
+      }
+    },
+    "ApiErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "error"],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "enum": [
+                "INVALID_REQUEST",
+                "UNAUTHENTICATED",
+                "UNTRUSTED_ACTOR",
+                "INELIGIBLE_APPLICATION",
+                "REQUEST_TOO_LARGE",
+                "UNSUPPORTED_MEDIA_TYPE",
+                "RATE_LIMITED",
+                "DEPENDENCY_UNAVAILABLE",
+                "INTERNAL_ERROR"
+              ]
+            },
+            "message": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "request_id": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        }
+      }
+    }
+  }
+}

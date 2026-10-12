@@ -15,8 +15,11 @@
 > `T2` is owned by PR 15 and `T5` subscription lifecycle specifics are
 > **implemented by PR 13** (see
 > [PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md](PR13_APPLICATION_SUBSCRIPTION_DECISIONS.md)).
-> The illustrative JSON below remains **non-normative** until PR 15 freezes
-> the DTO contract.
+> The illustrative JSON below remains **non-normative**; the frozen v1
+> wire contract is now
+> [PR15_HTTP_API_V1_CONTRACT.md](PR15_HTTP_API_V1_CONTRACT.md) with its
+> decisions in [PR15_API_CONTRACT_DECISIONS.md](PR15_API_CONTRACT_DECISIONS.md)
+> (contract-only; no HTTP runtime).
 >
 > Contract identifiers `C01`–`C11` are stable review anchors.
 
@@ -324,7 +327,7 @@ sensitive access.
 | 12 | Architecture, trust, and batch contracts | No — documentation only |
 | 13 | Application registry and Tenant subscriptions | Partial — global Application registry, explicit registration, subscription lifecycle, PostgreSQL persistence, and trusted internal eligibility gate implemented; no HTTP/management API |
 | 14 | Trusted service/end-user authentication boundary | No |
-| 15 | Versioned HTTP batch API DTO contract | No |
+| 15 | Versioned HTTP batch API DTO contract | Partial — detached DTOs, strict codecs, stable errors, JSON Schema, and conformance shipped in `mtmf-api`; no HTTP runtime |
 | 16 | Python/Rust native batch and parity benchmarks | No |
 | 17 | Authenticated HTTP service endpoint | No |
 | 18 | HTTP client and scoped snapshot helper | No |
