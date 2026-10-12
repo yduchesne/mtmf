@@ -26,7 +26,7 @@ native change was added.
 
 ## 2. W1–W7 approvals
 
-Recorded in [`PR15_API_CONTRACT_DECISIONS.md`](PR15_API_CONTRACT_DECISIONS.md).
+Recorded in [`PR15_API_CONTRACT_DECISIONS.md`](../pr-15/pr15-api-contract-decisions.md).
 Approval source: the human reviewer instructed the coding agent to
 implement the detailed execution plan (2026-10-12) and explicitly
 confirmed W3 (exact canonical Action URNs) during PR 15 review
