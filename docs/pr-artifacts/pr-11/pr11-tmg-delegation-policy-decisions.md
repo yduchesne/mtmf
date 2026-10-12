@@ -4,12 +4,12 @@
 
 Authoritative sources:
 
-- [Security Model](SECURITY_MODEL.md) §20 (Tenant Management Groups),
+- [Security Model](../../SECURITY_MODEL.md) §20 (Tenant Management Groups),
   §20.2 (SYSTEM groups), §25 item 8.
-- [Domain Model](DOMAIN_MODEL.md) §15 (TenantManagementGroup),
+- [Domain Model](../../DOMAIN_MODEL.md) §15 (TenantManagementGroup),
   §19 items 5-6.
-- [Authorization](AUTHORIZATION.md) §7 (TenantManagementGroup context).
-- [Roadmap](ROADMAP_V01.md) PR 11.
+- [Authorization](../../AUTHORIZATION.md) §7 (TenantManagementGroup context).
+- [Roadmap](../../ROADMAP_V01.md) PR 11.
 
 > **Invariant:** Cross-Tenant management authority exists only when the
 > target is covered by a valid management relationship, the verified acting
