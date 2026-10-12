@@ -415,8 +415,12 @@ attestation), PR 13 eligibility, one shared core `AuthorizationContext`, one PR
 16 Python batch call, exact PR 15 decision/error mapping, and a bounded UTC
 snapshot TTL. Errors are static PR 15 envelopes (400/401/403/413/415/429/500/503);
 no policy internals, credentials, or Tenant-existence distinctions are exposed.
-The development one-shot initializer is separate and privileged; the HTTP
-runtime uses only the restricted `mtmf_runtime` PostgreSQL identity.
+Synchronous evaluation runs in a worker thread with an explicit process-local
+admission bound (`max_in_flight_evaluations`); a permit is held until the
+worker actually completes, so an HTTP-deadline timeout cannot leave unbounded
+work accumulating. The development one-shot initializer is separate and
+privileged; the HTTP runtime uses only the restricted `mtmf_runtime`
+PostgreSQL identity.
 
 ## 14. Observability
 

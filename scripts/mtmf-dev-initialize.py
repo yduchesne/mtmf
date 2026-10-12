@@ -35,6 +35,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -425,7 +426,12 @@ class KeycloakCredentialProvisioner:
         return json.loads(payload) if payload else None
 
     def ensure_client(self, fixture: BootstrapFixture, application: ApplicationFixture) -> str:
-        """Create or reuse one confidential Client Credentials client."""
+        """Create or reuse one confidential Client Credentials client.
+
+        An existing client is never reset. The current secret is delivered
+        to an owner-only file (mode ``0600``) under ``MTMF_DEV_SECRET_DIR``
+        for the intended consumer; it is never printed or logged.
+        """
         client_id = f"mtmf-{application.application_key}"
         rows = self._request("GET", f"/admin/realms/{self.realm}/clients?clientId={client_id}")
         if not rows:
@@ -440,10 +446,28 @@ class KeycloakCredentialProvisioner:
                     "serviceAccountsEnabled": True,
                     "standardFlowEnabled": True,
                     "directAccessGrantsEnabled": False,
-                    "secret": os.environ.get("MTMF_DEV_CLIENT_SECRET", "") or None,
                 },
             )
+            rows = self._request("GET", f"/admin/realms/{self.realm}/clients?clientId={client_id}")
+        client_uuid = rows[0]["id"]
+        secret_payload = self._request(
+            "GET", f"/admin/realms/{self.realm}/clients/{client_uuid}/client-secret"
+        )
+        secret = secret_payload.get("value") if isinstance(secret_payload, dict) else None
+        if isinstance(secret, str) and secret:
+            self._deliver_secret(client_id, secret)
         return client_id
+
+    def _deliver_secret(self, client_id: str, secret: str) -> None:
+        """Write one client secret to an owner-only, MTMF-controlled file."""
+        directory = os.environ.get("MTMF_DEV_SECRET_DIR", "/tmp/mtmf-dev-secrets")
+        target_dir = Path(directory)
+        target_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        target = target_dir / f"{client_id}.secret"
+        file_descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(file_descriptor, "w") as handle:
+            handle.write(secret)
+        os.chmod(target, 0o600)
 
     def verify_issuer(self, fixture: BootstrapFixture) -> None:
         """Validate that the pinmed issuer serves discovery and JWKS."""

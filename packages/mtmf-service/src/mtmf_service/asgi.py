@@ -43,6 +43,7 @@ def create_app_from_env() -> FastAPI:
         authorization_service=dependencies.authorization_service,
         readiness=dependencies.readiness,
         rate_limiter=dependencies.rate_limiter,
+        admission=dependencies.admission,
     )
 
 

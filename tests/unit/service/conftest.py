@@ -68,6 +68,7 @@ from mtmf_core.persistence.spi import MtmfSpi
 from mtmf_service.app import create_app
 from mtmf_service.clock import FrozenClock
 from mtmf_service.composition import build_authorization_service
+from mtmf_service.concurrency import EvaluationAdmission
 from mtmf_service.rate_limit import TokenBucketRateLimiter
 from mtmf_service.readiness import StaticReadiness
 from mtmf_service.sensitivity import (
@@ -360,6 +361,8 @@ class Harness:
     clock: FrozenClock
     settings: ServiceSettings
     client: TestClient
+    app: Any = None
+    admission: Any = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -376,6 +379,7 @@ def build_harness(
     sensitivity: Any | None = None,
     rate_limiter: Any | None = None,
     readiness: Any | None = None,
+    admission: Any | None = None,
 ) -> Harness:
     """Assemble one service instance with deterministic boundary doubles."""
     resolved_settings = settings or ServiceSettings()
@@ -412,11 +416,15 @@ def build_harness(
         clock=clock,
         sensitivity=sensitivity or ConservativeSensitiveActionClassifier(),
     )
+    resolved_admission = admission or EvaluationAdmission(
+        resolved_settings.max_in_flight_evaluations
+    )
     app = create_app(
         settings=resolved_settings,
         authorization_service=authorization_service,
         readiness=readiness or StaticReadiness(True),
         rate_limiter=rate_limiter or TokenBucketRateLimiter(per_minute=100000, burst=100000),
+        admission=resolved_admission,
     )
     client = TestClient(app, raise_server_exceptions=False)
     return Harness(
@@ -431,6 +439,8 @@ def build_harness(
         clock=clock,
         settings=resolved_settings,
         client=client,
+        app=app,
+        admission=resolved_admission,
     )
 
 

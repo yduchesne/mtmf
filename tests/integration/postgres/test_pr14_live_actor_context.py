@@ -411,7 +411,7 @@ def test_dc07_inactive_tenant_rejected(
 ) -> None:
     ids = _world_for(db)
     db.execute("UPDATE mtmf.tenant SET deletion_status = 1 WHERE id = %s", (ids["tenant_id"],))
-    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_TENANT)
 
 
 def test_dc07_missing_membership_rejected(
@@ -420,7 +420,7 @@ def test_dc07_missing_membership_rejected(
     user_token = _user_token()
     subject = ev.decode_unverified(user_token["access_token"])[1]["sub"]
     ids = {**_seed(db, subject, memberships=False), "subject": subject, "user_token": user_token}
-    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_TENANT)
 
 
 def test_dc07_cross_tenant_rejected(db: psycopg.Connection, postgres_spi: PostgresMtmfSpi) -> None:
@@ -432,7 +432,7 @@ def test_dc07_cross_tenant_rejected(db: psycopg.Connection, postgres_spi: Postgr
         (other_tenant, ids["identity_id"]),
     )
     ids["tenant_id"] = other_tenant
-    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_TENANT)
 
 
 def test_dc07_inactive_application_rejected(
@@ -451,7 +451,7 @@ def test_dc07_inactive_registration_rejected(
         "UPDATE mtmf.application_tenant_registration SET lifecycle = 2 WHERE application_id = %s",
         (ids["application_id"],),
     )
-    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_REGISTRATION)
 
 
 def test_dc07_inactive_subscription_rejected(
@@ -462,7 +462,7 @@ def test_dc07_inactive_subscription_rejected(
         "UPDATE mtmf.tenant_application_subscription SET lifecycle = 2 WHERE application_id = %s",
         (ids["application_id"],),
     )
-    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_SUBSCRIPTION)
 
 
 def test_dc07_root_tenant_scope_rejected(
@@ -470,7 +470,7 @@ def test_dc07_root_tenant_scope_rejected(
 ) -> None:
     ids = _world_for(db)
     db.execute("UPDATE mtmf.tenant SET scope = 0 WHERE id = %s", (ids["tenant_id"],))
-    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_TENANT)
 
 
 def test_dc07_binding_revocation_freshness(

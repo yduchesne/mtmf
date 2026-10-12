@@ -68,6 +68,11 @@ class ServiceSettings:
     #: Bounded operation timeouts.
     authentication_timeout_seconds: float = 5.0
     evaluation_timeout_seconds: float = 15.0
+    #: Hard cap on synchronous evaluations admitted at one time. A permit is
+    #: held until the underlying worker actually completes, not merely until
+    #: the HTTP deadline, so a timed-out but still-running evaluation cannot
+    #: let unbounded work accumulate. Saturation is a deterministic 503.
+    max_in_flight_evaluations: int = 40
     #: Development loopback binding only. Production transport security is
     #: a separate release gate.
     host: str = "127.0.0.1"
@@ -94,6 +99,8 @@ class ServiceSettings:
             raise ServiceConfigurationError("rate limits must be positive")
         if self.authentication_timeout_seconds <= 0 or self.evaluation_timeout_seconds <= 0:
             raise ServiceConfigurationError("operation timeouts must be positive")
+        if self.max_in_flight_evaluations < 1:
+            raise ServiceConfigurationError("max_in_flight_evaluations must be positive")
 
     def validate_startup(self) -> None:
         """Fail startup for an unsupported or unsafe deployment profile.
@@ -141,4 +148,7 @@ class ServiceSettings:
             host=os.environ.get("MTMF_SERVICE_HOST", "127.0.0.1"),
             port=int(os.environ.get("MTMF_SERVICE_PORT", "28001")),
             allow_container_bind=os.environ.get("MTMF_SERVICE_ALLOW_CONTAINER_BIND", "") == "1",
+            max_in_flight_evaluations=int(
+                os.environ.get("MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS", "40")
+            ),
         )

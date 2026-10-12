@@ -13,14 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from functools import partial
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
+from mtmf_api.authorization import AuthorizationBatchResponse
 from mtmf_api.errors import ApiErrorCode, ApiErrorResponse
 from mtmf_api.json_codec import parse_request_json, serialize_error, serialize_response
+from mtmf_service.concurrency import EvaluationAdmission
 from mtmf_service.errors import PublicError, map_exception
 from mtmf_service.evaluation import AuthorizationService
 from mtmf_service.rate_limit import RateLimiter
@@ -61,6 +62,7 @@ def create_app(
     authorization_service: AuthorizationService,
     readiness: ReadinessState,
     rate_limiter: RateLimiter,
+    admission: EvaluationAdmission | None = None,
 ) -> FastAPI:
     """Build the ASGI application with explicit injected dependencies.
 
@@ -68,6 +70,7 @@ def create_app(
         selected deployment profile is unsupported or unsafe.
     """
     settings.validate_startup()
+    admission = admission or EvaluationAdmission(settings.max_in_flight_evaluations)
 
     app = FastAPI(
         title="MTMF authorization service",
@@ -97,20 +100,40 @@ def create_app(
         parsed = parse_request_json(body)
         service_token = extract_service_token(request)
         user_token = extract_user_token(request, header_name=settings.user_authorization_header)
+        # Explicit admission: a permit is held until the worker actually
+        # completes, not merely until the HTTP deadline. Saturation is a
+        # deterministic 503 rather than unbounded queueing.
+        permit = admission.try_acquire()
+        if permit is None:
+            raise PublicError(ApiErrorCode.DEPENDENCY_UNAVAILABLE)
+
+        def _admitted_worker() -> AuthorizationBatchResponse:
+            # Runs in the worker thread. The permit is released only when
+            # the synchronous evaluation actually returns or raises, even
+            # if the HTTP deadline already expired and abandoned the thread.
+            permit.mark_started()
+            try:
+                return authorization_service.evaluate(
+                    service_token=service_token,
+                    user_token=user_token,
+                    request=parsed,
+                )
+            finally:
+                permit.release()
+
         try:
             response = await asyncio.wait_for(
-                run_in_threadpool(
-                    partial(
-                        authorization_service.evaluate,
-                        service_token=service_token,
-                        user_token=user_token,
-                        request=parsed,
-                    )
-                ),
+                run_in_threadpool(_admitted_worker),
                 timeout=settings.evaluation_timeout_seconds,
             )
         except TimeoutError as exc:
+            # The worker may still be running; its permit stays held until
+            # it finishes. If it was cancelled before it began, release now.
+            permit.release_if_not_started()
             raise PublicError(ApiErrorCode.DEPENDENCY_UNAVAILABLE) from exc
+        except BaseException:
+            permit.release_if_not_started()
+            raise
         return Response(
             content=serialize_response(response),
             status_code=200,

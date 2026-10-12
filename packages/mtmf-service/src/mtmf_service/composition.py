@@ -20,6 +20,7 @@ from mtmf_core.persistence.spi import MtmfSpi
 from mtmf_service.authentication.composition import build_actor_context_service
 from mtmf_service.authentication.config import IssuerConfig
 from mtmf_service.clock import Clock, SystemClock
+from mtmf_service.concurrency import EvaluationAdmission
 from mtmf_service.evaluation import AuthorizationService
 from mtmf_service.rate_limit import RateLimiter, TokenBucketRateLimiter
 from mtmf_service.readiness import ReadinessProbe, ReadinessState
@@ -44,6 +45,7 @@ class ServiceDependencies:
     authorization_service: AuthorizationService
     readiness: ReadinessState
     rate_limiter: RateLimiter
+    admission: EvaluationAdmission
 
 
 def build_authorization_service(
@@ -128,4 +130,5 @@ def build_dependencies(
             per_minute=settings.rate_limit_per_minute,
             burst=settings.rate_limit_burst,
         ),
+        admission=EvaluationAdmission(settings.max_in_flight_evaluations),
     )

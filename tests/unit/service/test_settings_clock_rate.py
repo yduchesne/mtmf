@@ -48,6 +48,7 @@ def test_container_bind_requires_explicit_opt_in():
         {"rate_limit_burst": 0},
         {"authentication_timeout_seconds": 0},
         {"evaluation_timeout_seconds": -1},
+        {"max_in_flight_evaluations": 0},
         {"user_authorization_header": ""},
     ],
 )
