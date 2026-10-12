@@ -204,3 +204,180 @@ def test_provider_neutral_class_properties():
     user = _verifier().verify(_mint(aud=USER_AUD), _user_profile())
     assert service.is_service_class and not service.is_user_class
     assert user.is_user_class and not user.is_service_class
+
+
+def _sign_raw_payload(payload_text: str) -> str:
+    """Sign an arbitrary raw payload segment with the trusted test key."""
+    import base64 as _b64
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    header = _b64.urlsafe_b64encode(
+        json.dumps({"alg": "RS256", "kid": KID, "typ": "JWT"}).encode()
+    ).rstrip(b"=")
+    payload = _b64.urlsafe_b64encode(payload_text.encode()).rstrip(b"=")
+    signing_input = header + b"." + payload
+    signature = _PRIVATE_KEY.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+    return f"{signing_input.decode()}.{_b64.urlsafe_b64encode(signature).rstrip(b'=').decode()}"
+
+
+def test_duplicate_payload_claim_is_rejected_before_verification():
+    now = int(time.time())
+    payload = (
+        '{"iss":"'
+        + ISS
+        + '","aud":"'
+        + SERVICE_AUD
+        + '","sub":"s","azp":"a","azp":"b","typ":"Bearer","iat":'
+        + str(now)
+        + ',"exp":'
+        + str(now + 300)
+        + "}"
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        _verifier().verify(_sign_raw_payload(payload), _service_profile())
+    assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+
+
+def test_malformed_base64_segment_is_rejected():
+    with pytest.raises(AuthenticationError) as exc:
+        _verifier().verify("aa!.bb.cc", _service_profile())
+    assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+
+
+def test_forged_signature_is_rejected():
+    other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = int(time.time())
+    forged = pyjwt.encode(
+        {
+            "iss": ISS,
+            "aud": SERVICE_AUD,
+            "sub": "s",
+            "azp": "c",
+            "typ": "Bearer",
+            "iat": now,
+            "exp": now + 300,
+        },
+        other_key,
+        algorithm="RS256",
+        headers={"kid": KID},
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        _verifier().verify(forged, _service_profile())
+    assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+
+
+def test_wrong_issuer_is_rejected():
+    now = int(time.time())
+    token = pyjwt.encode(
+        {
+            "iss": "https://evil.example",
+            "aud": SERVICE_AUD,
+            "sub": "s",
+            "azp": "c",
+            "typ": "Bearer",
+            "iat": now,
+            "exp": now + 300,
+        },
+        _PRIVATE_KEY,
+        algorithm="RS256",
+        headers={"kid": KID},
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        _verifier().verify(token, _service_profile())
+    assert exc.value.failure is AuthenticationFailure.UNTRUSTED_ISSUER
+
+
+def test_missing_required_time_claims_are_rejected():
+    for omitted in ("exp", "iat"):
+        now = int(time.time())
+        payload = {
+            "iss": ISS,
+            "aud": SERVICE_AUD,
+            "sub": "s",
+            "azp": "c",
+            "typ": "Bearer",
+            "iat": now,
+            "exp": now + 300,
+        }
+        del payload[omitted]
+        token = pyjwt.encode(payload, _PRIVATE_KEY, algorithm="RS256", headers={"kid": KID})
+        with pytest.raises(AuthenticationError) as exc:
+            _verifier().verify(token, _service_profile())
+        assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+
+
+def test_none_and_symmetric_algorithms_are_rejected():
+    now = int(time.time())
+    payload = {
+        "iss": ISS,
+        "aud": SERVICE_AUD,
+        "sub": "s",
+        "azp": "c",
+        "typ": "Bearer",
+        "iat": now,
+        "exp": now + 300,
+    }
+    for alg, key in (("HS256", "symmetric-secret"), ("none", "")):
+        token = pyjwt.encode(payload, key, algorithm=alg, headers={"kid": KID})
+        with pytest.raises(AuthenticationError) as exc:
+            _verifier().verify(token, _service_profile())
+        assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+
+
+def test_jwks_transport_outage_fails_closed():
+    class FailingTransport:
+        def get(self, url: str, *, timeout: float, max_bytes: int) -> bytes:
+            raise OSError("network down")
+
+    verifier = PyJWTTokenVerifier(
+        JwksKeyProvider(JWKS_URI, transport=FailingTransport(), min_refresh_seconds=0)
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        verifier.verify(_mint(), _service_profile())
+    assert exc.value.failure is AuthenticationFailure.INFRASTRUCTURE
+
+
+def test_jwks_key_rotation_refreshes_on_unknown_kid():
+    rotated = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    state = {"current": _jwk("old-kid")}
+
+    class RotatingTransport:
+        def get(self, url: str, *, timeout: float, max_bytes: int) -> bytes:
+            return json.dumps({"keys": [state["current"]]}).encode()
+
+    provider = JwksKeyProvider(JWKS_URI, transport=RotatingTransport(), min_refresh_seconds=0)
+    verifier = PyJWTTokenVerifier(provider)
+    verifier.verify(_mint(headers={"kid": "old-kid"}), _service_profile())
+    state["current"] = {
+        "kid": "new-kid",
+        "use": "sig",
+        "alg": "RS256",
+        **json.loads(pyjwt.algorithms.RSAAlgorithm.to_jwk(rotated.public_key())),
+    }
+    now = int(time.time())
+    token = pyjwt.encode(
+        {
+            "iss": ISS,
+            "aud": SERVICE_AUD,
+            "sub": "s",
+            "azp": "c",
+            "typ": "Bearer",
+            "iat": now,
+            "exp": now + 300,
+        },
+        rotated,
+        algorithm="RS256",
+        headers={"kid": "new-kid"},
+    )
+    verifier.verify(token, _service_profile())
+
+
+def test_class_predicates_reject_mismatched_binding_and_injected_claims():
+    # Service class requires client_id == azp.
+    mismatched = _verifier().verify(_mint(client_id="other-client"), _service_profile())
+    assert mismatched.is_service_class is False
+    # User class requires no client_id.
+    injected = _verifier().verify(_mint(aud=USER_AUD, client_id="client-1"), _user_profile())
+    assert injected.is_user_class is False

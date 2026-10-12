@@ -156,3 +156,24 @@ but not instant on rotation.
 **Still closed.** Production issuer trust, root authentication/recovery,
 RFC 8693 actor delegation, cross-client propagation, and public HTTP routes.
 PR 14 must not be marked DONE.
+
+## 11. Amendment #1 acceptance status (2026-10-11)
+
+Status only; see [PR14_AMENDMENT1_ACCEPTANCE_REPORT.md](PR14_AMENDMENT1_ACCEPTANCE_REPORT.md)
+and [PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT1_ACCEPTANCE_MATRIX.md).
+
+- Shipped `jwt_verifier` defects fixed: strict payload parsing rejects duplicate
+  JSON members before verification; malformed base64url segments are rejected;
+  JWKS transport exceptions are typed `INFRASTRUCTURE` failures (with regression
+  tests).
+- Shipped `BaselineConfigurationAttestor`/`HttpAdminRestReader` live-verified
+  against the pinned issuer (clean → drift → restored). Shipped attestor
+  production-class unit tests added.
+- Deterministic gates green: 48 auth unit tests, 552 integration tests,
+  1405 QA tests at 87.55% coverage, security 0, pre-commit pass.
+- **Not executed / blocked:** DC05 (Keycloak cannot emit a signed access token
+  without `azp` through a supported mechanism) and DC07/V01–V16 (pinned fixture
+  lacks a same-client D1 client with distinct audiences; live orchestration not
+  completed). No substitute evidence was fabricated.
+- **Merge not recommended**; production issuer, root and HTTP routes remain
+  unimplemented.

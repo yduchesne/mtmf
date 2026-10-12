@@ -342,3 +342,64 @@ def test_ineligible_subscription_is_rejected():
     with pytest.raises(AuthenticationError) as exc:
         resolve(make_service(world.spi)[0], world.tenant.id)
     assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+
+
+def test_missing_service_token_is_rejected():
+    world = World(InMemoryMtmfSpi()).seed()
+    service, _, _ = make_service(world.spi)
+    with pytest.raises(AuthenticationError) as exc:
+        service.resolve(service_token="", user_token="user", tenant_id=world.tenant.id)
+    assert exc.value.failure is AuthenticationFailure.INVALID_REQUEST
+
+
+def test_missing_user_token_is_rejected():
+    world = World(InMemoryMtmfSpi()).seed()
+    service, _, _ = make_service(world.spi)
+    with pytest.raises(AuthenticationError) as exc:
+        service.resolve(service_token="service", user_token="", tenant_id=world.tenant.id)
+    assert exc.value.failure is AuthenticationFailure.INVALID_REQUEST
+
+
+def test_inactive_tenant_is_rejected():
+    world = World(InMemoryMtmfSpi()).seed()
+    with world.spi.create_unit_of_work() as uow:
+        repo = world.spi.create_tenant_repository(uow)
+        tenant = repo.get(world.tenant.id)
+        assert tenant is not None
+        tenant.lifecycle = TenantLifecycle.SUSPENDED
+        repo.save(tenant)
+        uow.commit()
+    with pytest.raises(AuthenticationError) as exc:
+        resolve(make_service(world.spi)[0], world.tenant.id)
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+
+
+def test_missing_active_registration_is_rejected():
+    world = World(InMemoryMtmfSpi()).seed()
+    with world.spi.create_unit_of_work() as uow:
+        repo = world.spi.create_application_tenant_registration_repository(uow)
+        registration = repo.get(world.registration.id)
+        assert registration is not None
+        registration.lifecycle = RegistrationLifecycle.REVOKED
+        repo.save(registration)
+        uow.commit()
+    with pytest.raises(AuthenticationError) as exc:
+        resolve(make_service(world.spi)[0], world.tenant.id)
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT
+
+
+def test_other_tenant_without_membership_is_rejected():
+    world = World(InMemoryMtmfSpi()).seed()
+    other_tenant = Tenant(
+        id=DomainId.generate(),
+        name="other",
+        scope=SecurityScope.TENANT,
+        owner_identity_id=world.identity.id,
+        lifecycle=TenantLifecycle.ACTIVE,
+    )
+    with world.spi.create_unit_of_work() as uow:
+        world.spi.create_tenant_repository(uow).add(other_tenant)
+        uow.commit()
+    with pytest.raises(AuthenticationError) as exc:
+        resolve(make_service(world.spi)[0], other_tenant.id)
+    assert exc.value.failure is AuthenticationFailure.INELIGIBLE_CONTEXT

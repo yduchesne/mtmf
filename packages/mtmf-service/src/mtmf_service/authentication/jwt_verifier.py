@@ -119,11 +119,15 @@ class JwksKeyProvider:
         if now - self._last_attempt < self._min_refresh_seconds:
             return
         self._last_attempt = now
-        payload = loads_strict(
-            self._transport.get(
-                self._uri, timeout=self._timeout, max_bytes=self._max_bytes
-            ).decode()
-        )
+        try:
+            raw = self._transport.get(self._uri, timeout=self._timeout, max_bytes=self._max_bytes)
+        except AuthenticationError:
+            raise
+        except Exception as exc:  # any transport failure is fail-closed
+            raise AuthenticationError(
+                AuthenticationFailure.INFRASTRUCTURE, "JWKS transport failed"
+            ) from exc
+        payload = loads_strict(raw.decode())
         if not isinstance(payload, dict) or not isinstance(payload.get("keys"), list):
             raise AuthenticationError(
                 AuthenticationFailure.INFRASTRUCTURE, "JWKS document is malformed"
@@ -174,6 +178,13 @@ class PyJWTTokenVerifier:
         header = loads_strict(_b64url_text(parts[0]))
         if not isinstance(header, dict):
             raise AuthenticationError(AuthenticationFailure.INVALID_TOKEN, "malformed JOSE header")
+        # Parse the payload strictly before signature verification so that a
+        # duplicate JSON member is rejected. The parsed value is used only for
+        # structural validation; authentication claims come exclusively from
+        # the signature-verified ``pyjwt.decode`` result below.
+        payload = loads_strict(_b64url_text(parts[1]))
+        if not isinstance(payload, dict):
+            raise AuthenticationError(AuthenticationFailure.INVALID_TOKEN, "malformed JWS payload")
         if set(header) & {"jku", "x5u", "jwk"}:
             raise AuthenticationError(
                 AuthenticationFailure.INVALID_TOKEN, "untrusted key URL in header"
@@ -224,11 +235,15 @@ class PyJWTTokenVerifier:
 
 def _b64url_text(segment: str) -> str:
     import base64
+    import binascii
+    import re
 
+    if not segment or re.fullmatch(r"[A-Za-z0-9_-]+", segment) is None:
+        raise AuthenticationError(AuthenticationFailure.INVALID_TOKEN, "malformed JWS segment")
     padded = segment + "=" * (-len(segment) % 4)
     try:
         return base64.urlsafe_b64decode(padded.encode()).decode()
-    except (ValueError, UnicodeDecodeError) as exc:
+    except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
         raise AuthenticationError(
             AuthenticationFailure.INVALID_TOKEN, "malformed JWS segment"
         ) from exc
