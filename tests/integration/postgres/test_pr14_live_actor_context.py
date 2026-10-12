@@ -27,7 +27,7 @@ import pytest
 from mtmf_core.application.authentication import AuthenticatedActorContextService
 from mtmf_core.authentication.contracts import AuthenticationError, AuthenticationFailure
 from mtmf_core.domain.identity import DomainId
-from mtmf_core.persistence.postgres import PostgresMtmfSpi
+from mtmf_core.persistence.postgres import PostgresConfig, PostgresMtmfSpi, PostgresRole
 from mtmf_service.authentication.composition import build_actor_context_service
 from mtmf_service.authentication.config import IssuerConfig
 
@@ -74,12 +74,12 @@ class Admin:
         self.base = _env("MTMF_PR14_KC_BASE")
         self.ctx = ssl.create_default_context(cafile=os.environ.get("MTMF_PR14_KC_CA_FILE", ""))
         self.headers = {"Content-Type": "application/json"}
-        self._opener = urllib.request.build_opener()
+        self._opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=self.ctx))
 
     def _open(self, request: urllib.request.Request) -> Any:
         if urllib.parse.urlparse(request.full_url).scheme not in ("http", "https"):
             raise RuntimeError("unsupported live fixture URL scheme")
-        return self._opener.open(request, context=self.ctx)
+        return self._opener.open(request)
 
     def _token(self) -> str:
         data = urllib.parse.urlencode(
@@ -143,7 +143,7 @@ class Admin:
                 )
 
 
-def _seed(db: psycopg.Connection, subject: str) -> dict[str, str]:
+def _seed(db: psycopg.Connection, subject: str, *, memberships: bool = True) -> dict[str, str]:
     principal_id, identity_id, tenant_id = _uuid(), _uuid(), _uuid()
     db.execute(
         "INSERT INTO mtmf.principal (id, name, deletion_status) VALUES (%s,'P',2)", (principal_id,)
@@ -158,14 +158,15 @@ def _seed(db: psycopg.Connection, subject: str) -> dict[str, str]:
         "VALUES (%s,'T',2,%s,1,2)",
         (tenant_id, identity_id),
     )
-    db.execute(
-        "INSERT INTO mtmf.principal_tenant_membership (principal_id, tenant_id) VALUES (%s,%s)",
-        (principal_id, tenant_id),
-    )
-    db.execute(
-        "INSERT INTO mtmf.identity_tenant_membership (identity_id, tenant_id) VALUES (%s,%s)",
-        (identity_id, tenant_id),
-    )
+    if memberships:
+        db.execute(
+            "INSERT INTO mtmf.principal_tenant_membership (principal_id, tenant_id) VALUES (%s,%s)",
+            (principal_id, tenant_id),
+        )
+        db.execute(
+            "INSERT INTO mtmf.identity_tenant_membership (identity_id, tenant_id) VALUES (%s,%s)",
+            (identity_id, tenant_id),
+        )
     application_id = _uuid()
     db.execute(
         "SELECT mtmf.application_add(%s,%s,'A',%s,1::smallint,'{}'::jsonb)",
@@ -352,3 +353,235 @@ def test_dc07_v15_mapper_drift_blocks_and_restores(
     finally:
         admin.remove_mapper(client["id"], "client_id")
     _resolve(composite, service_token, user_token, ids["tenant_id"])  # restored
+
+
+def _world_for(db: psycopg.Connection) -> dict[str, str]:
+    user_token = _user_token()
+    subject = ev.decode_unverified(user_token["access_token"])[1]["sub"]
+    return {**_seed(db, subject), "subject": subject, "user_token": user_token}
+
+
+def _expect(
+    db: psycopg.Connection,
+    postgres_spi: PostgresMtmfSpi,
+    ids: dict[str, str],
+    failure: AuthenticationFailure,
+) -> None:
+    service_token = _service_token()
+    with pytest.raises(AuthenticationError) as exc:
+        _resolve(_compose(postgres_spi), service_token, ids["user_token"], ids["tenant_id"])
+    assert exc.value.failure is failure
+
+
+def test_dc07_repeated_resolution_is_stable(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    service_token = _service_token()
+    composite = _compose(postgres_spi)
+    first = _resolve(composite, service_token, ids["user_token"], ids["tenant_id"])
+    second = _resolve(composite, service_token, ids["user_token"], ids["tenant_id"])
+    assert (first.application_id, first.identity_id, first.tenant_id) == (
+        second.application_id,
+        second.identity_id,
+        second.tenant_id,
+    )
+
+
+def test_dc07_inactive_identity_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    db.execute("UPDATE mtmf.identity SET deletion_status = 1 WHERE id = %s", (ids["identity_id"],))
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INACTIVE_ACTOR)
+
+
+def test_dc07_inactive_principal_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    db.execute(
+        "UPDATE mtmf.principal SET deletion_status = 1 WHERE id = %s", (ids["principal_id"],)
+    )
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INACTIVE_ACTOR)
+
+
+def test_dc07_inactive_tenant_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    db.execute("UPDATE mtmf.tenant SET deletion_status = 1 WHERE id = %s", (ids["tenant_id"],))
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+
+
+def test_dc07_missing_membership_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    user_token = _user_token()
+    subject = ev.decode_unverified(user_token["access_token"])[1]["sub"]
+    ids = {**_seed(db, subject, memberships=False), "subject": subject, "user_token": user_token}
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+
+
+def test_dc07_cross_tenant_rejected(db: psycopg.Connection, postgres_spi: PostgresMtmfSpi) -> None:
+    ids = _world_for(db)
+    other_tenant = _uuid()
+    db.execute(
+        "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+        "VALUES (%s,'other',2,%s,1,2)",
+        (other_tenant, ids["identity_id"]),
+    )
+    ids["tenant_id"] = other_tenant
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+
+
+def test_dc07_inactive_application_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    db.execute("UPDATE mtmf.application SET lifecycle = 2 WHERE id = %s", (ids["application_id"],))
+    _expect(db, postgres_spi, ids, AuthenticationFailure.UNKNOWN_APPLICATION)
+
+
+def test_dc07_inactive_registration_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    db.execute(
+        "UPDATE mtmf.application_tenant_registration SET lifecycle = 2 WHERE application_id = %s",
+        (ids["application_id"],),
+    )
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+
+
+def test_dc07_inactive_subscription_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    db.execute(
+        "UPDATE mtmf.tenant_application_subscription SET lifecycle = 2 WHERE application_id = %s",
+        (ids["application_id"],),
+    )
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+
+
+def test_dc07_root_tenant_scope_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    db.execute("UPDATE mtmf.tenant SET scope = 0 WHERE id = %s", (ids["tenant_id"],))
+    _expect(db, postgres_spi, ids, AuthenticationFailure.INELIGIBLE_CONTEXT)
+
+
+def test_dc07_binding_revocation_freshness(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    service_token = _service_token()
+    composite = _compose(postgres_spi)
+    _resolve(composite, service_token, ids["user_token"], ids["tenant_id"])
+    db.execute(
+        "UPDATE mtmf.external_subject_identity SET lifecycle = 2 WHERE subject = %s",
+        (ids["subject"],),
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        _resolve(composite, service_token, ids["user_token"], ids["tenant_id"])
+    assert exc.value.failure is AuthenticationFailure.UNKNOWN_SUBJECT
+
+
+def test_dc07_bad_admin_credentials_fail_closed(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    bad = _config()
+    bad = IssuerConfig(
+        issuer=bad.issuer,
+        service_audience=bad.service_audience,
+        user_audience=bad.user_audience,
+        jwks_uri=bad.jwks_uri,
+        expected_manifest_path=bad.expected_manifest_path,
+        admin_base_url=bad.admin_base_url,
+        admin_realm=bad.admin_realm,
+        admin_username=bad.admin_username,
+        admin_password="definitely-wrong",
+        allow_shared_audience=True,
+    )
+    service_token = _service_token()
+    with pytest.raises(AuthenticationError) as exc:
+        _resolve(
+            build_actor_context_service(postgres_spi, bad),
+            service_token,
+            ids["user_token"],
+            ids["tenant_id"],
+        )
+    assert exc.value.failure is AuthenticationFailure.ATTESTATION_UNAVAILABLE
+
+
+def test_dc07_missing_manifest_fail_closed(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    bad = _config()
+    bad = IssuerConfig(
+        issuer=bad.issuer,
+        service_audience=bad.service_audience,
+        user_audience=bad.user_audience,
+        jwks_uri=bad.jwks_uri,
+        expected_manifest_path="/nonexistent/expected.json",
+        admin_base_url=bad.admin_base_url,
+        admin_realm=bad.admin_realm,
+        admin_username=bad.admin_username,
+        admin_password=bad.admin_password,
+        allow_shared_audience=True,
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        _resolve(
+            build_actor_context_service(postgres_spi, bad),
+            _service_token(),
+            ids["user_token"],
+            ids["tenant_id"],
+        )
+    assert exc.value.failure is AuthenticationFailure.ATTESTATION_UNAVAILABLE
+
+
+def test_dc07_wrong_audience_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    composite = _compose(
+        postgres_spi, service_audience="mtmf-service-api", user_audience=SHARED_AUDIENCE
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        _resolve(composite, _service_token(), ids["user_token"], ids["tenant_id"])
+    assert exc.value.failure is AuthenticationFailure.WRONG_AUDIENCE
+
+
+def test_dc07_modified_signature_rejected(
+    db: psycopg.Connection, postgres_spi: PostgresMtmfSpi
+) -> None:
+    ids = _world_for(db)
+    service_token = _service_token()
+    tampered = dict(service_token)
+    token = str(service_token["access_token"])
+    tampered["access_token"] = token[:-2] + ("AA" if token[-2:] != "AA" else "BB")
+    with pytest.raises(AuthenticationError) as exc:
+        _resolve(_compose(postgres_spi), tampered, ids["user_token"], ids["tenant_id"])
+    assert exc.value.failure is AuthenticationFailure.INVALID_TOKEN
+
+
+def test_dc07_postgres_outage_is_typed_infrastructure_failure(
+    db: psycopg.Connection, runtime_config: PostgresConfig
+) -> None:
+    ids = _world_for(db)
+    broken = PostgresConfig(
+        host="127.0.0.1",
+        port=1,
+        database=runtime_config.database,
+        user=runtime_config.user,
+        password=runtime_config.password,
+        role=PostgresRole.RUNTIME,
+    )
+    composite = _compose(PostgresMtmfSpi(broken))
+    with pytest.raises(AuthenticationError) as exc:
+        _resolve(composite, _service_token(), ids["user_token"], ids["tenant_id"])
+    assert exc.value.failure is AuthenticationFailure.INFRASTRUCTURE

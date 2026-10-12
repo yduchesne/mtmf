@@ -220,3 +220,27 @@ and [PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT3_ACCEPTANCE_MATRIX.md)
   Amendment #3 clean recreate; these remain unit/integration-covered only.
 - **Merge not recommended** pending the remaining live cases or an explicit
   reviewer exception.
+
+## 14. Amendment #4 final live acceptance status (2026-10-11)
+
+Status only; see [PR14_AMENDMENT4_ACCEPTANCE_REPORT.md](PR14_AMENDMENT4_ACCEPTANCE_REPORT.md)
+and [PR14_AMENDMENT4_ACCEPTANCE_MATRIX.md](PR14_AMENDMENT4_ACCEPTANCE_MATRIX.md).
+
+- The extended live harness executes **22 cases with zero skips** against pinned
+  Keycloak 26.8.0 and real PostgreSQL 18 through the shipped composition:
+  positive actor context, repeated resolution, inactive
+  identity/principal/tenant/application, missing membership, cross-Tenant,
+  inactive/missing registration and subscription, root Tenant scope, wrong
+  slot/class, cross-client, wrong audience, modified signature, bad admin
+  credential, missing manifest, PostgreSQL outage, revocation freshness, and
+  mapper drift/restore.
+- Clean `down -v` recreate reproduces the reviewed manifest hash `9e9bb847…`.
+- Gates: 61 auth unit, 11 binding integration, 22 live, 556 integration
+  (22 live skipped by default), 1418 QA at 88.28%, security 0, pre-commit pass,
+  77-signature runtime verifier pass.
+- AUTH-05/D1-09 disposition (no caller UUID path) and AUTH-06 live wrong-issuer
+  remain exceptions requiring reviewer acknowledgement; AUTH-26/27 remain
+  DEFERRED ROOT with root fail-closed. DC05-LOCAL-KEY PASS / DC05-ISSUER NOT
+  EXECUTED retained.
+- **Merge recommended for human review** for the development-only non-root
+  scope; production issuer, root and HTTP routes remain unimplemented.
