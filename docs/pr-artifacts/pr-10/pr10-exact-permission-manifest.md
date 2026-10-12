@@ -2,7 +2,7 @@
 
 **Status: PROPOSED / NOT APPROVED. Gate M remains CLOSED.** This document is a review artifact, **not** permission to execute a seed migration. Human approval must cover the exact rows and enforcement classifications below. Approval of the earlier *capability-level* tables in PR #36 is not approval of these executable rows.
 
-**Sources:** [Security Model](SECURITY_MODEL.md), [Built-in Access and Installation](PR10_BUILTIN_ACCESS_AND_INSTALLATION.md), [PR 10 Architecture Decisions](PR10_ARCHITECTURE_DECISIONS.md). This proposal was reconciled against current `main`'s `domain/action.py`, `domain/iam_urn.py`, `domain/role.py`, `domain/permission_set.py`, `domain/permission.py`, `application/effective_roles.py`, and `persistence/postgres/roles.py`.
+**Sources:** [Security Model](../../SECURITY_MODEL.md), [Built-in Access and Installation](pr10-builtin-access-and-installation.md), [PR 10 Architecture Decisions](pr10-architecture-decisions.md). This proposal was reconciled against current `main`'s `domain/action.py`, `domain/iam_urn.py`, `domain/role.py`, `domain/permission_set.py`, `domain/permission.py`, `application/effective_roles.py`, and `persistence/postgres/roles.py`.
 
 ## 1. Critical distinction: defined is not enforced
 
