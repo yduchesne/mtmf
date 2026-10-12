@@ -229,3 +229,60 @@ def test_equivalent_order_is_accepted(tmp_path: Path):
         reversed(reordered.clients[0]["protocolMappers"])
     )
     BaselineConfigurationAttestor(reordered, REALM, baseline).attest(PROFILE)
+
+
+def _two_client_reader() -> FakeReader:
+    return FakeReader(
+        clients=[
+            _client(id="uuid-a", clientId="client-a"),
+            _client(id="uuid-b", clientId="client-b"),
+        ],
+        scopes=[_scope()],
+        default_scopes={"uuid-a": ["service_account"], "uuid-b": ["service_account"]},
+    )
+
+
+def test_at03_unknown_extra_client_is_rejected(tmp_path: Path):
+    """A client the baseline does not approve makes the whole configuration drift."""
+    baseline = _baseline(tmp_path, canonical_manifest(_reader(), REALM))
+    extra = FakeReader(
+        clients=[
+            _client(),
+            _client(id="uuid-sample", clientId="mtmf-sample-app"),
+        ],
+        scopes=[_scope()],
+        default_scopes={"client-uuid-1": ["service_account"], "uuid-sample": []},
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        BaselineConfigurationAttestor(extra, REALM, baseline).attest(PROFILE)
+    assert exc.value.failure is AuthenticationFailure.ATTESTATION_DRIFT
+
+
+def test_at13_two_clients_are_independently_bound(tmp_path: Path):
+    """Mutating either approved client independently fails the whole attestation."""
+    baseline = _baseline(tmp_path, canonical_manifest(_two_client_reader(), REALM))
+    BaselineConfigurationAttestor(_two_client_reader(), REALM, baseline).attest(PROFILE)
+    drifted = _two_client_reader()
+    drifted.clients[1]["standardFlowEnabled"] = False
+    with pytest.raises(AuthenticationError) as exc:
+        BaselineConfigurationAttestor(drifted, REALM, baseline).attest(PROFILE)
+    assert exc.value.failure is AuthenticationFailure.ATTESTATION_DRIFT
+
+
+def test_at04_duplicate_client_identity_is_detected_as_drift(tmp_path: Path):
+    """A duplicated client record cannot match a single-entry baseline.
+
+    The current verifier has no explicit duplicate-id guard; it detects the
+    duplicate as a structural list difference. Explicit duplicate rejection is
+    a D2 design item, so this test only characterizes today's fail-closed
+    behaviour.
+    """
+    baseline = _baseline(tmp_path, canonical_manifest(_reader(), REALM))
+    duplicated = FakeReader(
+        clients=[_client(), _client()],
+        scopes=[_scope()],
+        default_scopes={"client-uuid-1": ["service_account"]},
+    )
+    with pytest.raises(AuthenticationError) as exc:
+        BaselineConfigurationAttestor(duplicated, REALM, baseline).attest(PROFILE)
+    assert exc.value.failure is AuthenticationFailure.ATTESTATION_DRIFT

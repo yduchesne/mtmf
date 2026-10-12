@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import ssl
+import subprocess
 import sys
 import threading
 import time
@@ -40,7 +41,7 @@ from mtmf_core.persistence.postgres import (
 )
 from mtmf_service.app import create_app
 from mtmf_service.authentication.config import IssuerConfig
-from mtmf_service.composition import build_authorization_service
+from mtmf_service.composition import build_authorization_service, build_readiness
 from mtmf_service.rate_limit import TokenBucketRateLimiter
 from mtmf_service.readiness import StaticReadiness
 from mtmf_service.settings import ServiceSettings
@@ -707,6 +708,89 @@ def test_v12_two_applications_have_isolated_bindings(
         (second_application,),
     ).fetchone()[0]
     assert bound == 0
+
+
+def _live_app_with_db_readiness(port: int) -> Any:
+    """A live app whose readiness performs a real PostgreSQL check."""
+    spi = PostgresMtmfSpi(PostgresConfig.from_env(PostgresRole.RUNTIME))
+    settings = ServiceSettings(evaluation_timeout_seconds=30)
+    authorization_service = build_authorization_service(
+        spi=spi, issuer_config=_issuer_config(), settings=settings
+    )
+    readiness = build_readiness(
+        spi=spi, initialization_complete=lambda: True, require_initialization=False
+    )
+    return create_app(
+        settings=settings,
+        authorization_service=authorization_service,
+        readiness=readiness,
+        rate_limiter=TokenBucketRateLimiter(per_minute=100000, burst=100000),
+    )
+
+
+def _wait_postgres_healthy(timeout: float = 60.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["podman", "inspect", "--format", "{{.State.Health.Status}}", "mtmf_postgres_1"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.stdout.strip() == "healthy":
+            return
+        time.sleep(2.0)
+    raise AssertionError("PostgreSQL did not return to healthy")
+
+
+def test_v08_live_database_outage_and_recovery(db: psycopg.Connection, live_server: Any) -> None:
+    """Real HTTP outage: 503 with no decisions, non-ready, then recovery."""
+    subject = ev.decode_unverified(_user_token())[1]["sub"]
+    ids = _seed(db, subject)
+    port = PORT + 3
+    base = f"http://127.0.0.1:{port}"
+    with _LiveServer(_live_app_with_db_readiness(port), port=port):
+        service, user = _service_token(), _user_token()
+        healthy = _post(
+            _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+            service=service,
+            user=user,
+            base_url=base,
+        )
+        assert healthy.status_code == 200, healthy.text
+        with httpx.Client(base_url=base, timeout=10) as client:
+            assert client.get("/health/ready").status_code == 200
+        subprocess.run(["podman", "stop", "mtmf_postgres_1"], check=True, capture_output=True)
+        try:
+            failed = _post(
+                _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+                service=service,
+                user=user,
+                base_url=base,
+            )
+            assert failed.status_code == 503, failed.text
+            assert failed.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+            assert "decisions" not in failed.text and "ALLOW" not in failed.text
+            with httpx.Client(base_url=base, timeout=10) as client:
+                assert client.get("/health/ready").status_code == 503
+        finally:
+            subprocess.run(["podman", "start", "mtmf_postgres_1"], check=True, capture_output=True)
+        _wait_postgres_healthy()
+        recovered = None
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            recovered = _post(
+                _body(ids["tenant_id"], ("r1", ALLOW_ACTION)),
+                service=_service_token(),
+                user=_user_token(),
+                base_url=base,
+            )
+            if recovered.status_code == 200:
+                break
+            time.sleep(3.0)
+        assert recovered is not None and recovered.status_code == 200, recovered.text
+        with httpx.Client(base_url=base, timeout=10) as client:
+            assert client.get("/health/ready").status_code == 200
 
 
 def test_request_model_round_trips() -> None:
