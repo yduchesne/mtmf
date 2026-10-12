@@ -2,7 +2,8 @@
 
 **Branch:** `dev/pr17-http-service`.
 **Base:** `4eea688`; prior head `5b9616a`.
-**Amendment #2 feature commit:** `__FILL_AFTER_COMMIT__`.
+**Amendment #2 feature commit:** `963c9ccedcd26f619b27cfebb1d4bd99c5893ea4`
+(all gates and the pre-commit hook ran on this tree).
 **Disposition: IMPLEMENTATION COMPLETE; ACCEPTANCE INCOMPLETE / STOPPED.**
 
 ## 1. Final gates (on the Amendment #2 tree)
@@ -66,7 +67,7 @@ docs/pr-artifacts/pr-17/pr17-amendment-2-*.md                     (this suite)
 
 ## 5. Final SHA and security/Rust gates
 
-- Amendment #2 feature commit: `__FILL_AFTER_COMMIT__`.
+- Amendment #2 feature commit: `963c9ccedcd26f619b27cfebb1d4bd99c5893ea4`.
 - Security: `./build.sh --sec` PASS (Bandit 0 Medium/High; Semgrep 0 findings).
 - Rust/native: `./build.sh --rust` run by the pre-commit hook on the committed
   tree (see commit log).
