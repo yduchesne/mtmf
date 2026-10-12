@@ -3,7 +3,7 @@
 **Artifact directory:** `docs/pr-artifacts/pr-17/`.
 **Branch:** `dev/pr17-http-service`.
 **Baseline commit:** `4eea688b12005b59aa8dbee9981f08551dcb7702`.
-**Final tree commit:** recorded in the PR branch head after the final gates (see §1).
+**Final gated feature commit:** `6a33352` (branch `dev/pr17-http-service`); all canonical gates below ran on that tree via the pre-commit hook and explicit invocations.
 **Disposition:** **implementation complete; NOT DONE / NOT MERGED.** The live
 Keycloak + real-ASGI end-to-end matrix (`V01`–`V16`) was **NOT EXECUTED**, and
 `NOT EXECUTED ≠ PASS` (plan §13.11). PR 17 may not be marked DONE until that
@@ -13,11 +13,11 @@ acceptance runs and a human reviewer authorizes disposition.
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Quality | `./build.sh --qa` | PASS — 1454 passed, 177 skipped; total coverage 89.5% (≥ 85%) |
+| Quality | `./build.sh --qa` | PASS — 1743 passed, 0 skipped (native module installed); total coverage 89.90% (≥ 85%) |
 | Security | `./build.sh --sec` | PASS — Bandit 0 Medium/High; Semgrep 0 findings |
 | Rust/native | `./build.sh --rust` | PASS — fmt/clippy/test, `maturin develop`, native probe, focused parity, wheel verification, benchmark smoke (characterization only) |
-| Integration | `./build.sh --integration` | PASS (with exported `.env`) — includes the new `test_pr17_dev_initializer.py`; the 22 skipped cases are the opt-in PR 14 live-Keycloak suite and are **not** acceptance PASS |
-| Pre-commit | `uv run --no-sync pre-commit run --all-files` | recorded in the PR log |
+| Integration | `./build.sh --integration` | PASS (with exported `.env`) — 559 passed, 22 skipped, including the new `test_pr17_dev_initializer.py`; the 22 skipped cases are the opt-in PR 14 live-Keycloak suite and are **not** acceptance PASS |
+| Pre-commit | `git commit` (hook: gitleaks + `--rust` + `--qa` + `--sec`) | PASS on commit `6a33352` |
 
 The 22 historical PR 14 live-Keycloak skips are explicitly **not** counted as
 acceptance. The required live issuer suite must be run separately with the
