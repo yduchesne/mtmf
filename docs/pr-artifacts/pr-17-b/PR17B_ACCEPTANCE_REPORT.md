@@ -2,8 +2,7 @@
 
 **PR:** PR 17-B — Development Keycloak user provisioning and verified MTMF identity binding
 **Base commit:** `b60c50b9b134a28d2a1199ce01abc608c7f319d3`
-**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7` (also the commit the pre-commit hooks ran the
-full gates against)
+**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7` (core) + `9e074fb09e92b1db37f96496f3f256ef49196e1a` (brokered-account hardening); final tip `9e074fb`
 **Branch:** `dev/pr17b-keycloak-user-provisioning`
 
 ## 1. Canonical gates (implementation commit)
@@ -92,7 +91,7 @@ matched its binding, confirming the flow is subject-agnostic.
 
 ## 5. Unit test matrix mapping
 
-`tests/unit/service/test_pr17b_development_user.py` (44 tests) and
+`tests/unit/service/test_pr17b_development_user.py` (45 tests) and
 `tests/unit/service/test_pr17b_initialize_script.py` (11 tests) implement the matrix:
 
 - U01 happy existing; U02 create-once; U03 matching assertion; U04 no mutation; U05 repeated;
@@ -100,7 +99,8 @@ matched its binding, confirming the flow is subject-agnostic.
 - U11 secret-file safety; U12 config validation; U13 HTTP/network redaction; U14 malformed/federated;
 - U17 exact-vs-fuzzy; U18 URL encoding; U19 conflict/timeout/uncertain; U20 partial create; U22 unreadable
   password on existing user; U23 migrations-only; U24/U26 Compose wiring; U25 secret redaction;
-- plus retry-delay and password-file edge coverage (oversize, NUL, non-UTF-8, CRLF, read error).
+- plus retry-delay, brokered-`origin` rejection, and password-file edge coverage (oversize, NUL, non-UTF-8,
+  CRLF, read error).
 
 U15/U16/U21/U27/U28 are exercised by the existing PR 17 integration/bootstrap tests and the production
 refusal/preflight tests; see `PR17B_IMPLEMENTATION_REPORT.md`.

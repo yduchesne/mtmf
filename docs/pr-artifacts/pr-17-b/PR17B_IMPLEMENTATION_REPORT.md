@@ -2,7 +2,7 @@
 
 **PR:** PR 17-B — Development Keycloak user provisioning and verified MTMF identity binding
 **Base commit:** `b60c50b9b134a28d2a1199ce01abc608c7f319d3`
-**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7`
+**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7` (core) + `9e074fb09e92b1db37f96496f3f256ef49196e1a` (brokered-account hardening); final tip `9e074fb09e92b1db37f96496f3f256ef49196e1a`
 **Branch:** `dev/pr17b-keycloak-user-provisioning`
 
 ## 1. Scope delivered
@@ -95,6 +95,9 @@ PostgreSQL transaction is held across remote calls. See
 - **D4 — Compose secret mount.** The initializer mounts `$MTMF_DEV_SECRET_DIR` (default
   `/tmp/mtmf-dev-secrets`, `0700` host directory) read-only at `/run/mtmf-secrets`; the default password
   path is `/run/mtmf-secrets/dev-user-password`. No plaintext password is written to Compose or `.env`.
+
+- **D5 — Reject brokered accounts.** The federated/managed rejection also fails closed when a user carries a
+  non-empty brokered identity `origin`, not only `federationLink`/`serviceAccountClientId`.
 
 ## 7. Regression preservation
 

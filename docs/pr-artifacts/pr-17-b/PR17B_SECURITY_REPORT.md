@@ -1,7 +1,7 @@
 # PR 17-B Security Report
 
 **PR:** PR 17-B — Development Keycloak user provisioning and verified MTMF identity binding
-**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7`
+**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7` (core) + `9e074fb09e92b1db37f96496f3f256ef49196e1a` (brokered-account hardening); final tip `9e074fb09e92b1db37f96496f3f256ef49196e1a`
 
 ## 1. Trust model
 
@@ -41,7 +41,7 @@ owner, or development-user password material.
 ## 4. Fail-closed negative coverage
 
 Unit: HTTP 401/403/404/5xx, network failure, malformed JSON, non-list/non-object payloads, missing ID,
-non-boolean `enabled`, invalid email type, federated/managed account, ambiguous lookup, fuzzy-only lookup,
+non-boolean `enabled`, invalid email type, federated/managed/brokered account, ambiguous lookup, fuzzy-only lookup,
 missing/empty/insecure/symlink/directory/oversized/NUL/non-UTF-8 password files, invalid boolean, blank
 username, control characters, uppercase username, invalid email, whitespace-only assertion, and uncertain
 POST outcomes (409/timeout/5xx).

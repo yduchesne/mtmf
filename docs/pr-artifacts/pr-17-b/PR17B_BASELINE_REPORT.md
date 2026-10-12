@@ -2,7 +2,7 @@
 
 **PR:** PR 17-B — Development Keycloak user provisioning and verified MTMF identity binding
 **Base commit:** `b60c50b9b134a28d2a1199ce01abc608c7f319d3` (`origin/main`, merge PR #51)
-**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7`
+**Implementation commit:** `362aae664c4f76a88c69ae25421249346b5591c7` (core) + `9e074fb09e92b1db37f96496f3f256ef49196e1a` (brokered-account hardening); final tip `9e074fb09e92b1db37f96496f3f256ef49196e1a`
 **Branch:** `dev/pr17b-keycloak-user-provisioning`
 **Date:** 2026-10-12
 **Author:** coding agent
