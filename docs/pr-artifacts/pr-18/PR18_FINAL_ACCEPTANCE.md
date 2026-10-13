@@ -12,12 +12,13 @@ was not executed and is recorded as NOT TESTED.
 | Quality | `./build.sh --qa` | PASS — Ruff format, Ruff lint, strict Mypy, **2275 passed**, coverage **91.34%** (gate ≥85%) |
 | Security | `./build.sh --sec` | PASS — Bandit 0 Medium/0 High; Semgrep 297 rules / 197 targets / 0 findings; exit 0 |
 | Rust/native | `./build.sh --rust` | PASS — cargo fmt/clippy/test, `maturin develop`, installed-native probe (`engine_version=0.1.0`), focused boundary/differential tests, clean wheel verification, benchmark smoke |
-| PostgreSQL integration | `./build.sh --integration` | PASS — **564 passed, 78 skipped** (includes the opt-in PR18/PR17 live modules, skipped) |
+| PostgreSQL integration | `./build.sh --integration` | PASS — **564 passed, 80 skipped** (includes the opt-in PR18/PR17 live modules, skipped) |
 | PR 18 real live slice | `MTMF_PR18_LIVE=1 pytest tests/integration/postgres/test_pr18_live_client.py` | PASS — **15 passed** on three consecutive clean runs (retries = 0) |
 
 Baseline for comparison (pre-implementation): 2153 passed, coverage 90.75%.
 The suite grew by the 122 parametrized `tests/unit/client` cases (74 test
-functions).
+functions). All gates above were re-run on the committed implementation tip
+(`afa568b3edb2fa6c09312a28a621e33be9b4b59b`).
 
 ## 2. Objective acceptance criteria (plan §16)
 

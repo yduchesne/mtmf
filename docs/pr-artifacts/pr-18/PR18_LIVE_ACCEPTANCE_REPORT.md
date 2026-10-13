@@ -27,7 +27,7 @@ live module is collected and skipped unless opted in):
 
 ```bash
 ./build.sh --integration
-# 564 passed, 78 skipped in 297.24s
+# 564 passed, 80 skipped in 276.87s
 ```
 
 Feature-specific PR 18 live slice (additional mandatory gate):
