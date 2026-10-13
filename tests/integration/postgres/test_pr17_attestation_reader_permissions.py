@@ -32,7 +32,7 @@ pytestmark = pytest.mark.skipif(
     reason="live reader-permission proof is opt-in (set MTMF_PR17_LIVE=1)",
 )
 
-REALM = "mtmf-pr14-dev"
+REALM = os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-dev")
 READER = "mtmf-attestation-reader"
 READER_SECRET = "mtmf-attestation-reader-dev-secret"
 

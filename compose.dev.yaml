@@ -1,4 +1,4 @@
-# MTMF-owned local development override (PR 17).
+# MTMF-owned local development override (PR 17 / PR 17-C).
 #
 # DEVELOPMENT ONLY. Never used for production. Always invoke with the
 # explicit MTMF project name:
@@ -8,9 +8,24 @@
 # Portable orchestration: `podman-compose 1.0.6` does not honor
 # `depends_on: condition: service_completed_successfully`, so the explicit
 # `scripts/mtmf-dev-stack.py` launcher waits for PostgreSQL/Keycloak health,
-# runs the privileged one-shot initializer, and only then starts the
-# unprivileged service and waits for readiness. The `depends_on` below is
-# startup ordering only and is not a correctness guarantee on this tooling.
+# probes the canonical issuer from the host and the container network, runs
+# the privileged one-shot initializer, and only then starts the unprivileged
+# service and waits for readiness. The `depends_on` below is startup ordering
+# only and is not a correctness guarantee on this tooling.
+#
+# Canonical issuer (PR 17-C)
+# --------------------------
+# The single canonical development authority is
+# `https://keycloak.mtmf.test:28443/realms/mtmf-dev`. It is the identical
+# string in discovery `issuer`, token `iss`, `MTMF_AUTH_ISSUER` and
+# `MTMF_AUTH_JWKS_URI`. Keycloak keeps its internal HTTPS listener on 8443; a
+# tiny, non-privileged, MTMF-owned TCP forwarder (`forwarder`) listens on the
+# canonical port 28443 inside the isolated network and forwards bytes without
+# terminating TLS. Containers resolve `keycloak.mtmf.test` through the MTMF
+# network alias; the Windows browser and WSL host resolve it to loopback and
+# reach the loopback-published Keycloak port. TLS, hostname/SAN and issuer
+# validation remain intact end to end; there is no second issuer and no host
+# networking.
 #
 # Resource ownership: every resource belongs to the explicit `mtmf`
 # project. MTMF tooling never discovers, mutates, or prunes resources owned
@@ -33,26 +48,70 @@ services:
       - start-dev
       - --http-port=8080
       - --https-port=8443
-      - --hostname-strict=false
+      - --hostname=https://keycloak.mtmf.test:28443
+      - --hostname-strict=true
+      - --hostname-backchannel-dynamic=false
       - --health-enabled=true
+      - --https-certificate-file=/opt/keycloak/conf/tls/server.crt
+      - --https-certificate-key-file=/opt/keycloak/conf/tls/server.key
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD:?set MTMF_PR14_KC_ADMIN_PASSWORD}
+      # Canonical development-only master-realm administrator (PR 17-C Fixup 2).
+      # On a fresh volume Keycloak creates `mtmf-admin`; on an existing volume the
+      # bootstrap variables do not rename/reset users and an explicit Admin REST
+      # migration is required (see docs/DEVELOPMENT_SETUP.md).
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_DEV_KC_ADMIN_USERNAME:-mtmf-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_DEV_KC_ADMIN_PASSWORD:?set MTMF_DEV_KC_ADMIN_PASSWORD}
       KC_HTTP_ENABLED: "true"
       KC_HTTPS_ENABLED: "true"
-      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT: "true"
     ports:
       - "127.0.0.1:${MTMF_PR14_KC_HTTP_PORT:-28080}:8080"
       - "127.0.0.1:${MTMF_PR14_KC_HTTPS_PORT:-28443}:8443"
     volumes:
       - mtmf-dev-keycloak-data:/opt/keycloak/data
-      - ${MTMF_PR14_KC_TLS_DIR:-/tmp/mtmf-pr14-kc-tls}:/opt/keycloak/conf/tls:ro
+      # Individual public/leaf files only: the CA private key is never mounted
+      # into any container. The leaf key is owner-mapped to the Keycloak
+      # container UID by `scripts/mtmf-dev-certs.py harden`.
+      - ${MTMF_DEV_CA_DIR:-/tmp/mtmf-dev-ca}/server.crt:/opt/keycloak/conf/tls/server.crt:ro
+      - ${MTMF_DEV_CA_DIR:-/tmp/mtmf-dev-ca}/server.key:/opt/keycloak/conf/tls/server.key:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
       interval: 5s
       timeout: 5s
       retries: 30
       start_period: 20s
+
+  # MTMF-owned internal TLS TCP forwarder. Listens on the canonical port
+  # 28443 inside the isolated `mtmf` network and forwards to Keycloak's
+  # internal 8443 without terminating TLS or exposing a second issuer. It is
+  # non-privileged, never host-published, and serves the `keycloak.mtmf.test`
+  # network alias for the initializer and service containers.
+  forwarder:
+    image: docker.io/library/python:3.14-slim
+    command: ["python", "/app/mtmf-dev-forwarder.py"]
+    environment:
+      MTMF_DEV_FORWARDER_LISTEN_HOST: 0.0.0.0
+      MTMF_DEV_FORWARDER_PORT: "28443"
+      MTMF_DEV_FORWARDER_TARGET_HOST: keycloak
+      MTMF_DEV_FORWARDER_TARGET_PORT: "8443"
+      PYTHONDONTWRITEBYTECODE: "1"
+    networks:
+      default:
+        aliases:
+          - keycloak.mtmf.test
+    volumes:
+      - ./scripts/mtmf-dev-forwarder.py:/app/mtmf-dev-forwarder.py:ro
+      - ./scripts/mtmf-dev-probe.py:/app/mtmf-dev-probe.py:ro
+      - ${MTMF_DEV_CA_DIR:-/tmp/mtmf-dev-ca}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('127.0.0.1', 28443), 2).close()\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
 
   initializer:
     build:
@@ -67,15 +126,18 @@ services:
       MTMF_AUTH_ISSUER: ${MTMF_AUTH_ISSUER:?set MTMF_AUTH_ISSUER}
       MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
       MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
-      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-pr14-dev}
-      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://127.0.0.1:28443}
-      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:?set attestation reader username}
-      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set attestation reader password}
-      MTMF_PR14_KC_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
-      MTMF_PR14_KC_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD:?set admin password}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://keycloak.mtmf.test:28443}
+      # The initializer's Admin REST client uses the SAME canonical development
+      # administrator identity/credential as the Keycloak bootstrap above; it is
+      # never a separate master-admin login. The launcher enforces this.
+      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:-mtmf-admin}
+      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set MTMF_AUTH_ADMIN_PASSWORD}
       MTMF_DEV_APPLICATION_KEYS: ${MTMF_DEV_APPLICATION_KEYS:-sample-app}
       MTMF_DEV_TENANT_KEY: ${MTMF_DEV_TENANT_KEY:-dev}
       MTMF_DEV_TENANT_NAME: ${MTMF_DEV_TENANT_NAME:-Development Tenant}
+      # Trust the MTMF development CA only (public certificate, read-only).
+      SSL_CERT_FILE: /certs/mtmf-ca.crt
       # PR 17-B development user create-or-verify. The username is required
       # and creation is opt-in (default false). The password file is a
       # read-only container path backed by the restricted host secret mount
@@ -93,10 +155,20 @@ services:
       # application's resources; the initializer validates the password
       # file's type, ownership and mode before reading it.
       - ${MTMF_DEV_SECRET_DIR:-/tmp/mtmf-dev-secrets}:/run/mtmf-secrets:ro
+      # Public development CA certificate only; the private keys stay on the
+      # host and are never mounted.
+      - ${MTMF_DEV_CA_DIR:-/tmp/mtmf-dev-ca}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+      # Resolver override: DNS (the MTMF network alias) is authoritative over
+      # the host `/etc/hosts` entry Podman copies into the container, so
+      # `keycloak.mtmf.test` resolves to the current forwarder without baking a
+      # dynamic IP into the Compose model (PR 17-C Amendment 2).
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
     depends_on:
       postgres:
         condition: service_healthy
       keycloak:
+        condition: service_healthy
+      forwarder:
         condition: service_healthy
     restart: "no"
 
@@ -122,13 +194,21 @@ services:
       MTMF_AUTH_JWKS_URI: ${MTMF_AUTH_JWKS_URI:?set JWKS URI}
       MTMF_AUTH_EXPECTED_MANIFEST: ${MTMF_AUTH_EXPECTED_MANIFEST:-dev/keycloak/expected-realm-security.json}
       MTMF_AUTH_EXPECTED_CLIENT_POLICY: ${MTMF_AUTH_EXPECTED_CLIENT_POLICY:-dev/keycloak/expected-client-policy.json}
-      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-pr14-dev}
-      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://127.0.0.1:28443}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://keycloak.mtmf.test:28443}
+      # Trust the MTMF development CA only (public certificate, read-only).
+      SSL_CERT_FILE: /certs/mtmf-ca.crt
       # Dedicated least-privilege client-credentials reader; no admin password.
       # Prefer MTMF_AUTH_ATTESTATION_CLIENT_SECRET_FILE with a mounted secret;
       # the plain variable is the documented development placeholder.
       MTMF_AUTH_ATTESTATION_CLIENT_ID: ${MTMF_AUTH_ATTESTATION_CLIENT_ID:?set attestation reader client id}
       MTMF_AUTH_ATTESTATION_CLIENT_SECRET: ${MTMF_AUTH_ATTESTATION_CLIENT_SECRET:?set attestation reader client secret}
+    volumes:
+      # Public development CA certificate only.
+      - ${MTMF_DEV_CA_DIR:-/tmp/mtmf-dev-ca}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+      # Resolver override mirroring the initializer: DNS wins, so the canonical
+      # name resolves to the current forwarder without a dynamic Compose input.
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
     ports:
       - "127.0.0.1:28001:28001"
     depends_on:

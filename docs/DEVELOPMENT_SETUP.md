@@ -22,6 +22,273 @@ A **Tenant** represents a customer. An **Application** represents a product such
 
 With `scripts/mtmf-dev-stack.py`, these steps are ordered automatically: `keycloak -> initializer -> HTTP service`. The initializer is a one-shot container that exits before the unprivileged service starts; the service is not declared ready unless the initializer exited successfully.
 
+## Canonical issuer and development networking (PR 17-C)
+
+The standard development stack uses **one canonical Keycloak authority**:
+
+| Item | Canonical value |
+| --- | --- |
+| Keycloak hostname | `keycloak.mtmf.test` |
+| Public issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-dev` |
+| JWKS URI | `https://keycloak.mtmf.test:28443/realms/mtmf-dev/protocol/openid-connect/certs` |
+| Keycloak admin base | `https://keycloak.mtmf.test:28443` |
+| Keycloak internal HTTPS | `8443` (unchanged) |
+
+A **single authority is not the same as a single IP address**. DNS may resolve the
+hostname differently in each namespace, provided the TLS endpoint, hostname and
+issuer are identical everywhere:
+
+- **Windows browser / WSL2 host** resolve `keycloak.mtmf.test` to `127.0.0.1`
+  through an operator-managed `hosts` entry and reach the loopback-published
+  Keycloak `28443` port.
+- **MTMF containers** resolve `keycloak.mtmf.test` through the MTMF-owned
+  `forwarder` network alias. The forwarder is non-privileged, never
+  host-published, and forwards bytes on the canonical port `28443` to
+  Keycloak's internal `8443` **without terminating TLS**, so certificate,
+  hostname/SAN and issuer validation remain intact and no second issuer exists.
+
+### Operator host mapping
+
+Add the mapping once on **both** the Windows host and the WSL2 Ubuntu host
+(administrator/root only for the `hosts` edit):
+
+```text
+127.0.0.1 keycloak.mtmf.test
+```
+
+- Windows: `C:\Windows\System32\drivers\etc\hosts`.
+- WSL2 Ubuntu: `/etc/hosts`. WSL regenerates `/etc/hosts` on some restarts; if
+  the entry disappears, re-add it (or configure a WSL `hosts` generator) rather
+  than exposing ports on all interfaces.
+
+Do **not** copy the WSL `/etc/hosts` into containers. Containers use the MTMF
+network alias, not host loopback.
+
+### Local development CA and TLS trust
+
+Generate the disposable development CA and the `keycloak.mtmf.test` leaf
+(private keys stay uncommitted and are never mounted into the runtime):
+
+```bash
+uv run --no-sync python scripts/mtmf-dev-certs.py generate
+uv run --no-sync python scripts/mtmf-dev-certs.py harden   # owner-map the leaf key to the Keycloak container UID
+uv run --no-sync python scripts/mtmf-dev-certs.py check
+```
+
+`harden` fails closed rather than making the leaf key world-readable; if Podman
+cannot map the key to the Keycloak container UID, stop and fix the user
+namespace mapping. Import the **public** `$(MTMF_DEV_CA_DIR)/dev-ca.crt`
+(default `/tmp/mtmf-dev-ca/dev-ca.crt`) into the Windows trusted root store
+(operator-controlled) and into the WSL trust store so the browser and host-side
+checks verify TLS. Only the public CA certificate is mounted into the
+initializer and service at `/certs/mtmf-ca.crt`.
+
+Certificate generation is **idempotent only for a complete, validated set**.
+The four authoritative components are `dev-ca.key`, `dev-ca.crt`, `server.key`,
+and `server.crt`. `generate` classifies the directory and fails closed without
+generating or deleting anything when the state is:
+
+- **partial** (1–3 components present, e.g. after an interrupted operation), or
+- **non-regular** (a managed path is a symlink, directory, or device), or
+- **complete but invalid** (bad SAN, broken chain, mismatched CA/leaf key pair,
+  or group/other-accessible private key).
+
+`dev-ca.srl` is serial bookkeeping and is ignored for classification; a stale
+serial on an otherwise empty directory is removed before a fresh CA is created
+and can never associate a new CA with an old certificate.
+
+Recover a partial or invalid directory deliberately, with the stack stopped:
+
+```bash
+uv run --no-sync python scripts/mtmf-dev-stack.py down           # stop first; volumes preserved
+uv run --no-sync python scripts/mtmf-dev-certs.py generate --rotate
+uv run --no-sync python scripts/mtmf-dev-stack.py up
+```
+
+`--rotate` is destructive (it removes the previous CA and leaf before creating
+a replacement) and must only be run while the stack is stopped. If a rotation
+is interrupted, the directory is partial and the next normal `generate`/`up`
+fails closed until the operator completes an explicit rotation. Regenerating
+the material or changing the hostname requires refreshing the Windows/WSL trust
+stores; the canonical SAN must always agree with the canonical hostname.
+
+`MTMF_AUTH_ISSUER` must equal the exact canonical issuer
+`https://keycloak.mtmf.test:28443/realms/mtmf-dev`. Any other host, port,
+scheme, realm, trailing slash, query, fragment, or userinfo is rejected before
+certificate generation, Compose startup, or database rewriting.
+
+### Start, verify and stop
+
+```bash
+set -a && . ./.env && set +a
+uv run python scripts/mtmf-dev-stack.py up          # canonical, isolated Compose path (no host networking)
+uv run python scripts/mtmf-dev-stack.py preflight   # re-run host + container issuer preflight only
+uv run python scripts/mtmf-dev-stack.py status
+uv run python scripts/mtmf-dev-stack.py down         # stop; volumes/data preserved
+```
+
+The launcher prepares the certificate material, starts PostgreSQL, Keycloak and
+the forwarder, waits for real health, proves the canonical issuer from **both**
+the host and container namespaces, runs the privileged initializer exactly
+once, then starts the restricted service and waits for
+`http://127.0.0.1:28001/health/ready`. `up` refuses a non-canonical
+`MTMF_AUTH_ISSUER` with literal string equality (no substring/prefix acceptance).
+
+**Stable lifecycle (PR 17-C Amendment 2).** The Compose model contains no
+dynamic container address, so the configuration hash is invariant across the
+phases of one `up` and across repeated `up` runs. Once PostgreSQL, Keycloak and
+the forwarder have started, a normal `up` does not recreate or restart them:
+repeated `up` preserves the same container IDs and `State.StartedAt`
+timestamps. The initializer remains intentionally rerunnable.
+
+Containers resolve `keycloak.mtmf.test` through `dev/nsswitch.conf`, a static
+resolver override mounted at `/etc/nsswitch.conf` that makes MTMF DNS
+authoritative over the host `/etc/hosts` entry Podman copies into the
+container. This keeps the canonical name pointing at the current forwarder
+without baking any IP into the Compose configuration. Do not add
+`MTMF_DEV_FORWARDER_IP`-style dynamic values to `compose.dev.yaml`.
+
+The realm and approved clients are still a one-time operator prerequisite (see
+the [Keycloak development fixture](../dev/keycloak/README.md)); they persist in
+the `mtmf-dev-keycloak-data` volume across restarts.
+
+### Diagnostics and recovery
+
+- **`does not resolve`** — add the operator `hosts` mapping on the reported
+  namespace and re-run `preflight`.
+- **TLS/CA failure** — the `dev-ca.crt` is not trusted (import it) or the leaf
+  was regenerated (refresh trust). The tooling never falls back to an insecure
+  or unverified connection.
+- **`discovery issuer mismatch`** — the live Keycloak hostname does not equal
+  the configured trust anchor; fix the Keycloak hostname or the MTMF issuer,
+  never rewrite the issuer.
+- **`JWKS ... contains no signing keys`** — the realm is missing or not
+  configured; restore the realm before restarting.
+- **`refusing to remove ...`** — MTMF ownership labels do not match; the
+  resource is foreign and is never removed.
+- **Container probe times out** — the forwarder resolves `keycloak` once with a
+  bounded (default 2 s, `MTMF_DEV_FORWARDER_RESOLVE_TIMEOUT`) deadline, caches the
+  address, and re-resolves on a failed connect, so it no longer issues an
+  unbounded DNS search query per request; `preflight`/`up` also retain a bounded
+  probe retry as defense in depth. A persistent failure indicates a real problem
+  with the `forwarder` container or the network, not a normal transient. This
+  does **not** indicate Compose recreation and does not require restarting
+  Keycloak.
+
+`up-host-network` remains a documented development fallback; it is no longer
+the normal path.
+
+## Canonical development Keycloak administrator (`mtmf-admin`)
+
+The standard development stack uses **one** canonical Keycloak master-realm
+administrator, `mtmf-admin`. It is strictly a development bootstrap/operator
+identity and is distinct from every other actor:
+
+| Concept | Value |
+| --- | --- |
+| Canonical development master-realm administrator | `mtmf-admin` (Keycloak `master` realm) |
+| Development end user | `MTMF_DEV_USER_USERNAME` (e.g. `ati-admin`) in realm `mtmf-dev` |
+| Keycloak development realm | `mtmf-dev` |
+| MTMF root identity | the protected canonical root Principal/Identity (not a Keycloak admin) |
+| Read-only service attestation credential | least-privilege client `mtmf-attestation-reader` (no admin password) |
+
+Configuration:
+
+- `MTMF_DEV_KC_ADMIN_USERNAME` — defaults to `mtmf-admin`. The launcher rejects
+  an explicit empty/whitespace/uppercase value or a PR-numbered legacy name
+  (`mtmf-pr14-admin`, `mtmf-pr14-admin2`) **before** certificates, Compose or
+  database writes.
+- `MTMF_DEV_KC_ADMIN_PASSWORD` — required at runtime; supplied from a password
+  manager/approved store, never committed. Environment-variable exposure is a
+  development-only limitation.
+- `MTMF_AUTH_ADMIN_USERNAME` / `MTMF_AUTH_ADMIN_PASSWORD` — the privileged
+  one-shot initializer's Admin REST credential. It must refer to the **same**
+  `mtmf-admin` account and credential; the launcher enforces this.
+
+### Fresh volume vs existing volume
+
+- **Fresh volume:** the Keycloak bootstrap creates `mtmf-admin` from
+  `MTMF_DEV_KC_ADMIN_PASSWORD`. Nothing else is required.
+- **Existing volume:** bootstrap variables **do not** rename or reset existing
+  users. Run the explicit, operator-supervised, development-only migration:
+
+```bash
+# Read-only inspection (default)
+uv run python scripts/mtmf-dev-admin-migrate.py --inspect
+# Explicit migration: create/verify mtmf-admin, then disable (not delete) the
+# legacy PR-numbered administrators after independent verification.
+MTMF_DEV_KC_ADMIN_PASSWORD="$MTMF_DEV_KC_ADMIN_PASSWORD" \
+MTMF_DEV_KC_RECOVERY_PASSWORD="$MTMF_DEV_KC_RECOVERY_PASSWORD" \
+  uv run python scripts/mtmf-dev-admin-migrate.py --apply
+```
+
+Passwords are read only from the environment or an owner-only
+`MTMF_DEV_KC_*_PASSWORD_FILE`; they are never passed on the command line,
+printed, or committed. The migration never resets an existing account's
+password and never disables the last verified enabled administrator. If the
+recovery credential is unavailable, `mtmf-admin` cannot be independently
+verified, an account is federated/has required actions/has unexpected roles, or
+an outcome is ambiguous, the tool **stops** without further mutation.
+
+**Credential custody and rollback:** keep the `mtmf-admin` credential in a
+password manager/approved secret store (not `/tmp`). The operational rollback
+for a failed migration is to re-enable a legacy administrator **only while an
+independently verified administrator is still working**; there is no password
+recovery for a disabled account, so re-enable it before losing access.
+
+## Canonical development realm (`mtmf-dev`) and clean reset
+
+The standard development stack uses one realm, `mtmf-dev`; the canonical issuer
+is `https://keycloak.mtmf.test:28443/realms/mtmf-dev`. The separate PR 14
+evidence-only fixture (`dev/keycloak/`) intentionally remains on
+`mtmf-pr14-dev` and is not part of the standard stack. The launcher enforces the
+exact issuer, JWKS endpoint, and realm before any side effect.
+
+### Provisioning the realm (one-time operator prerequisite)
+
+The launcher does not create the realm. On a fresh or reset environment,
+provision `mtmf-dev` and its approved clients **before** `up`, explicitly
+passing the realm:
+
+```bash
+uv run --no-sync python dev/keycloak/setup-realm.py \
+  --base https://keycloak.mtmf.test:28443 \
+  --realm mtmf-dev \
+  --ca-file "$MTMF_PR14_KC_CA_FILE" \
+  --allow-nonlocal
+```
+
+Then `up` runs the privileged initializer, which fails closed unless the
+issuer's realm segment is exactly `mtmf-dev`.
+
+### Existing-volume STOP and explicit clean reset
+
+A persistent volume created for the old `mtmf-pr14-dev` realm is **not** migrated
+automatically. After this change, a standard `up` against such a volume fails
+closed with an actionable error; it never auto-creates `mtmf-dev`, repoints
+existing identity bindings, or resets accounts.
+
+Converting an existing development environment is a destructive,
+explicitly operator-approved clean reset. It is **not** performed by the tooling
+and must never be automated. Consequences: Keycloak user `sub` values, client
+secrets, and MTMF identity bindings all change, and existing development data is
+discarded.
+
+Operator procedure (MTMF-only):
+
+1. Confirm you may permanently discard the current MTMF development Keycloak and
+   PostgreSQL state.
+2. Record the standard `mtmf` Compose project's exact containers and volumes;
+   keep the separate `mtmf-pr14-keycloak` evidence volume.
+3. `uv run python scripts/mtmf-dev-stack.py down` (preserves volumes).
+4. Remove only the explicitly confirmed standard-stack volumes
+   (`mtmf-dev-keycloak-data`, `mtmf_mtmf-postgres-data`). Do not remove
+   `mtmf-pr14-keycloak-data` or host CA material.
+5. Prepare a new securely held `mtmf-admin` credential outside `/tmp`.
+6. Start the clean stack, provision `mtmf-dev` (above), and run `up`.
+7. Verify discovery `issuer`, `jwks_uri`, and token `iss` are exactly the
+   canonical `mtmf-dev` values; no old-issuer token is accepted.
+
 ## Development user configuration
 
 The development one-shot reads the following variables. They are **not** part of the runtime `ServiceSettings`, so the long-running HTTP service never receives them.

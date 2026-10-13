@@ -642,8 +642,22 @@ def _dev_fixture(subject: str) -> BootstrapFixture:
         issuer=os.environ.get("MTMF_AUTH_ISSUER", "").rstrip("/"),
         service_audience=os.environ.get("MTMF_AUTH_SERVICE_AUDIENCE", ""),
         user_audience=os.environ.get("MTMF_AUTH_USER_AUDIENCE", ""),
-        realm=os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-pr14-dev"),
+        realm=os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-dev"),
     )
+
+
+def _require_realm_matches_issuer(issuer: str, realm: str) -> None:
+    """Fail closed unless the configured realm is the issuer's realm segment.
+
+    The issuer path must be exactly ``/realms/<realm>`` (no suffix/prefix
+    matching), so a mismatched realm cannot be silently used for Keycloak Admin
+    REST or MTMF identity provisioning.
+    """
+    parsed = urllib.parse.urlsplit(issuer)
+    if parsed.path != f"/realms/{realm}":
+        raise BootstrapError(
+            "the configured development realm does not match the issuer's realm segment"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -665,15 +679,22 @@ def main(argv: list[str] | None = None) -> int:
         provisioner.apply_migrations_and_verify()
         print("migrations applied and runtime privileges verified")
         return 0
+    issuer = os.environ.get("MTMF_AUTH_ISSUER", "").rstrip("/")
+    realm = os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-dev")
+    try:
+        _require_realm_matches_issuer(issuer, realm)
+    except BootstrapError as exc:
+        print(f"initialization failed: {exc}", file=sys.stderr)
+        return 1
     credentials = KeycloakCredentialProvisioner(
         base_url=os.environ.get("MTMF_AUTH_ADMIN_BASE", "").rstrip("/"),
-        realm=os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-pr14-dev"),
+        realm=realm,
         admin_username=os.environ.get("MTMF_AUTH_ADMIN_USERNAME", ""),
         admin_password=os.environ.get("MTMF_AUTH_ADMIN_PASSWORD", ""),
     )
     try:
         config = DevUserConfig.from_env()
-        credentials.preflight_issuer(os.environ.get("MTMF_AUTH_ISSUER", "").rstrip("/"))
+        credentials.preflight_issuer(issuer)
         subject = KeycloakDevUserProvisioner(
             credentials, credentials.realm, admin_base_url=credentials.base_url
         ).ensure_user(config)

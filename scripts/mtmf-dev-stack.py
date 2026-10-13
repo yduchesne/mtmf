@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable MTMF development stack orchestration (PR 17 Amendment #1, G3).
+"""Portable MTMF development stack orchestration (PR 17 Amendment #1, G3; PR 17-C).
 
 `podman-compose 1.0.6` does not honor
 `depends_on: condition: service_completed_successfully`, so it cannot order
@@ -7,7 +7,9 @@ the privileged one-shot initializer before the unprivileged HTTP service.
 This development-only wrapper performs that ordering explicitly and fails
 closed at every step:
 
-    postgres + keycloak up  ->  wait for health
+    prepare canonical CA/leaf (owner-map the key)
+    ->  postgres + keycloak + forwarder up  ->  wait for health
+    ->  preflight the canonical issuer from host AND container namespaces
     ->  migrations + privilege postflight + one-shot initializer
     ->  unprivileged service up  ->  wait for readiness 200
 
@@ -18,6 +20,7 @@ HTTP service environment never receives them (see `compose.dev.yaml`).
 
 Usage:
     python scripts/mtmf-dev-stack.py up
+    python scripts/mtmf-dev-stack.py preflight
     python scripts/mtmf-dev-stack.py status
     python scripts/mtmf-dev-stack.py down
 """
@@ -31,7 +34,9 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -40,15 +45,76 @@ COMPOSE_FILES = ("-f", "compose.yaml", "-f", "compose.dev.yaml")
 SERVICE_READY_URL = "http://127.0.0.1:28001/health/ready"
 SERVICE_LIVE_URL = "http://127.0.0.1:28001/health/live"
 
+#: Canonical development issuer authority (PR 17-C). The same hostname/port
+#: appears in discovery `issuer`, token `iss`, `MTMF_AUTH_ISSUER` and the JWKS
+#: URI; containers resolve it through the MTMF-owned forwarder network alias
+#: (made authoritative over the copied host `/etc/hosts` by `dev/nsswitch.conf`).
+CANONICAL_KC_HOSTNAME = "keycloak.mtmf.test"
+CANONICAL_KC_PORT = 28443
+#: Exact canonical issuer. `MTMF_AUTH_ISSUER` must equal this literal string;
+#: any other host/port/scheme/path (including ones containing the canonical
+#: hostname as a substring) is rejected before any mutating action.
+CANONICAL_KC_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
+#: Canonical development realm and JWKS endpoint (PR 17-C Fixup 3).
+CANONICAL_KC_REALM = "mtmf-dev"
+CANONICAL_KC_JWKS_URI = CANONICAL_KC_ISSUER + "/protocol/openid-connect/certs"
+#: Canonical development-only Keycloak master-realm administrator (PR 17-C
+#: Fixup 2). PR-numbered legacy administrators are never accepted as the
+#: active standard-stack bootstrap identity.
+CANONICAL_DEV_ADMIN_USERNAME = "mtmf-admin"
+LEGACY_DEV_ADMIN_USERNAMES = frozenset({"mtmf-pr14-admin", "mtmf-pr14-admin2"})
+CA_CERT_IN_CONTAINER = "/certs/mtmf-ca.crt"
+CERT_SCRIPT = REPO_ROOT / "scripts" / "mtmf-dev-certs.py"
+PROBE_SCRIPT = REPO_ROOT / "scripts" / "mtmf-dev-probe.py"
+#: Static resolver override mounted into the probe container and the Compose
+#: initializer/service. It makes DNS authoritative over the copied host
+#: `/etc/hosts`, so the canonical name resolves to the current forwarder
+#: without any dynamic IP entering the Compose model (Amendment 2).
+NSSWITCH_FILE = REPO_ROOT / "dev" / "nsswitch.conf"
+
 
 class OrchestrationError(RuntimeError):
     """The development stack could not be brought up safely."""
 
 
+def _secret_values() -> list[str]:
+    """Return bounded secret values to redact from subprocess output.
+
+    ``podman-compose`` echoes the fully substituted ``podman run`` command,
+    including environment values, so every captured subprocess output is
+    redacted before it is printed. Secrets come from the launcher's own
+    environment and are never written to disk.
+    """
+    values: list[str] = []
+    for name, value in os.environ.items():
+        if not value or len(value) < 4:
+            continue
+        upper = name.upper()
+        if any(hint in upper for hint in ("PASSWORD", "SECRET", "TOKEN")) or upper.endswith(
+            "DATABASE_URL"
+        ):
+            values.append(value)
+    # Longest first so a shorter secret cannot leave a longer one partially visible.
+    return sorted(set(values), key=len, reverse=True)
+
+
+def _redact(text: str) -> str:
+    """Replace any known secret value in ``text`` with a redaction marker."""
+    for value in _secret_values():
+        text = text.replace(value, "<redacted>")
+    return text
+
+
 def _run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run a command, echoing it without environment values."""
+    """Run a command, capturing and redacting its output before printing."""
     print(f"+ {' '.join(args)}", flush=True)
-    return subprocess.run(args, cwd=REPO_ROOT, check=check, text=True)
+    result = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True)
+    combined = _redact((result.stdout or "") + (result.stderr or ""))
+    if combined.strip():
+        print(combined.rstrip(), flush=True)
+    if check and result.returncode != 0:
+        raise OrchestrationError(f"command failed with exit {result.returncode}: {' '.join(args)}")
+    return result
 
 
 def _compose(*args: str) -> list[str]:
@@ -90,6 +156,222 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _exact_env(name: str) -> str:
+    """Return an environment value without silently stripping whitespace.
+
+    Missing/empty values and values with leading/trailing whitespace fail
+    closed; the raw value is compared exactly by the caller.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        raise OrchestrationError(f"required environment {name} is not set")
+    if raw != raw.strip():
+        raise OrchestrationError(f"{name} must not contain leading or trailing whitespace")
+    return raw
+
+
+def _require_canonical_issuer() -> str:
+    """Require the exact canonical issuer, JWKS endpoint, and realm.
+
+    Called before certificate generation, Compose startup, Podman inspection,
+    database-URL rewriting, or any other side effect. The untrusted supplied
+    values are never echoed. All three environment contracts must match exactly;
+    there is no alternate issuer or dual-realm compatibility.
+    """
+    issuer = _exact_env("MTMF_AUTH_ISSUER")
+    if issuer != CANONICAL_KC_ISSUER:
+        raise OrchestrationError(
+            "MTMF_AUTH_ISSUER must exactly equal the canonical development issuer "
+            f"{CANONICAL_KC_ISSUER} (rejected the supplied value)"
+        )
+    realm = _exact_env("MTMF_AUTH_ADMIN_REALM")
+    if realm != CANONICAL_KC_REALM:
+        raise OrchestrationError(
+            "MTMF_AUTH_ADMIN_REALM must exactly equal the canonical development realm "
+            f"{CANONICAL_KC_REALM} (rejected the supplied value)"
+        )
+    jwks_uri = _exact_env("MTMF_AUTH_JWKS_URI")
+    if jwks_uri != CANONICAL_KC_JWKS_URI:
+        raise OrchestrationError(
+            "MTMF_AUTH_JWKS_URI must exactly equal the canonical development JWKS "
+            f"endpoint {CANONICAL_KC_JWKS_URI} (rejected the supplied value)"
+        )
+    return issuer
+
+
+def _canonical_dev_admin_username() -> str:
+    """Return the canonical dev admin username or fail closed.
+
+    Unset defaults to ``mtmf-admin``; an explicit empty/whitespace/uppercase or
+    PR-numbered legacy value is rejected before any side effect.
+    """
+    raw = os.environ.get("MTMF_DEV_KC_ADMIN_USERNAME")
+    if raw is None:
+        return CANONICAL_DEV_ADMIN_USERNAME
+    if raw == "" or any(character.isspace() for character in raw):
+        raise OrchestrationError(
+            "MTMF_DEV_KC_ADMIN_USERNAME must not be empty or contain whitespace"
+        )
+    if raw in LEGACY_DEV_ADMIN_USERNAMES or raw != CANONICAL_DEV_ADMIN_USERNAME:
+        raise OrchestrationError(
+            f"MTMF_DEV_KC_ADMIN_USERNAME must be exactly {CANONICAL_DEV_ADMIN_USERNAME!r}; "
+            "PR-numbered legacy administrators are not accepted"
+        )
+    return raw
+
+
+def _require_canonical_dev_admin() -> str:
+    """Require the one canonical development administrator identity/credential.
+
+    Runs at the start of standard-stack startup, before certificates, Compose
+    or database writes. The Keycloak bootstrap and the initializer's Admin REST
+    client must both target the same ``mtmf-admin`` account with the same
+    credential; no independent second master-admin login is permitted.
+    """
+    username = _canonical_dev_admin_username()
+    dev_password = os.environ.get("MTMF_DEV_KC_ADMIN_PASSWORD", "")
+    if not dev_password.strip():
+        raise OrchestrationError("MTMF_DEV_KC_ADMIN_PASSWORD is required")
+    auth_username = os.environ.get("MTMF_AUTH_ADMIN_USERNAME")
+    if auth_username is not None and auth_username != username:
+        raise OrchestrationError(
+            f"MTMF_AUTH_ADMIN_USERNAME must be the canonical development administrator {username!r}"
+        )
+    auth_password = os.environ.get("MTMF_AUTH_ADMIN_PASSWORD", "")
+    if not auth_password.strip():
+        raise OrchestrationError("MTMF_AUTH_ADMIN_PASSWORD is required")
+    if auth_password != dev_password:
+        raise OrchestrationError(
+            "MTMF_AUTH_ADMIN_PASSWORD must refer to the same canonical administrator "
+            "credential as MTMF_DEV_KC_ADMIN_PASSWORD"
+        )
+    return username
+
+
+def _ca_dir() -> Path:
+    """Return the configured development CA directory."""
+    value = os.environ.get("MTMF_DEV_CA_DIR", "").strip()
+    return Path(value) if value else Path("/tmp/mtmf-dev-ca")
+
+
+def _ca_cert_file() -> Path:
+    """Return the configured development CA certificate path."""
+    override = os.environ.get("MTMF_PR14_KC_CA_FILE", "").strip()
+    return Path(override) if override else _ca_dir() / "dev-ca.crt"
+
+
+def _prepare_certificates() -> None:
+    """Generate (idempotently) and container-harden the development CA/leaf."""
+    _run([sys.executable, str(CERT_SCRIPT), "--dir", str(_ca_dir()), "generate"])
+    _run([sys.executable, str(CERT_SCRIPT), "--dir", str(_ca_dir()), "harden"])
+
+
+def _probe_host(issuer: str) -> None:
+    """Verify the canonical issuer from the WSL host namespace."""
+    _run(
+        [
+            sys.executable,
+            str(PROBE_SCRIPT),
+            "--issuer",
+            issuer,
+            "--ca-file",
+            str(_ca_cert_file()),
+            "--namespace",
+            "host",
+        ]
+    )
+
+
+def _probe_container(issuer: str) -> None:
+    """Verify the canonical issuer from inside the isolated MTMF network.
+
+    Runs a fresh, throwaway container that receives the same resolver override
+    as the initializer and service, so the check proves the canonical authority
+    is reachable and TLS-verified on the real container network path (the MTMF
+    network alias) rather than the host's loopback. No container IP is guessed
+    or cached: if the forwarder is absent or unreachable the probe fails closed.
+    """
+    _run(
+        [
+            "podman",
+            "run",
+            "--rm",
+            "--network",
+            f"{PROJECT}_default",
+            "-v",
+            f"{NSSWITCH_FILE}:/etc/nsswitch.conf:ro",
+            "-v",
+            f"{PROBE_SCRIPT}:/app/mtmf-dev-probe.py:ro",
+            "-v",
+            f"{_ca_cert_file()}:/certs/mtmf-ca.crt:ro",
+            "docker.io/library/python:3.14-slim",
+            "python",
+            "/app/mtmf-dev-probe.py",
+            "--issuer",
+            issuer,
+            "--ca-file",
+            CA_CERT_IN_CONTAINER,
+            "--namespace",
+            "container",
+        ]
+    )
+
+
+def _database_url_for_containers(name: str) -> str:
+    """Rewrite a host database URL to the isolated Compose network.
+
+    Containers cannot use the host loopback; the database is addressed by its
+    Compose service name (``postgres``) and internal port (``5432``).
+    """
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise OrchestrationError(f"required environment {name} is not set")
+    parsed = urllib.parse.urlsplit(value)
+    if not parsed.hostname:
+        raise OrchestrationError(f"{name} is not a usable database URL")
+    userinfo = ""
+    if parsed.username is not None:
+        userinfo = parsed.username
+        if parsed.password is not None:
+            userinfo += ":" + parsed.password
+        userinfo += "@"
+    netloc = f"{userinfo}postgres:5432"
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)
+    )
+
+
+def _wait_keycloak_http(admin_base: str, ca_file: str) -> None:
+    """Wait for the Keycloak master-realm discovery endpoint over TLS."""
+    _wait_http(
+        f"{admin_base.rstrip('/')}/realms/master/.well-known/openid-configuration",
+        timeout=180,
+        ca_file=ca_file or None,
+    )
+
+
+def _probe_until_stable(
+    probe: Callable[[str], None], issuer: str, *, timeout: float = 60.0
+) -> None:
+    """Retry a canonical-issuer probe until it passes or the deadline expires.
+
+    Keycloak's HTTPS listener and the forwarder can be briefly unavailable
+    while containers are (re)created; a transient failure is retried rather
+    than reported as a topology failure. A persistent failure still fails
+    closed.
+    """
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            probe(issuer)
+            return
+        except OrchestrationError as exc:
+            last_error = exc
+            time.sleep(2.0)
+    raise OrchestrationError(f"canonical issuer probe did not pass: {last_error}")
+
+
 def _postgres_inspect() -> None:
     """Require the MTMF PostgreSQL healthcheck to report healthy."""
     # Container name is project-scoped and deterministic for project `mtmf`.
@@ -97,18 +379,32 @@ def _postgres_inspect() -> None:
         ["podman", "inspect", "--format", "{{.State.Health.Status}}", "mtmf_postgres_1"],
         check=False,
     )
-    if result.returncode != 0 or result.stdout.strip() != "healthy":
+    if result.returncode != 0 or (result.stdout or "").strip() != "healthy":
         raise OrchestrationError("the MTMF PostgreSQL container is not healthy")
 
 
 def up() -> int:
     """Bring up the development stack in the required order."""
     _require_development()
+    issuer = _require_canonical_issuer()
+    _require_canonical_dev_admin()
     _required_env("MTMF_MIGRATOR_DATABASE_URL")
     _required_env("MTMF_RUNTIME_DATABASE_URL")
-    _required_env("MTMF_AUTH_ISSUER")
 
-    _run(_compose("up", "-d", "postgres", "keycloak"))
+    # Containers cannot reach the host loopback: address the database by its
+    # Compose service name over the isolated network.
+    os.environ["MTMF_MIGRATOR_DATABASE_URL"] = _database_url_for_containers(
+        "MTMF_MIGRATOR_DATABASE_URL"
+    )
+    os.environ["MTMF_RUNTIME_DATABASE_URL"] = _database_url_for_containers(
+        "MTMF_RUNTIME_DATABASE_URL"
+    )
+
+    # The canonical leaf key must be owner-mapped to the Keycloak container UID
+    # before Compose starts; never fall back to a world-readable private key.
+    _prepare_certificates()
+
+    _run(_compose("up", "-d", "postgres", "keycloak", "forwarder"))
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         try:
@@ -118,12 +414,13 @@ def up() -> int:
             time.sleep(2.0)
     else:
         raise OrchestrationError("PostgreSQL did not become healthy within 180s")
-    _wait_http(
-        f"{_required_env('MTMF_AUTH_ADMIN_BASE').rstrip('/')}/realms/master/.well-known/"
-        "openid-configuration",
-        timeout=180,
-        ca_file=os.environ.get("MTMF_PR14_KC_CA_FILE") or None,
-    )
+    _wait_keycloak_http(_required_env("MTMF_AUTH_ADMIN_BASE"), str(_ca_cert_file()))
+
+    # Prove the canonical issuer path from both namespaces before writing state.
+    # The container path uses the static resolver override, so no dynamic
+    # forwarder IP is written to the Compose environment or the launcher state.
+    _probe_until_stable(_probe_host, issuer)
+    _probe_until_stable(_probe_container, issuer)
 
     # Privileged one-shot: migrations + postflight + fixture reconciliation.
     _run(_compose("run", "--rm", "--no-deps", "initializer"))
@@ -132,6 +429,23 @@ def up() -> int:
     _run(_compose("up", "-d", "service"))
     _wait_http(SERVICE_READY_URL, timeout=120)
     print("MTMF development stack is ready", flush=True)
+    return 0
+
+
+def preflight() -> int:
+    """Run the canonical-issuer preflight from host and container namespaces.
+
+    Uses the same bounded retry as ``up`` so a transient transport timeout on
+    the forwarder path (a pre-existing forwarder defect, see the PR 17-C
+    Amendment 2 deviation register) does not make an otherwise-healthy stack
+    appear broken. It never retries a lifecycle/Compose operation and never
+    hides a configuration change: the Compose model is proven stable separately.
+    """
+    _require_development()
+    issuer = _require_canonical_issuer()
+    _probe_until_stable(_probe_host, issuer)
+    _probe_until_stable(_probe_container, issuer)
+    print("canonical issuer preflight passed from host and container namespaces", flush=True)
     return 0
 
 
@@ -249,9 +563,10 @@ def up_host_network() -> int:
     migrator/owner/root/bootstrap credential. Development profile only.
     """
     _require_development()
+    _require_canonical_issuer()
+    _require_canonical_dev_admin()
     _required_env("MTMF_RUNTIME_DATABASE_URL")
     _required_env("MTMF_MIGRATOR_DATABASE_URL")
-    _required_env("MTMF_AUTH_ISSUER")
     ca_file = os.environ.get("MTMF_PR14_KC_CA_FILE", "")
     if not ca_file:
         raise OrchestrationError("MTMF_PR14_KC_CA_FILE is required for the host-network mode")
@@ -337,13 +652,17 @@ def down_volumes() -> int:
 def main(argv: list[str] | None = None) -> int:
     """Parse a subcommand and run the development stack operation."""
     parser = argparse.ArgumentParser(description="MTMF development stack orchestrator")
-    parser.add_argument("command", choices=("up", "up-host-network", "status", "down", "destroy"))
+    parser.add_argument(
+        "command", choices=("up", "up-host-network", "status", "preflight", "down", "destroy")
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "up":
             return up()
         if args.command == "up-host-network":
             return up_host_network()
+        if args.command == "preflight":
+            return preflight()
         if args.command == "status":
             return status()
         if args.command == "down":

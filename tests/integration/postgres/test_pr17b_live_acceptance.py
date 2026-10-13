@@ -42,7 +42,7 @@ pytestmark = pytest.mark.skipif(
     reason="PR 17-B live acceptance is opt-in (set MTMF_PR17B_LIVE=1)",
 )
 
-REALM = "mtmf-pr14-dev"
+REALM = os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-dev")
 SERVICE_AUDIENCE = "mtmf-service-api"
 USER_AUDIENCE = "mtmf-user-api"
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "mtmf-dev-initialize.py"

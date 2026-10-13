@@ -104,6 +104,14 @@ def test_issuer_guard_rejects_nonlocal():
     local.guard()  # must not raise
 
 
+def test_issuer_guard_accepts_canonical_development_host():
+    canonical = evidence.Issuer(base="https://keycloak.mtmf.test:28443", realm="r")
+    canonical.guard()  # must not raise (PR 17-C canonical authority)
+    lookalike = evidence.Issuer(base="https://evil.keycloak.mtmf.test", realm="r")
+    with pytest.raises(evidence.IssuerError):
+        lookalike.guard()
+
+
 def test_issuer_ssl_context_is_none_without_ca_file():
     assert evidence.Issuer(base="https://127.0.0.1:28443", realm="r").ssl_context() is None
 
