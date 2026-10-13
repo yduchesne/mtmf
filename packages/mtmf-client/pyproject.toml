@@ -3,7 +3,7 @@ name = "mtmf-client"
 version = "0.1.0"
 description = "MTMF consumer-facing client implementing the mtmf-api contract."
 requires-python = ">=3.14"
-dependencies = ["mtmf-api==0.1.0"]
+dependencies = ["mtmf-api==0.1.0", "httpx>=0.28,<0.29"]
 
 [tool.uv.sources]
 mtmf-api = { workspace = true }

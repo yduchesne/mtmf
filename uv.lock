@@ -933,11 +933,15 @@ name = "mtmf-client"
 version = "0.1.0"
 source = { editable = "packages/mtmf-client" }
 dependencies = [
+    { name = "httpx" },
     { name = "mtmf-api" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mtmf-api", editable = "packages/mtmf-api" }]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28,<0.29" },
+    { name = "mtmf-api", editable = "packages/mtmf-api" },
+]
 
 [[package]]
 name = "mtmf-core"
