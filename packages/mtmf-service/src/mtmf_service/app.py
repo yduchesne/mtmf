@@ -7,23 +7,52 @@ forwarded header, never enables interactive docs/debug, and never returns
 a partial authorization result. All trust, eligibility and policy work
 is delegated to the transport-independent
 :class:`~mtmf_service.evaluation.AuthorizationService`.
+
+Observability is additive and fail-safe: exactly one terminal audit event
+per completed request (batch, rejection, or error) is emitted at this
+boundary, plus one HTTP metric. Telemetry never changes the response,
+never broadens access, and a telemetry fault can never suppress a
+default-deny outcome.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from opentelemetry.trace import SpanKind
 from starlette.concurrency import run_in_threadpool
 
-from mtmf_api.authorization import AuthorizationBatchResponse
+from mtmf_api.authorization import (
+    AuthorizationBatchResponse,
+    AuthorizationEffect,
+)
 from mtmf_api.errors import ApiErrorCode, ApiErrorResponse
 from mtmf_api.json_codec import parse_request_json, serialize_error, serialize_response
 from mtmf_service.concurrency import EvaluationAdmission, run_admitted
 from mtmf_service.errors import PublicError, map_exception
 from mtmf_service.evaluation import AuthorizationService
+from mtmf_service.observability import (
+    AuditEventName,
+    AuditOutcome,
+    AuditReason,
+    Telemetry,
+    classify_failure,
+)
+from mtmf_service.observability.metrics import (
+    BatchOutcomeLabel,
+    DependencyFailureCategory,
+    DependencyLabel,
+    HttpMethod,
+    HttpRoute,
+    HttpStatusClass,
+)
+from mtmf_service.observability.spans import SpanName
 from mtmf_service.rate_limit import RateLimiter
 from mtmf_service.readiness import ReadinessState
 from mtmf_service.settings import ServiceSettings
@@ -38,6 +67,7 @@ from mtmf_service.transport import (
 __all__ = ["create_app"]
 
 _NO_STORE = {"Cache-Control": "no-store"}
+_EVALUATE_ROUTE = "/v1/authorization/evaluate"
 
 
 def _error_response(code: ApiErrorCode, trace_id: str) -> Response:
@@ -52,8 +82,24 @@ def _error_response(code: ApiErrorCode, trace_id: str) -> Response:
 
 
 def _trace_id() -> str:
-    """Return a bounded, opaque, server-generated transport trace id."""
+    """Return a bounded, opaque, server-generated transport correlation id.
+
+    This is the public error-correlation token, not a W3C trace id; the
+    OTel SDK owns trace context and it is never fabricated from this value.
+    """
     return uuid.uuid4().hex
+
+
+def _status_class(status_code: int) -> HttpStatusClass:
+    if 200 <= status_code < 300:
+        return HttpStatusClass.SUCCESS
+    if 300 <= status_code < 400:
+        return HttpStatusClass.REDIRECT
+    if 400 <= status_code < 500:
+        return HttpStatusClass.CLIENT_ERROR
+    if 500 <= status_code < 600:
+        return HttpStatusClass.SERVER_ERROR
+    return HttpStatusClass.UNKNOWN
 
 
 def create_app(
@@ -63,14 +109,27 @@ def create_app(
     readiness: ReadinessState,
     rate_limiter: RateLimiter,
     admission: EvaluationAdmission | None = None,
+    telemetry: Telemetry | None = None,
+    on_shutdown: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Build the ASGI application with explicit injected dependencies.
 
+    :param on_shutdown: Optional finite-deadline telemetry shutdown hook
+        invoked once when the ASGI lifespan ends.
     :raises mtmf_service.settings.ServiceConfigurationError: when the
         selected deployment profile is unsupported or unsafe.
     """
     settings.validate_startup()
     admission = admission or EvaluationAdmission(settings.max_in_flight_evaluations)
+    telemetry = telemetry or Telemetry.disabled()
+
+    @asynccontextmanager
+    async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            if on_shutdown is not None:
+                on_shutdown()
 
     app = FastAPI(
         title="MTMF authorization service",
@@ -78,21 +137,108 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
         debug=False,
+        lifespan=_lifespan,
     )
 
+    def _correlation_id(request: Request) -> str:
+        """Return the request-scoped server-owned correlation id."""
+        existing = getattr(request.state, "correlation_id", None)
+        if isinstance(existing, str) and existing:
+            return existing
+        value = telemetry.new_correlation_id()
+        request.state.correlation_id = value
+        return value
+
+    def _claim_terminal(request: Request) -> bool:
+        """Mark the request terminal; return ``False`` if already marked."""
+        if getattr(request.state, "terminal_event_emitted", False):
+            return False
+        request.state.terminal_event_emitted = True
+        return True
+
+    def _record_dependency_failure(reason: AuditReason) -> None:
+        if reason is AuditReason.DATABASE_UNAVAILABLE:
+            telemetry.record_dependency_failure(
+                dependency=DependencyLabel.POSTGRES,
+                category=DependencyFailureCategory.UNAVAILABLE,
+            )
+        elif reason is AuditReason.ISSUER_UNAVAILABLE:
+            telemetry.record_dependency_failure(
+                dependency=DependencyLabel.ISSUER,
+                category=DependencyFailureCategory.UNAVAILABLE,
+            )
+
+    def _emit_failure(
+        request: Request,
+        correlation_id: str,
+        error: BaseException,
+        duration_ms: float | None,
+    ) -> None:
+        """Emit the one terminal rejection/error event for a failed request."""
+        if not _claim_terminal(request):
+            return
+        classification = classify_failure(error)
+        if classification.event_name is AuditEventName.AUTHORIZATION_ERROR:
+            telemetry.record_error_event(
+                reason_code=classification.reason_code,
+                correlation_id=correlation_id,
+                duration_ms=duration_ms,
+            )
+        else:
+            telemetry.record_rejection_event(
+                name=classification.event_name,
+                reason_code=classification.reason_code,
+                correlation_id=correlation_id,
+                duration_ms=duration_ms,
+            )
+            telemetry.record_rejection_metric(category=classification.reason_code)
+        _record_dependency_failure(classification.reason_code)
+
+    def _emit_batch(
+        request: Request,
+        correlation_id: str,
+        response: AuthorizationBatchResponse,
+        duration_ms: float,
+    ) -> None:
+        """Emit the one terminal batch event for a validated response."""
+        if not _claim_terminal(request):
+            return
+        allow_count = sum(
+            1 for decision in response.decisions if decision.effect is AuthorizationEffect.ALLOW
+        )
+        deny_count = len(response.decisions) - allow_count
+        if allow_count == 0:
+            outcome = BatchOutcomeLabel.DENY
+        elif deny_count == 0:
+            outcome = BatchOutcomeLabel.ALLOW
+        else:
+            outcome = BatchOutcomeLabel.MIXED
+        telemetry.record_batch_event(
+            correlation_id=correlation_id,
+            outcome=_audit_outcome(outcome),
+            duration_ms=duration_ms,
+            action_count=len(response.decisions),
+            allow_count=allow_count,
+            deny_count=deny_count,
+        )
+
     @app.exception_handler(PublicError)
-    async def _handle_public_error(_: Request, exc: Exception) -> Response:
+    async def _handle_public_error(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, PublicError)
-        return _error_response(exc.code, _trace_id())
+        correlation_id = _correlation_id(request)
+        _emit_failure(request, correlation_id, exc, None)
+        return _error_response(exc.code, correlation_id)
 
     @app.exception_handler(Exception)
-    async def _handle_unexpected(_: Request, exc: Exception) -> Response:
+    async def _handle_unexpected(request: Request, exc: Exception) -> Response:
         # Defense in depth for faults raised outside the route body; the
         # route itself converts every mapped failure to a PublicError, so
         # this only sees genuinely unexpected internals.
-        return _error_response(map_exception(exc), _trace_id())
+        correlation_id = _correlation_id(request)
+        _emit_failure(request, correlation_id, exc, None)
+        return _error_response(map_exception(exc), correlation_id)
 
-    async def _evaluate(request: Request) -> Response:
+    async def _run_evaluation(request: Request) -> AuthorizationBatchResponse:
         if not rate_limiter.acquire(peer_key(request)):
             raise PublicError(ApiErrorCode.RATE_LIMITED)
         enforce_json_content_type(request)
@@ -105,7 +251,10 @@ def create_app(
         # deterministic 503 rather than unbounded queueing.
         permit = admission.try_acquire()
         if permit is None:
-            raise PublicError(ApiErrorCode.DEPENDENCY_UNAVAILABLE)
+            raise PublicError(
+                ApiErrorCode.DEPENDENCY_UNAVAILABLE,
+                audit_reason=AuditReason.ADMISSION_REJECTED.value,
+            )
 
         def _admitted_worker() -> AuthorizationBatchResponse:
             # Runs in the worker thread. ``run_admitted`` refuses to execute
@@ -122,7 +271,7 @@ def create_app(
             )
 
         try:
-            response = await asyncio.wait_for(
+            return await asyncio.wait_for(
                 run_in_threadpool(_admitted_worker),
                 timeout=settings.evaluation_timeout_seconds,
             )
@@ -134,23 +283,45 @@ def create_app(
         except BaseException:
             permit.release_if_not_started()
             raise
-        return Response(
-            content=serialize_response(response),
-            status_code=200,
-            media_type="application/json",
-            headers=dict(_NO_STORE),
-        )
 
-    @app.post("/v1/authorization/evaluate")
+    @app.post(_EVALUATE_ROUTE)
     async def evaluate(request: Request) -> Response:
-        try:
-            return await _evaluate(request)
-        except PublicError:
-            raise
-        except Exception as exc:
-            # Map semantic failures exactly once; never leak detail and
-            # never degrade into a partial 200.
-            raise PublicError(map_exception(exc)) from exc
+        correlation_id = _correlation_id(request)
+        started = time.perf_counter()
+        with telemetry.span(
+            SpanName.HTTP_EVALUATE,
+            kind=SpanKind.SERVER,
+            attributes={
+                "http.request.method": "POST",
+                "http.route": _EVALUATE_ROUTE,
+            },
+        ):
+            try:
+                batch_response = await _run_evaluation(request)
+            except PublicError as exc:
+                duration_ms = (time.perf_counter() - started) * 1000.0
+                _emit_failure(request, correlation_id, exc, duration_ms)
+                response: Response = _error_response(exc.code, correlation_id)
+            except Exception as exc:
+                duration_ms = (time.perf_counter() - started) * 1000.0
+                _emit_failure(request, correlation_id, exc, duration_ms)
+                response = _error_response(map_exception(exc), correlation_id)
+            else:
+                duration_ms = (time.perf_counter() - started) * 1000.0
+                _emit_batch(request, correlation_id, batch_response, duration_ms)
+                response = Response(
+                    content=serialize_response(batch_response),
+                    status_code=200,
+                    media_type="application/json",
+                    headers=dict(_NO_STORE),
+                )
+        telemetry.record_http_request(
+            route=HttpRoute.EVALUATE,
+            method=HttpMethod.POST,
+            status_class=_status_class(response.status_code),
+            duration_ms=(time.perf_counter() - started) * 1000.0,
+        )
+        return response
 
     @app.get("/health/live")
     async def live() -> JSONResponse:
@@ -167,3 +338,8 @@ def create_app(
         )
 
     return app
+
+
+def _audit_outcome(outcome: BatchOutcomeLabel) -> AuditOutcome:
+    """Map a metric batch-outcome label to the audit outcome enum."""
+    return AuditOutcome(outcome.value)

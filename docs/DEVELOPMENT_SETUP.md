@@ -403,6 +403,42 @@ MTMF_PR18_LIVE=1 uv run --no-sync pytest \
   tests/integration/postgres/test_pr18_live_client.py --no-cov
 ```
 
+## Opt-in observability stack (PR 19)
+
+The MTMF-owned telemetry stack is an **opt-in overlay** on the canonical
+`mtmf` Compose project. Normal development startup is unchanged and does not
+start it. Supply a development-only Grafana password and start it explicitly:
+
+```sh
+MTMF_GRAFANA_ADMIN_PASSWORD=<dev-only> python scripts/mtmf-observability.py up
+python scripts/mtmf-observability.py status
+python scripts/mtmf-observability.py down   # removes only the observability services
+```
+
+`down` removes only the observability services; it never removes the project
+network, named volumes, or any other project service, and it never touches
+resources owned by another application. There is no broad `down --volumes`.
+
+| Component | Host publication (loopback only) | Notes |
+|---|---|---|
+| Collector OTLP gRPC | `127.0.0.1:24317` | Optional; the service uses `collector:4317` in-network |
+| Prometheus | `127.0.0.1:29090` | Scrapes the Collector's Prometheus exporter |
+| Jaeger UI | `127.0.0.1:21686` | OTLP trace receiver is internal |
+| Grafana | `127.0.0.1:23000` | Fixed datasource UIDs `mtmf-prometheus`, `mtmf-jaeger`, `mtmf-loki`; dashboards `mtmf-overview`, `mtmf-authorization`, `mtmf-security`, `mtmf-dependencies` |
+| Loki | none | Internal-only; reachable through the authenticated Grafana datasource proxy |
+
+Enable service export by setting `MTMF_OTEL_ENABLED=true` and
+`MTMF_OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317` (see `.env.example`).
+Export is bounded and asynchronous; a Collector outage must not change an
+authorization response. The development Grafana/Loki credentials and the
+default Loki retention are development controls, **not** production security
+or compliance controls. Run the opt-in live slice with:
+
+```sh
+MTMF_PR19_LIVE=1 uv run --no-sync pytest \
+  tests/integration/postgres/test_pr19_live_observability.py --no-cov
+```
+
 ## Security and production boundary
 
 The initializer is **development-only**, short-lived, and privileged. The long-running MTMF service and ATI must never receive Keycloak administrator, MTMF root, migrator, or database owner credentials. MTMF's protected root foundation is not the same as an automatically configured production root login; production root authentication and recovery are separate requirements. Production customer provisioning must use an explicitly authorized administrative workflow, **not** ordinary ATI startup or automatic environment-variable creation.

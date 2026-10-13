@@ -470,25 +470,47 @@ development-only and not a production design.
 
 ## 14. Observability
 
-OpenTelemetry is the cross-cutting instrumentation model.
+OpenTelemetry is the cross-cutting instrumentation model. The approved
+system architecture is [Audit and Observability Architecture](AUDIT_OBSERVABILITY_ARCHITECTURE.md);
+the implementation notes below describe the runtime boundaries introduced by
+roadmap PR 19. Observability never changes an authorization result and never
+creates an authorization oracle.
 
-Core may emit:
+Runtime boundaries:
 
-- application/use-case spans;
-- authorization spans/metrics;
-- UnitOfWork spans;
-- repository/PostgreSQL spans;
-- security/audit-related events where appropriate.
+- `mtmf-api` stays telemetry-free; no DTO or wire contract changes.
+- `mtmf-core` owns only a provider-neutral `PersistenceTelemetry` protocol
+  (`mtmf_core.persistence.instrumentation`). The PostgreSQL `PostgresUnitOfWork`
+  reports bounded `read`/`write`/`transaction` observations to that seam; it
+  never imports an SDK, exporter, HTTP framework or metrics backend.
+- `mtmf-service` composes the OTel SDK at its edges
+  (`mtmf_service.observability`): a strict audit-event taxonomy and
+  allowlist serializer, closed-enum metrics, bounded trace spans, and an
+  instance-scoped `Telemetry` runtime. It never installs or replaces a
+  process-global provider, so constructing the app factory more than once
+  cannot duplicate handlers or spans.
+- `mtmf-client` keeps OTel behind an optional `observability` extra and an
+  injectable `ClientInstrumentation` seam (no-op by default). Importing and
+  using the client requires no OTel package; a telemetry fault never changes
+  a fail-closed client result.
 
-The HTTP service adds transport-level telemetry such as request spans, latency, and status metrics.
+The HTTP service emits exactly one terminal audit event per completed
+request (batch decision, security rejection, or whole-request error) plus
+bounded HTTP/batch/rejection metrics and correlated spans at existing
+orchestration seams. High-volume decisions are **not** written synchronously
+to PostgreSQL. Authoritative security-state mutations remain durably audited
+at the PostgreSQL trust boundary; the PR 19 coverage inventory is recorded in
+[docs/pr-artifacts/pr-19/](pr-artifacts/pr-19/).
 
-The intended observability pipeline uses an OpenTelemetry Collector with:
+The opt-in observability pipeline is an MTMF-owned Compose overlay
+(`compose.observability.yaml`) with an OpenTelemetry Collector feeding
+Prometheus (metrics), Jaeger (traces) and Loki (logs), plus provisioned
+Grafana datasources and dashboards-as-code. Export is bounded and
+asynchronous; a Collector or exporter outage must not block or change an
+authorization response, and default-pipeline Loki/OTel is explicitly **not**
+a claim of compliance-grade, tamper-evident audit retention.
 
-- Prometheus for metrics;
-- Jaeger for traces;
-- Loki for logs.
-
-Domain logic should not depend directly on these backend products.
+Domain logic does not depend directly on these backend products.
 
 ## 15. Testing Direction
 

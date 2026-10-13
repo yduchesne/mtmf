@@ -1,0 +1,17 @@
+# MTMF Grafana dashboard provider (PR 19).
+#
+# Dashboards are loaded from source-controlled JSON under
+# observability/grafana/dashboards with stable UIDs.
+apiVersion: 1
+
+providers:
+  - name: MTMF
+    orgId: 1
+    folder: MTMF
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

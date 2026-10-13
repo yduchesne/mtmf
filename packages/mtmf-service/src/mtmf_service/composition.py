@@ -22,6 +22,7 @@ from mtmf_service.authentication.config import IssuerConfig
 from mtmf_service.clock import Clock, SystemClock
 from mtmf_service.concurrency import EvaluationAdmission
 from mtmf_service.evaluation import AuthorizationService
+from mtmf_service.observability import Telemetry, build_telemetry
 from mtmf_service.rate_limit import RateLimiter, TokenBucketRateLimiter
 from mtmf_service.readiness import ReadinessProbe, ReadinessState
 from mtmf_service.sensitivity import (
@@ -46,6 +47,7 @@ class ServiceDependencies:
     readiness: ReadinessState
     rate_limiter: RateLimiter
     admission: EvaluationAdmission
+    telemetry: Telemetry
 
 
 def build_authorization_service(
@@ -57,6 +59,7 @@ def build_authorization_service(
     batch_authorizer: BatchAuthorizer | None = None,
     clock: Clock | None = None,
     sensitivity: SensitiveActionClassifier | None = None,
+    telemetry: Telemetry | None = None,
 ) -> AuthorizationService:
     """Build the transport-independent authorization orchestrator."""
     return AuthorizationService(
@@ -67,6 +70,7 @@ def build_authorization_service(
         clock=clock or SystemClock(),
         sensitivity=sensitivity or ConservativeSensitiveActionClassifier(),
         settings=settings,
+        telemetry=telemetry,
     )
 
 
@@ -108,8 +112,10 @@ def build_dependencies(
     clock: Clock | None = None,
     sensitivity: SensitiveActionClassifier | None = None,
     rate_limiter: RateLimiter | None = None,
+    telemetry: Telemetry | None = None,
 ) -> ServiceDependencies:
     """Build the complete dependency set for :func:`create_app`."""
+    resolved_telemetry = telemetry or build_telemetry(settings)
     return ServiceDependencies(
         authorization_service=build_authorization_service(
             spi=spi,
@@ -119,6 +125,7 @@ def build_dependencies(
             batch_authorizer=batch_authorizer,
             clock=clock,
             sensitivity=sensitivity,
+            telemetry=resolved_telemetry,
         ),
         readiness=build_readiness(
             spi=spi,
@@ -131,4 +138,5 @@ def build_dependencies(
             burst=settings.rate_limit_burst,
         ),
         admission=EvaluationAdmission(settings.max_in_flight_evaluations),
+        telemetry=resolved_telemetry,
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from importlib.metadata import requires
@@ -15,6 +16,7 @@ _SUBMODULES = (
     "mtmf_client.config",
     "mtmf_client.credentials",
     "mtmf_client.errors",
+    "mtmf_client.observability",
     "mtmf_client.snapshot",
     "mtmf_client.transport",
 )
@@ -31,6 +33,7 @@ _BANNED = (
     "sqlalchemy",
     "jwt",
     "_mtmf_permission_engine",
+    "opentelemetry",
 )
 
 
@@ -61,9 +64,17 @@ def test_cl_u01_dependency_metadata_is_http_only() -> None:
     requirements = requires("mtmf-client")
     assert requirements is not None
     names: set[str] = set()
+    extras: set[str] = set()
     for item in requirements:
+        # Optional extras must not become mandatory dependencies; the
+        # default install remains HTTP-only and OTel-free.
+        extra_match = re.search(r"extra == ['\"]([^'\"]+)['\"]", item)
+        if extra_match is not None:
+            extras.add(extra_match.group(1))
+            continue
         base = item.split(";", 1)[0].strip()
         for separator in ("==", ">=", "<=", "~=", "<", ">"):
             base = base.split(separator, 1)[0]
         names.add(base.strip())
     assert names == {"mtmf-api", "httpx"}, names
+    assert extras == {"observability"}, extras

@@ -16,6 +16,7 @@ itself never holds bootstrap/migrator credentials.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -24,6 +25,12 @@ __all__ = [
     "ServiceConfigurationError",
     "ServiceSettings",
 ]
+
+#: The bounded OTel service/environment label grammar. Resource labels are
+#: never free-form operator input in a way that could become high-cardinality
+#: or leak a secret.
+_OTEL_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
+_OTLP_ENDPOINT_PATTERN = re.compile(r"^https?://[A-Za-z0-9_.\-]+(:[0-9]{1,5})?$")
 
 
 class DeploymentMode(StrEnum):
@@ -81,6 +88,18 @@ class ServiceSettings:
     #: host publication must still be loopback-scoped in the MTMF Compose
     #: override; this is never enabled by the production profile.
     allow_container_bind: bool = False
+    #: Bounded, opt-in OpenTelemetry export. Disabled by default so no
+    #: exporter or background network traffic exists unless configured.
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_service_name: str = "mtmf-service"
+    otel_environment: str = "development"
+    otel_queue_size: int = 2048
+    otel_batch_size: int = 512
+    otel_schedule_delay_ms: int = 5000
+    otel_export_timeout_ms: int = 30000
+    otel_metric_export_interval_ms: int = 60000
+    otel_shutdown_timeout_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.deployment_mode, DeploymentMode):
@@ -101,6 +120,41 @@ class ServiceSettings:
             raise ServiceConfigurationError("operation timeouts must be positive")
         if self.max_in_flight_evaluations < 1:
             raise ServiceConfigurationError("max_in_flight_evaluations must be positive")
+        self._validate_observability()
+
+    def _validate_observability(self) -> None:
+        """Fail closed on unsafe or unbounded OTel configuration."""
+        for label, field_name in (
+            (self.otel_service_name, "otel_service_name"),
+            (self.otel_environment, "otel_environment"),
+        ):
+            if not isinstance(label, str) or not _OTEL_LABEL_PATTERN.match(label):
+                raise ServiceConfigurationError(f"{field_name} must be a bounded safe label")
+        if not 1 <= self.otel_queue_size <= 65536:
+            raise ServiceConfigurationError("otel_queue_size must be within 1..65536")
+        if not 1 <= self.otel_batch_size <= self.otel_queue_size:
+            raise ServiceConfigurationError("otel_batch_size must be within 1..otel_queue_size")
+        if not 100 <= self.otel_schedule_delay_ms <= 60000:
+            raise ServiceConfigurationError("otel_schedule_delay_ms must be within 100..60000")
+        if not 1000 <= self.otel_export_timeout_ms <= 120000:
+            raise ServiceConfigurationError("otel_export_timeout_ms must be within 1000..120000")
+        if not 1000 <= self.otel_metric_export_interval_ms <= 600000:
+            raise ServiceConfigurationError(
+                "otel_metric_export_interval_ms must be within 1000..600000"
+            )
+        if not 0.5 <= self.otel_shutdown_timeout_seconds <= 30.0:
+            raise ServiceConfigurationError("otel_shutdown_timeout_seconds must be within 0.5..30")
+        if self.otel_enabled:
+            endpoint = self.otel_exporter_otlp_endpoint
+            if endpoint is None or not _OTLP_ENDPOINT_PATTERN.match(endpoint):
+                raise ServiceConfigurationError(
+                    "otel_exporter_otlp_endpoint is required and must be an http(s) endpoint "
+                    "when otel_enabled is true"
+                )
+        elif self.otel_exporter_otlp_endpoint not in (None, ""):
+            raise ServiceConfigurationError(
+                "otel_exporter_otlp_endpoint must not be set while otel_enabled is false"
+            )
 
     def validate_startup(self) -> None:
         """Fail startup for an unsupported or unsafe deployment profile.
@@ -150,5 +204,22 @@ class ServiceSettings:
             allow_container_bind=os.environ.get("MTMF_SERVICE_ALLOW_CONTAINER_BIND", "") == "1",
             max_in_flight_evaluations=int(
                 os.environ.get("MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS", "40")
+            ),
+            otel_enabled=os.environ.get("MTMF_OTEL_ENABLED", "").strip().lower()
+            in ("1", "true", "yes"),
+            otel_exporter_otlp_endpoint=(
+                os.environ.get("MTMF_OTEL_EXPORTER_OTLP_ENDPOINT") or None
+            ),
+            otel_service_name=os.environ.get("MTMF_OTEL_SERVICE_NAME", "mtmf-service"),
+            otel_environment=os.environ.get("MTMF_OTEL_ENVIRONMENT", "development"),
+            otel_queue_size=int(os.environ.get("MTMF_OTEL_QUEUE_SIZE", "2048")),
+            otel_batch_size=int(os.environ.get("MTMF_OTEL_BATCH_SIZE", "512")),
+            otel_schedule_delay_ms=int(os.environ.get("MTMF_OTEL_SCHEDULE_DELAY_MS", "5000")),
+            otel_export_timeout_ms=int(os.environ.get("MTMF_OTEL_EXPORT_TIMEOUT_MS", "30000")),
+            otel_metric_export_interval_ms=int(
+                os.environ.get("MTMF_OTEL_METRIC_EXPORT_INTERVAL_MS", "60000")
+            ),
+            otel_shutdown_timeout_seconds=float(
+                os.environ.get("MTMF_OTEL_SHUTDOWN_TIMEOUT_SECONDS", "5.0")
             ),
         )

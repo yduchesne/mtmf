@@ -386,6 +386,7 @@ def build_harness(
     rate_limiter: Any | None = None,
     readiness: Any | None = None,
     admission: Any | None = None,
+    telemetry: Any | None = None,
 ) -> Harness:
     """Assemble one service instance with deterministic boundary doubles."""
     resolved_settings = settings or ServiceSettings()
@@ -421,6 +422,7 @@ def build_harness(
         batch_authorizer=resolved_batch_authorizer,
         clock=clock,
         sensitivity=sensitivity or ConservativeSensitiveActionClassifier(),
+        telemetry=telemetry,
     )
     resolved_admission = admission or EvaluationAdmission(
         resolved_settings.max_in_flight_evaluations
@@ -431,6 +433,7 @@ def build_harness(
         readiness=readiness or StaticReadiness(True),
         rate_limiter=rate_limiter or TokenBucketRateLimiter(per_minute=100000, burst=100000),
         admission=resolved_admission,
+        telemetry=telemetry,
     )
     client = TestClient(app, raise_server_exceptions=False)
     return Harness(

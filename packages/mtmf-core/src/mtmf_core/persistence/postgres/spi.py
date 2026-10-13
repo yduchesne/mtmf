@@ -17,6 +17,10 @@ from mtmf_core.persistence.errors import (
     ForeignUnitOfWorkError,
     PersistenceConfigurationError,
 )
+from mtmf_core.persistence.instrumentation import (
+    NoopPersistenceTelemetry,
+    PersistenceTelemetry,
+)
 from mtmf_core.persistence.postgres.config import PostgresConfig, PostgresRole
 from mtmf_core.persistence.postgres.repositories import (
     PostgresActionRepository,
@@ -79,7 +83,12 @@ __all__ = ["PostgresMtmfSpi"]
 class PostgresMtmfSpi:
     """PostgreSQL provider implementing the provider-neutral persistence SPI."""
 
-    def __init__(self, config: PostgresConfig) -> None:
+    def __init__(
+        self,
+        config: PostgresConfig,
+        *,
+        telemetry: PersistenceTelemetry | None = None,
+    ) -> None:
         """Bind the provider to an explicit restricted-runtime configuration.
 
         :raises PersistenceConfigurationError: if ``config`` does not
@@ -94,10 +103,11 @@ class PostgresMtmfSpi:
                 "application runtime"
             )
         self._config = config
+        self._telemetry: PersistenceTelemetry = telemetry or NoopPersistenceTelemetry()
 
     def create_unit_of_work(self) -> UnitOfWork:
         """Create an independent UnitOfWork bound to this provider."""
-        return PostgresUnitOfWork(self._config, self)
+        return PostgresUnitOfWork(self._config, self, self._telemetry)
 
     def _require_own_uow(self, uow: UnitOfWork) -> PostgresUnitOfWork:
         """Return ``uow`` after rejecting UnitOfWorks from another provider."""

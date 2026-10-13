@@ -275,6 +275,7 @@ def build_client(
     *,
     config: ClientConfig | None = None,
     clock: FakeClock | None = None,
+    instrumentation: Any | None = None,
 ) -> tuple[HttpMtmfClient, ClientConfig, FakeClock]:
     """Build a real ``HttpMtmfClient`` wired to the fake transport and clocks."""
     config = config or make_config()
@@ -284,6 +285,7 @@ def build_client(
         transport=server.transport,
         monotonic_clock=clock.monotonic,
         utc_clock=clock.utc,
+        instrumentation=instrumentation,
     )
     return client, config, clock
 

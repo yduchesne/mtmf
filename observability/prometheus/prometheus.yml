@@ -1,0 +1,15 @@
+# MTMF Prometheus scrape configuration (PR 19).
+#
+# Scrapes the MTMF-owned Collector's prometheus exporter. No external or
+# cross-project target is discovered or scraped.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: mtmf-collector
+    static_configs:
+      - targets: ["collector:8889"]
+  - job_name: mtmf-collector-self
+    static_configs:
+      - targets: ["collector:8888"]

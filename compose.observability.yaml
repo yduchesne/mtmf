@@ -1,0 +1,129 @@
+# MTMF-owned, opt-in observability overlay (PR 19).
+#
+# This file is an *overlay* on the canonical `mtmf` Compose project, never
+# a second project and never a dependency of normal development startup.
+# Launch it explicitly:
+#
+#   python scripts/mtmf-observability.py up
+#
+# Resource ownership: every resource belongs to the explicit `mtmf`
+# project and the services named below. MTMF tooling never discovers,
+# mutates, prunes, or prunes resources owned by ATI, Darkula, or another
+# application. There is no fixed `container_name` and no broad
+# `down --volumes`; the companion script only stops this project's
+# observability services.
+#
+# Host ports: MTMF owns local host-port prefix `2`. Every publication binds
+# loopback only. Loki has no published host port at all; its API is
+# reachable only on the private project network.
+#
+# Secrets: no credential is committed. Grafana's development admin
+# password is supplied from the environment and is explicitly a
+# development control, not a production security control.
+services:
+  collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.115.1
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # Optional host publication for a host-run service; container-to-
+      # container traffic uses the private project network at :4317.
+      - "127.0.0.1:${MTMF_COLLECTOR_OTLP_PORT:-24317}:4317"
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  prometheus:
+    image: docker.io/prom/prometheus:v3.1.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - mtmf-prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${MTMF_PROMETHEUS_PORT:-29090}:9090"
+    depends_on:
+      collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  jaeger:
+    image: docker.io/jaegertracing/all-in-one:1.65.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+    volumes:
+      - mtmf-jaeger-data:/badger
+    ports:
+      - "127.0.0.1:${MTMF_JAEGER_UI_PORT:-21686}:16686"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:14269/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  loki:
+    image: docker.io/grafana/loki:3.3.2
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - mtmf-loki-data:/loki
+    # No host publication: Loki is internal-only and unauthenticated access
+    # is impossible from outside the private project network.
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  grafana:
+    image: docker.io/grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${MTMF_GRAFANA_ADMIN_USER:-mtmf-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${MTMF_GRAFANA_ADMIN_PASSWORD:?set MTMF_GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - mtmf-grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${MTMF_GRAFANA_PORT:-23000}:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      jaeger:
+        condition: service_started
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  mtmf-prometheus-data:
+  mtmf-jaeger-data:
+  mtmf-loki-data:
+  mtmf-grafana-data:

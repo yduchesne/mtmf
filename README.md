@@ -50,6 +50,26 @@ tests, a clean wheel build/install/use verification in an isolated
 temporary environment, and a benchmark smoke check, with no
 PostgreSQL/Podman/network dependency.
 
+### Opt-in observability stack (PR 19)
+
+The MTMF-owned OpenTelemetry Collector → Prometheus/Jaeger/Loki → Grafana
+stack is an opt-in overlay and is not started by normal development
+startup:
+
+```bash
+MTMF_GRAFANA_ADMIN_PASSWORD=<dev-only> python scripts/mtmf-observability.py up
+MTMF_GRAFANA_ADMIN_PASSWORD=<dev-only> python scripts/mtmf-observability.py status
+python scripts/mtmf-observability.py down   # removes only the observability services
+```
+
+Grafana is published at `127.0.0.1:23000`, Prometheus at `127.0.0.1:29090`,
+Jaeger UI at `127.0.0.1:21686`, and the optional Collector OTLP gRPC
+endpoint at `127.0.0.1:24317`; Loki is internal-only. Enable service export
+with `MTMF_OTEL_ENABLED=true` and
+`MTMF_OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317`. See
+[docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) and the
+[audit and observability architecture](docs/AUDIT_OBSERVABILITY_ARCHITECTURE.md).
+
 ### PostgreSQL integration (PR 6+)
 
 The MTMF-owned physical schema, migrations, and stored-function

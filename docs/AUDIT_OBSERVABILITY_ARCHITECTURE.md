@@ -1,6 +1,8 @@
 # MTMF — Audit and Observability Architecture
 
 > **Status: APPROVED SYSTEM ARCHITECTURE; PR 19 IMPLEMENTATION NOT COMPLETE.** This document defines MTMF's system-wide audit and observability architecture; roadmap PR 19 is its initial implementation milestone. It does not claim the collectors, dashboards, new audit coverage, or benchmarks are already deployed. Existing database audit mechanisms remain authoritative.
+>
+> **Implementation progress (2026-10-13, factual clarification only).** The service-side event/metric/span taxonomy, strict allowlist serializer, bounded instance-scoped OTel runtime, provider-neutral `mtmf-core` persistence telemetry seam, optional `mtmf-client` instrumentation extra, and the opt-in MTMF-owned Collector/Prometheus/Jaeger/Loki/Grafana overlay with four dashboards-as-code and three datasource UIDs are implemented in code. Canonical `--qa`, `--sec`, `--rust` and `--integration` gates pass. The **live** real-stack acceptance and the controlled disabled/healthy/unavailable-Collector performance comparison have **not** been executed, so PR 19 is not DONE, no compliance-grade or tamper-evident guarantee is claimed, and the default Loki/OTel pipeline is best-effort only. The mutation-audit inventory is recorded under `docs/pr-artifacts/pr-19/`; no generic audit table or unverified actor attribution was added.
 
 ## 1. Architectural decision
 

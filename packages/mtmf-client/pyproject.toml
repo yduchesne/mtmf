@@ -5,6 +5,16 @@ description = "MTMF consumer-facing client implementing the mtmf-api contract."
 requires-python = ">=3.14"
 dependencies = ["mtmf-api==0.1.0", "httpx>=0.28,<0.29"]
 
+[project.optional-dependencies]
+# Optional OpenTelemetry emission. The client imports and operates with no
+# OTel package installed; instrumentation is off by default and supplied by
+# the consumer through an injectable adapter.
+observability = [
+    "opentelemetry-api>=1.37,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.37,<2",
+    "opentelemetry-sdk>=1.37,<2",
+]
+
 [tool.uv.sources]
 mtmf-api = { workspace = true }
 
