@@ -227,55 +227,62 @@ def _snapshot_is_live(snapshot: AuthorizationSnapshot) -> bool:
 def _find_decision(
     snapshot: AuthorizationSnapshot,
     *,
+    action: object,
+    resource: object,
     request_id: str | None,
-    action: str | None,
-    resource: ResourceTarget | None,
 ) -> ActionDecision | None:
-    """Return the single matching ordered decision, or ``None`` on ambiguity."""
-    actions = snapshot._request.actions
-    if resource is not None and not isinstance(resource, ResourceTarget):
+    """Return the single matching ordered decision, or ``None`` on ambiguity.
+
+    The Action and ResourceTarget are mandatory: a lookup must identify the
+    exact object or capability being checked. ``request_id`` is only a
+    correlation discriminator and never supplies the authorization target.
+    """
+    if not isinstance(action, str) or not isinstance(resource, ResourceTarget):
         return None
+    actions = snapshot._request.actions
     if request_id is not None:
         if not isinstance(request_id, str) or not request_id:
             return None
-        matches = [index for index, item in enumerate(actions) if item.request_id == request_id]
+        matches = [
+            index
+            for index, item in enumerate(actions)
+            if item.request_id == request_id and item.action == action and item.resource == resource
+        ]
         if len(matches) != 1:
             return None
-        index = matches[0]
-        if action is not None and actions[index].action != action:
-            return None
-        if resource is not None and actions[index].resource != resource:
-            return None
-        return snapshot._decisions[index]
-    if action is None:
-        return None
-    candidates = [
+        return snapshot._decisions[matches[0]]
+    matches = [
         index
         for index, item in enumerate(actions)
-        if item.action == action and (resource is None or item.resource == resource)
+        if item.action == action and item.resource == resource
     ]
-    if len(candidates) != 1:
+    if len(matches) != 1:
         return None
-    return snapshot._decisions[candidates[0]]
+    return snapshot._decisions[matches[0]]
 
 
 def is_allowed(
     snapshot: AuthorizationSnapshot | None,
     *,
     context: TrustedActorContext,
+    action: str,
+    resource: ResourceTarget,
     request_id: str | None = None,
-    action: str | None = None,
-    resource: ResourceTarget | None = None,
 ) -> bool:
     """Return whether an exact bound occurrence is an unexpired ``ALLOW``.
+
+    ``action`` and ``resource`` are **mandatory**: every local authorization
+    decision must identify the exact Action and ``ResourceTarget`` for the
+    object or capability being checked. Supplying a capability check requires
+    an explicit ``ResourceTarget(kind=ResourceKind.CAPABILITY)``; a missing
+    resource is never treated as a wildcard. ``request_id`` is only a
+    correlation discriminator: when given, the occurrence must match it *and*
+    the exact Action/ResourceTarget; when omitted, the Action/ResourceTarget
+    pair must be unique in the evaluated batch.
 
     Never performs network I/O and never evaluates policy. Returns ``False``
     for a missing/mismatched context, an expired or tampered snapshot, an
     absent or ambiguous occurrence, and any non-``ALLOW`` decision.
-
-    Prefer supplying ``request_id`` (the exact occurrence). A lookup by
-    ``(action, resource)`` is accepted only when exactly one matching
-    occurrence exists.
     """
     if not isinstance(snapshot, AuthorizationSnapshot):
         return False
@@ -285,9 +292,9 @@ def is_allowed(
         return False
     decision = _find_decision(
         snapshot,
-        request_id=request_id,
         action=action,
         resource=resource,
+        request_id=request_id,
     )
     if decision is None:
         return False
@@ -300,21 +307,25 @@ def require(
     snapshot: AuthorizationSnapshot | None,
     *,
     context: TrustedActorContext,
+    action: str,
+    resource: ResourceTarget,
     request_id: str | None = None,
-    action: str | None = None,
-    resource: ResourceTarget | None = None,
 ) -> None:
     """Raise :class:`AuthorizationDenied` unless :func:`is_allowed` is true.
 
-    The consumer's own resource/row/Tenant isolation remains a separate,
-    mandatory enforcement step; this helper only answers the exact Action
-    occurrence it was given.
+    ``action`` and ``resource`` are mandatory (see :func:`is_allowed`). The
+    consumer must derive them from the *actual object being accessed*, not
+    copy a previously authorized target by correlation id. An explicit
+    matching tuple proves only that this previously evaluated
+    Action/ResourceTarget was ``ALLOW``; it does not prove that the
+    consumer's own row/Tenant predicate succeeded, which remains a separate
+    mandatory enforcement step.
     """
     if not is_allowed(
         snapshot,
         context=context,
-        request_id=request_id,
         action=action,
         resource=resource,
+        request_id=request_id,
     ):
         raise AuthorizationDenied("the requested Action occurrence is not allowed")

@@ -19,6 +19,7 @@ from client_helpers import (
     FakeServer,
     StaticSecret,
     build_client,
+    capability,
     conforming_allow,
     conforming_by_request_id,
     error_envelope,
@@ -186,8 +187,26 @@ def test_cl_u17_mixed_allow_deny_creates_one_snapshot() -> None:
     finally:
         client.close()
     assert snapshot.decision_count == 2
-    assert is_allowed(snapshot, context=make_context(), request_id="allow") is True
-    assert is_allowed(snapshot, context=make_context(), request_id="deny") is False
+    assert (
+        is_allowed(
+            snapshot,
+            context=make_context(),
+            action=ACTION_ALLOW,
+            resource=capability(),
+            request_id="allow",
+        )
+        is True
+    )
+    assert (
+        is_allowed(
+            snapshot,
+            context=make_context(),
+            action=ACTION_DENY,
+            resource=capability(),
+            request_id="deny",
+        )
+        is False
+    )
 
 
 def _respond_with(
@@ -464,7 +483,12 @@ def test_cl_u42_close_and_context_manager_lifecycle() -> None:
     with pytest.raises(ClientClosedError):
         client.evaluate(make_request(), user_access_token=USER_TOKEN, context=make_context())
     with pytest.raises(ClientClosedError):
-        client.is_allowed(None, context=make_context())
+        client.is_allowed(
+            None,
+            context=make_context(),
+            action=ACTION_ALLOW,
+            resource=capability(),
+        )
     client.close()  # idempotent
 
 
@@ -510,8 +534,8 @@ def test_cl_u42_token_failure_is_redacted() -> None:
 
 def test_module_helpers_default_deny_on_none() -> None:
     context = make_context()
-    assert is_allowed(None, context=context) is False
+    assert is_allowed(None, context=context, action=ACTION_ALLOW, resource=capability()) is False
     with pytest.raises(AuthorizationDenied):
         from mtmf_client import require
 
-        require(None, context=context)
+        require(None, context=context, action=ACTION_ALLOW, resource=capability())

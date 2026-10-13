@@ -1,4 +1,8 @@
-"""Scoped snapshot and PEP helper tests (CL-U27..CL-U39, CL-U44, CL-U45)."""
+"""Scoped snapshot and PEP helper tests (CL-U27..CL-U39, CL-U44, CL-U45).
+
+Every helper call now supplies the exact evaluated Action and ResourceTarget;
+``request_id`` is only a correlation discriminator.
+"""
 
 from __future__ import annotations
 
@@ -42,6 +46,17 @@ from mtmf_client import (
 )
 
 
+def _check(snapshot: object, **overrides: object) -> bool:
+    """Call the module helper with an explicit capability target by default."""
+    values: dict[str, object] = {
+        "context": make_context(),
+        "action": ACTION_ALLOW,
+        "resource": capability(),
+    }
+    values.update(overrides)
+    return bool(is_allowed(snapshot, **values))  # type: ignore[arg-type]
+
+
 def _respond_with_lifetime(seconds: float) -> object:
     def _handler(request: httpx.Request) -> httpx.Response:
         parsed = parse_request_json(request.content)
@@ -67,11 +82,32 @@ def test_cl_u27_exact_allow_occurrence_is_allowed() -> None:
     request = make_request(("req-1", ACTION_ALLOW, None))
     client, snapshot, _, _, _ = _issue(request)
     try:
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is True
-        assert is_allowed(snapshot, context=make_context(), action=ACTION_ALLOW) is True
-        require(snapshot, context=make_context(), request_id="req-1")
-        client.require(snapshot, context=make_context(), request_id="req-1")
-        assert client.is_allowed(snapshot, context=make_context(), request_id="req-1") is True
+        assert _check(snapshot, request_id="req-1") is True
+        assert _check(snapshot) is True
+        require(
+            snapshot,
+            context=make_context(),
+            action=ACTION_ALLOW,
+            resource=capability(),
+            request_id="req-1",
+        )
+        client.require(
+            snapshot,
+            context=make_context(),
+            action=ACTION_ALLOW,
+            resource=capability(),
+            request_id="req-1",
+        )
+        assert (
+            client.is_allowed(
+                snapshot,
+                context=make_context(),
+                action=ACTION_ALLOW,
+                resource=capability(),
+                request_id="req-1",
+            )
+            is True
+        )
     finally:
         client.close()
 
@@ -92,15 +128,20 @@ def test_cl_u28_deny_unknown_and_absent_occurrence_deny() -> None:
     client, _, _ = build_client(server)
     try:
         snapshot = client.evaluate(request, user_access_token=USER_TOKEN, context=make_context())
-        assert is_allowed(snapshot, context=make_context(), request_id="deny") is False
-        assert is_allowed(snapshot, context=make_context(), request_id="missing") is False
-        assert is_allowed(snapshot, context=make_context()) is False
+        assert _check(snapshot, action=ACTION_DENY, request_id="deny") is False
+        assert _check(snapshot, action=ACTION_ALLOW, request_id="missing") is False
+        # An Action that was never requested is never allowed.
         assert (
-            is_allowed(snapshot, context=make_context(), action="urn:mtmf:iam:actions:system:x:y")
-            is False
+            _check(snapshot, action="urn:mtmf:iam:actions:system:unrequested:get-object") is False
         )
         with pytest.raises(AuthorizationDenied):
-            require(snapshot, context=make_context(), request_id="deny")
+            require(
+                snapshot,
+                context=make_context(),
+                action=ACTION_DENY,
+                resource=capability(),
+                request_id="deny",
+            )
     finally:
         client.close()
 
@@ -112,20 +153,17 @@ def test_cl_u29_duplicate_semantic_occurrences_require_request_id() -> None:
     )
     client, snapshot, _, _, _ = _issue(request)
     try:
-        assert is_allowed(snapshot, context=make_context(), action=ACTION_ALLOW) is False
-        assert (
-            is_allowed(
+        # Two identical Action/resource occurrences are ambiguous without id.
+        assert _check(snapshot) is False
+        assert _check(snapshot, request_id="a") is True
+        assert _check(snapshot, request_id="b") is True
+        with pytest.raises(AuthorizationDenied):
+            require(
                 snapshot,
                 context=make_context(),
                 action=ACTION_ALLOW,
                 resource=capability(),
             )
-            is False
-        )
-        assert is_allowed(snapshot, context=make_context(), request_id="a") is True
-        assert is_allowed(snapshot, context=make_context(), request_id="b") is True
-        with pytest.raises(AuthorizationDenied):
-            require(snapshot, context=make_context(), action=ACTION_ALLOW)
     finally:
         client.close()
 
@@ -137,16 +175,31 @@ def test_cl_u30_cross_application_and_cross_client_replay_deny() -> None:
     client_b, _, _ = build_client(server_b)
     try:
         assert (
-            is_allowed(
+            _check(
                 snapshot,
                 context=make_context(application_id=OTHER_APP_ID),
                 request_id="req-1",
             )
             is False
         )
-        assert client_b.is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert (
+            client_b.is_allowed(
+                snapshot,
+                context=make_context(),
+                action=ACTION_ALLOW,
+                resource=capability(),
+                request_id="req-1",
+            )
+            is False
+        )
         with pytest.raises(AuthorizationDenied):
-            client_b.require(snapshot, context=make_context(), request_id="req-1")
+            client_b.require(
+                snapshot,
+                context=make_context(),
+                action=ACTION_ALLOW,
+                resource=capability(),
+                request_id="req-1",
+            )
     finally:
         client_a.close()
         client_b.close()
@@ -156,15 +209,13 @@ def test_cl_u31_cross_actor_and_session_replay_deny() -> None:
     client, snapshot, _, _, _ = _issue(make_request())
     try:
         assert (
-            is_allowed(snapshot, context=make_context(actor_key="other"), request_id="req-1")
-            is False
+            _check(snapshot, context=make_context(actor_key="other"), request_id="req-1") is False
         )
         assert (
-            is_allowed(snapshot, context=make_context(session_key="other"), request_id="req-1")
-            is False
+            _check(snapshot, context=make_context(session_key="other"), request_id="req-1") is False
         )
         assert (
-            is_allowed(
+            _check(
                 snapshot,
                 context=make_context(principal_id=UUID("99999999-9999-4999-8999-999999999999")),
                 request_id="req-1",
@@ -179,13 +230,11 @@ def test_cl_u32_cross_tenant_and_organization_replay_deny() -> None:
     client, snapshot, _, _, _ = _issue(make_request())
     try:
         assert (
-            is_allowed(
-                snapshot, context=make_context(tenant_id=OTHER_TENANT_ID), request_id="req-1"
-            )
+            _check(snapshot, context=make_context(tenant_id=OTHER_TENANT_ID), request_id="req-1")
             is False
         )
         assert (
-            is_allowed(
+            _check(
                 snapshot,
                 context=make_context(organization_id=ORGANIZATION_ID),
                 request_id="req-1",
@@ -200,33 +249,9 @@ def test_cl_u33_cross_resource_replay_denies() -> None:
     request = make_request(("req-1", ACTION_ALLOW, application_owned("row-1")))
     client, snapshot, _, _, _ = _issue(request)
     try:
-        assert (
-            is_allowed(
-                snapshot,
-                context=make_context(),
-                action=ACTION_ALLOW,
-                resource=application_owned("row-2"),
-            )
-            is False
-        )
-        assert (
-            is_allowed(
-                snapshot,
-                context=make_context(),
-                action=ACTION_ALLOW,
-                resource=capability(),
-            )
-            is False
-        )
-        assert (
-            is_allowed(
-                snapshot,
-                context=make_context(),
-                request_id="req-1",
-                resource=application_owned("row-2"),
-            )
-            is False
-        )
+        assert _check(snapshot, resource=application_owned("row-2")) is False
+        assert _check(snapshot, resource=capability()) is False
+        assert _check(snapshot, request_id="req-1", resource=application_owned("row-2")) is False
     finally:
         client.close()
 
@@ -235,15 +260,7 @@ def test_cl_u34_capability_allow_cannot_be_used_for_an_object() -> None:
     request = make_request(("req-1", ACTION_ALLOW, capability()))
     client, snapshot, _, _, _ = _issue(request)
     try:
-        assert (
-            is_allowed(
-                snapshot,
-                context=make_context(),
-                action=ACTION_ALLOW,
-                resource=application_owned("row-1"),
-            )
-            is False
-        )
+        assert _check(snapshot, resource=application_owned("row-1")) is False
     finally:
         client.close()
 
@@ -256,9 +273,9 @@ def test_cl_u35_monotonic_expiry_boundary() -> None:
             make_request(), user_access_token=USER_TOKEN, context=make_context()
         )
         clock.advance_monotonic(9.999)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is True
+        assert _check(snapshot, request_id="req-1") is True
         clock.advance_monotonic(0.001)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert _check(snapshot, request_id="req-1") is False
     finally:
         client.close()
 
@@ -310,7 +327,7 @@ def test_cl_u36_wall_clock_uncertainty_and_jumps() -> None:
         )
         # 6s server lifetime minus 5s uncertainty leaves only 1s.
         clock.advance_monotonic(1.1)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert _check(snapshot, request_id="req-1") is False
     finally:
         client.close()
 
@@ -319,9 +336,9 @@ def test_cl_u36_post_issue_wall_jumps_do_not_change_monotonic_validity() -> None
     client, snapshot, clock, _, _ = _issue(make_request())
     try:
         clock.advance_wall(10_000)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is True
+        assert _check(snapshot, request_id="req-1") is True
         clock.advance_wall(-20_000)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is True
+        assert _check(snapshot, request_id="req-1") is True
     finally:
         client.close()
 
@@ -331,7 +348,7 @@ def test_cl_u37_no_extension_and_universal_sensitive_cap() -> None:
     client, snapshot, clock, _, _ = _issue(make_request())
     try:
         clock.advance_monotonic(15.1)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert _check(snapshot, request_id="req-1") is False
     finally:
         client.close()
 
@@ -343,7 +360,7 @@ def test_cl_u37_no_extension_and_universal_sensitive_cap() -> None:
             make_request(), user_access_token=USER_TOKEN, context=make_context()
         )
         clock.advance_monotonic(1.1)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert _check(snapshot, request_id="req-1") is False
     finally:
         client.close()
 
@@ -370,7 +387,7 @@ def test_cl_u38_token_renewal_does_not_extend_snapshot() -> None:
         assert snapshot.expires_at == original_expiry
         # The original snapshot is still bounded by its own original deadline.
         clock.advance_monotonic(12.1)
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert _check(snapshot, request_id="req-1") is False
     finally:
         client.close()
 
@@ -380,10 +397,28 @@ def test_cl_u39_helpers_never_call_the_network() -> None:
     try:
         before_token = server.token_calls
         before_evaluate = server.evaluate_calls
-        is_allowed(snapshot, context=make_context(), request_id="req-1")
-        require(snapshot, context=make_context(), request_id="req-1")
-        client.is_allowed(snapshot, context=make_context(), request_id="req-1")
-        client.require(snapshot, context=make_context(), request_id="req-1")
+        _check(snapshot, request_id="req-1")
+        require(
+            snapshot,
+            context=make_context(),
+            action=ACTION_ALLOW,
+            resource=capability(),
+            request_id="req-1",
+        )
+        client.is_allowed(
+            snapshot,
+            context=make_context(),
+            action=ACTION_ALLOW,
+            resource=capability(),
+            request_id="req-1",
+        )
+        client.require(
+            snapshot,
+            context=make_context(),
+            action=ACTION_ALLOW,
+            resource=capability(),
+            request_id="req-1",
+        )
         assert server.token_calls == before_token
         assert server.evaluate_calls == before_evaluate
     finally:
@@ -394,9 +429,15 @@ def test_cl_u44_monotonic_rollback_denies() -> None:
     client, snapshot, clock, _, _ = _issue(make_request())
     try:
         clock.mono = 0.0
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert _check(snapshot, request_id="req-1") is False
         with pytest.raises(AuthorizationDenied):
-            require(snapshot, context=make_context(), request_id="req-1")
+            require(
+                snapshot,
+                context=make_context(),
+                action=ACTION_ALLOW,
+                resource=capability(),
+                request_id="req-1",
+            )
     finally:
         client.close()
 
@@ -406,14 +447,23 @@ def test_cl_u45_tampered_snapshot_is_never_accepted() -> None:
     try:
         # A hand-built object with a foreign provenance marker is rejected.
         object.__setattr__(snapshot, "_provenance", object())
-        assert is_allowed(snapshot, context=make_context(), request_id="req-1") is False
-        assert client.is_allowed(snapshot, context=make_context(), request_id="req-1") is False
+        assert _check(snapshot, request_id="req-1") is False
+        assert (
+            client.is_allowed(
+                snapshot,
+                context=make_context(),
+                action=ACTION_ALLOW,
+                resource=capability(),
+                request_id="req-1",
+            )
+            is False
+        )
     finally:
         client.close()
 
 
 def test_cl_u45_non_snapshot_objects_deny() -> None:
-    assert is_allowed(object(), context=make_context()) is False  # type: ignore[arg-type]
+    assert _check(object()) is False  # type: ignore[arg-type]
     assert isinstance(make_config(), object)
     assert not isinstance(object(), AuthorizationSnapshot)
 
@@ -445,10 +495,19 @@ def test_snapshot_properties_and_context_validation() -> None:
         assert snapshot.decision_count == 1
         assert snapshot.issued_at == datetime(2026, 10, 13, 12, 0, 0, tzinfo=UTC)
         assert snapshot.expires_at > snapshot.issued_at
-        # Non-context and non-resource arguments fail closed.
-        assert is_allowed(snapshot, context=object(), request_id="req-1") is False  # type: ignore[arg-type]
+        # Non-context and malformed runtime arguments fail closed.
         assert (
             is_allowed(
+                snapshot,
+                context=object(),  # type: ignore[arg-type]
+                action=ACTION_ALLOW,
+                resource=capability(),
+                request_id="req-1",
+            )
+            is False
+        )
+        assert (
+            _check(
                 snapshot,
                 context=make_context(organization_id=ORGANIZATION_ID),
                 request_id=123,  # type: ignore[arg-type]
@@ -459,8 +518,9 @@ def test_snapshot_properties_and_context_validation() -> None:
             is_allowed(
                 snapshot,
                 context=make_context(organization_id=ORGANIZATION_ID),
-                request_id="req-1",
+                action=ACTION_ALLOW,
                 resource=object(),  # type: ignore[arg-type]
+                request_id="req-1",
             )
             is False
         )

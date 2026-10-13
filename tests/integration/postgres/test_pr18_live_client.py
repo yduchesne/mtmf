@@ -22,6 +22,7 @@ import datetime as dt
 import ipaddress
 import json
 import os
+import socket
 import ssl
 import sys
 import tempfile
@@ -40,7 +41,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from mtmf_api.authorization import AuthorizationBatchRequest
+from mtmf_api.authorization import (
+    AuthorizationBatchRequest,
+    ResourceKind,
+    ResourceTarget,
+)
 from mtmf_api.json_codec import parse_request_json
 from mtmf_client import (
     ClientAuthenticationError,
@@ -250,6 +255,30 @@ class _TlsLiveServer:
         self._thread.join(timeout=10)
 
 
+def _free_loopback_port() -> int:
+    """Select an unused loopback TCP port by binding and releasing it."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _wait_port_closed(port: int, timeout: float = 15.0) -> None:
+    """Wait until nothing accepts connections on the loopback ``port``."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.5)
+            if probe.connect_ex(("127.0.0.1", port)) != 0:
+                return
+        time.sleep(0.05)
+    raise RuntimeError(f"loopback port {port} is still accepting connections")
+
+
+def _live_app() -> Any:
+    """A fresh real PR 17 application instance for a test-owned server."""
+    return pr17._live_app(evaluation_timeout_seconds=30.0)
+
+
 @pytest.fixture(scope="module")
 def disposable_user() -> Any:
     """Create one disposable Keycloak user for the module and remove it after."""
@@ -321,6 +350,20 @@ def _context(
     )
 
 
+def _capability() -> ResourceTarget:
+    """The explicit capability target for capability-level checks."""
+    return ResourceTarget(kind=ResourceKind.CAPABILITY)
+
+
+def _app_owned(resource_id: str, resource_type: str = "document") -> ResourceTarget:
+    """An explicit application-owned target."""
+    return ResourceTarget(
+        kind=ResourceKind.APPLICATION_OWNED,
+        resource_type=resource_type,
+        resource_id=resource_id,
+    )
+
+
 def _user_token(user: dict[str, str]) -> str:
     token = pr17.ev.authorization_code_token(
         pr17._issuer(),
@@ -368,10 +411,43 @@ def test_cl_i01_i02_i03_real_client_mixed_batch(
     finally:
         client.close()
     assert snapshot.tenant_id == uuid.UUID(ids["tenant_id"])
-    assert is_allowed(snapshot, context=_context(ids), request_id="allow") is True
-    assert is_allowed(snapshot, context=_context(ids), request_id="deny") is False
-    assert is_allowed(snapshot, context=_context(ids), request_id="noperm") is False
-    require(snapshot, context=_context(ids), request_id="allow")
+    assert (
+        is_allowed(
+            snapshot,
+            context=_context(ids),
+            action=pr17.ALLOW_ACTION,
+            resource=_capability(),
+            request_id="allow",
+        )
+        is True
+    )
+    assert (
+        is_allowed(
+            snapshot,
+            context=_context(ids),
+            action=pr17.DENY_ACTION,
+            resource=_capability(),
+            request_id="deny",
+        )
+        is False
+    )
+    assert (
+        is_allowed(
+            snapshot,
+            context=_context(ids),
+            action=pr17.NO_PERMISSION_ACTION,
+            resource=_capability(),
+            request_id="noperm",
+        )
+        is False
+    )
+    require(
+        snapshot,
+        context=_context(ids),
+        action=pr17.ALLOW_ACTION,
+        resource=_capability(),
+        request_id="allow",
+    )
 
 
 def test_cl_i04_hundred_ordered_occurrences(
@@ -396,8 +472,26 @@ def test_cl_i04_hundred_ordered_occurrences(
     finally:
         client.close()
     assert snapshot.decision_count == 100
-    assert is_allowed(snapshot, context=_context(ids), request_id="req-000") is True
-    assert is_allowed(snapshot, context=_context(ids), request_id="req-001") is False
+    assert (
+        is_allowed(
+            snapshot,
+            context=_context(ids),
+            action=pr17.ALLOW_ACTION,
+            resource=_capability(),
+            request_id="req-000",
+        )
+        is True
+    )
+    assert (
+        is_allowed(
+            snapshot,
+            context=_context(ids),
+            action=pr17.DENY_ACTION,
+            resource=_capability(),
+            request_id="req-001",
+        )
+        is False
+    )
 
 
 def test_cl_i05_unknown_action_denies(
@@ -417,7 +511,16 @@ def test_cl_i05_unknown_action_denies(
         )
     finally:
         client.close()
-    assert is_allowed(snapshot, context=_context(ids), request_id="unknown") is False
+    assert (
+        is_allowed(
+            snapshot,
+            context=_context(ids),
+            action=pr17.UNKNOWN_ACTION,
+            resource=_capability(),
+            request_id="unknown",
+        )
+        is False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +616,16 @@ def test_cl_i09_revocation_is_visible_to_new_evaluations(
             user_access_token=token,
             context=_context(ids),
         )
-        assert is_allowed(first, context=_context(ids), request_id="allow") is True
+        assert (
+            is_allowed(
+                first,
+                context=_context(ids),
+                action=pr17.ALLOW_ACTION,
+                resource=_capability(),
+                request_id="allow",
+            )
+            is True
+        )
         db.execute(
             "DELETE FROM mtmf.identity_role_assignment WHERE identity_id = %s",
             (ids["identity_id"],),
@@ -524,7 +636,16 @@ def test_cl_i09_revocation_is_visible_to_new_evaluations(
             context=_context(ids),
         )
         # The revoked grant is absent from the new evaluation.
-        assert is_allowed(second, context=_context(ids), request_id="allow-again") is False
+        assert (
+            is_allowed(
+                second,
+                context=_context(ids),
+                action=pr17.ALLOW_ACTION,
+                resource=_capability(),
+                request_id="allow-again",
+            )
+            is False
+        )
         # The already-issued snapshot keeps its original bounded life; it is
         # not refreshed or silently extended, but it is also not retroactively
         # rewritten (documented stale window).
@@ -539,8 +660,6 @@ def test_cl_i10_local_replay_is_denied_without_http(
     disposable_user: dict[str, str],
     tmp_path: Path,
 ) -> None:
-    from mtmf_api.authorization import ResourceKind, ResourceTarget
-
     ids = pr17._seed(db, disposable_user["subject"])
     token = _user_token(disposable_user)
     client = _client(tmp_path, application_id=uuid.UUID(ids["application_id"]))
@@ -554,6 +673,8 @@ def test_cl_i10_local_replay_is_denied_without_http(
             is_allowed(
                 snapshot,
                 context=_context(ids, actor_key="different-actor"),
+                action=pr17.ALLOW_ACTION,
+                resource=_capability(),
                 request_id="allow",
             )
             is False
@@ -562,6 +683,8 @@ def test_cl_i10_local_replay_is_denied_without_http(
             is_allowed(
                 snapshot,
                 context=_context(ids, application_id=uuid.uuid4()),
+                action=pr17.ALLOW_ACTION,
+                resource=_capability(),
                 request_id="allow",
             )
             is False
@@ -571,11 +694,7 @@ def test_cl_i10_local_replay_is_denied_without_http(
                 snapshot,
                 context=_context(ids),
                 action=pr17.ALLOW_ACTION,
-                resource=ResourceTarget(
-                    kind=ResourceKind.APPLICATION_OWNED,
-                    resource_type="document",
-                    resource_id="row-other",
-                ),
+                resource=_app_owned("row-other"),
             )
             is False
         )
@@ -617,7 +736,16 @@ def test_cl_i11_service_token_renewal_loop(
                 context=_context(ids),
             )
             assert snapshot.decision_count == 1
-            assert is_allowed(snapshot, context=_context(ids), request_id=f"loop-{index}") is True
+            assert (
+                is_allowed(
+                    snapshot,
+                    context=_context(ids),
+                    action=pr17.ALLOW_ACTION,
+                    resource=_capability(),
+                    request_id=f"loop-{index}",
+                )
+                is True
+            )
         # Renewing the OAuth token never extends or refreshes the original
         # snapshot: its server-issued expiry is byte-for-byte unchanged, and
         # its own bounded (15s sensitive) monotonic deadline still governs.
@@ -709,14 +837,10 @@ def test_cl_i15_app_owned_row_isolation_is_pep_owned(
     disposable_user: dict[str, str],
     tmp_path: Path,
 ) -> None:
-    from mtmf_api.authorization import ResourceKind, ResourceTarget
-
     ids = pr17._seed(db, disposable_user["subject"])
     token = _user_token(disposable_user)
     client = _client(tmp_path, application_id=uuid.UUID(ids["application_id"]))
-    row42 = ResourceTarget(
-        kind=ResourceKind.APPLICATION_OWNED, resource_type="document", resource_id="row-42"
-    )
+    row42 = _app_owned("row-42")
     body = {
         "tenant_id": ids["tenant_id"],
         "organization_id": None,
@@ -734,8 +858,14 @@ def test_cl_i15_app_owned_row_isolation_is_pep_owned(
             user_access_token=token,
             context=_context(ids),
         )
-        # The evaluated row is allowed.
-        require(snapshot, context=_context(ids), request_id="row42")
+        # The evaluated row is allowed only when the exact target is supplied.
+        require(
+            snapshot,
+            context=_context(ids),
+            action=pr17.ALLOW_ACTION,
+            resource=row42,
+            request_id="row42",
+        )
         # A different row was never evaluated and is denied locally; an ALLOW
         # capability is not universal object access. The consumer's own SQL
         # row/Tenant predicate remains mandatory.
@@ -744,16 +874,86 @@ def test_cl_i15_app_owned_row_isolation_is_pep_owned(
                 snapshot,
                 context=_context(ids),
                 action=pr17.ALLOW_ACTION,
-                resource=ResourceTarget(
-                    kind=ResourceKind.APPLICATION_OWNED,
-                    resource_type="document",
-                    resource_id="row-43",
-                ),
+                resource=_app_owned("row-43"),
             )
             is False
         )
         assert row42.resource_id == "row-42"
     finally:
+        client.close()
+
+
+def test_cl_i16_owned_uvicorn_restart_recovery(
+    db: psycopg.Connection,
+    live_server: Any,
+    disposable_user: dict[str, str],
+    tmp_path: Path,
+) -> None:
+    """Owned service restart: ALLOW -> down -> typed failure -> up -> ALLOW.
+
+    Only a Uvicorn instance created by this test is stopped and restarted;
+    the shared Keycloak issuer and PostgreSQL stay up throughout. The same
+    ``HttpMtmfClient`` instance survives the restart with no authorization
+    retry and no snapshot extension. Keycloak restart is NOT TESTED here.
+    """
+    ids = pr17._seed(db, disposable_user["subject"])
+    token = _user_token(disposable_user)
+    port = _free_loopback_port()
+    certfile, keyfile = _generate_leaf_certificate(tmp_path)
+    base_url = f"https://127.0.0.1:{port}"
+    client = _client(tmp_path, application_id=uuid.UUID(ids["application_id"]), base_url=base_url)
+    first_server = _TlsLiveServer(_live_app(), certfile, keyfile, port=port)
+    second_server: _TlsLiveServer | None = None
+    try:
+        first_server.__enter__()
+        first = client.evaluate(
+            _request(ids["tenant_id"], ("first", pr17.ALLOW_ACTION)),
+            user_access_token=token,
+            context=_context(ids),
+        )
+        require(
+            first,
+            context=_context(ids),
+            action=pr17.ALLOW_ACTION,
+            resource=_capability(),
+            request_id="first",
+        )
+        original_expiry = first.expires_at
+
+        first_server.__exit__(None, None, None)
+        _wait_port_closed(port)
+        with pytest.raises(DependencyUnavailableError):
+            client.evaluate(
+                _request(ids["tenant_id"], ("down", pr17.ALLOW_ACTION)),
+                user_access_token=token,
+                context=_context(ids),
+            )
+
+        # Shared dependencies remained running (fresh Keycloak token + DB).
+        assert _user_token(disposable_user)
+        assert db.execute("SELECT 1").fetchone()[0] == 1
+
+        second_server = _TlsLiveServer(_live_app(), certfile, keyfile, port=port)
+        second_server.__enter__()
+        second = client.evaluate(
+            _request(ids["tenant_id"], ("second", pr17.ALLOW_ACTION)),
+            user_access_token=token,
+            context=_context(ids),
+        )
+        require(
+            second,
+            context=_context(ids),
+            action=pr17.ALLOW_ACTION,
+            resource=_capability(),
+            request_id="second",
+        )
+        # The pre-restart snapshot is neither renewed nor extended.
+        assert first.expires_at == original_expiry
+        assert first.decision_count == 1
+        assert second.decision_count == 1
+    finally:
+        if second_server is not None:
+            second_server.__exit__(None, None, None)
         client.close()
 
 
@@ -777,6 +977,8 @@ def test_cl_i17_two_clients_do_not_cross_contaminate(
             client_b.is_allowed(
                 snap_a,
                 context=_context(ids_a, actor_key="actor-a", session_key="session-a"),
+                action=pr17.ALLOW_ACTION,
+                resource=_capability(),
                 request_id="allow",
             )
             is False

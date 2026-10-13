@@ -1,5 +1,11 @@
 # PR 18 — Final Acceptance
 
+> **Superseded in part by Acceptance Fixup 1.** That fixup makes an exact
+> `Action` and `ResourceTarget` mandatory in `is_allowed`/`require` and adds
+> the owned-Uvicorn restart acceptance (CL-I16). See
+> [PR18_FIXUP1_FINAL_ACCEPTANCE.md](PR18_FIXUP1_FINAL_ACCEPTANCE.md); this
+> report is retained as PR 18 implementation history.
+
 **Status:** **READY FOR HUMAN REVIEW — NOT DONE.** No unresolved mandatory
 STOP condition. All canonical gates pass on the implementation tip; CL-I16
 was not executed and is recorded as NOT TESTED.

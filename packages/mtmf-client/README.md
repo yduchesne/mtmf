@@ -61,6 +61,40 @@ replayed across a different actor, session, Application, Tenant,
 Organization, resource, or non-matching Action occurrence, and it is
 useless by itself. It is also not serializable into a transferable grant.
 
+## Explicit Action and resource binding (breaking pre-merge change)
+
+`is_allowed` and `require` (both the module functions and the
+`HttpMtmfClient` methods) **require** an exact `action: str` and
+`resource: ResourceTarget` in addition to `context`:
+
+```python
+is_allowed(snapshot, *, context, action, resource, request_id=None) -> bool
+require(snapshot, *, context, action, resource, request_id=None) -> None
+```
+
+Rules:
+
+- The checked `action` and `resource` are mandatory. A missing resource is
+  **never** treated as a wildcard, and there is no action-only or
+  request-id-only lookup path. Omitting either is a plain Python
+  `TypeError` before any snapshot is evaluated.
+- `request_id` is only a correlation discriminator. When supplied, the
+  stored occurrence must match the id **and** the exact Action/ResourceTarget;
+  when omitted, the Action/ResourceTarget pair must be unique in the
+  evaluated batch. Two identical occurrences are ambiguous and deny.
+- Capability checks must pass a `ResourceTarget(kind=ResourceKind.CAPABILITY)`
+  explicitly; application-owned and MTMF-owned checks must carry the exact
+  validated type and identifier.
+- The consuming handler must derive the checked `ResourceTarget` from the
+  **actual object being accessed**, not copy a previously authorized target
+  by correlation id. An explicit matching tuple proves only that this
+  previously evaluated Action/ResourceTarget was `ALLOW`; it does **not**
+  prove that the application's own row/Tenant predicate succeeded, which
+  remains a separate mandatory enforcement step.
+
+This mirrors the pre-merge acceptance requirement that a handler processing
+another object can never accidentally reuse an action-only result.
+
 ## Service-token renewal vs snapshot expiry
 
 These lifetimes are **independent**:
@@ -113,6 +147,7 @@ from mtmf_client import (
     ClientConfig,
     HttpMtmfClient,
     TrustedActorContext,
+    is_allowed,
     require,
 )
 
@@ -134,16 +169,19 @@ context = TrustedActorContext(
     application_id=config.application_id,
 )
 
+READ_ACTION = "urn:mtmf:iam:actions:system:principal:get-object"
+row_target = ResourceTarget(
+    kind=ResourceKind.APPLICATION_OWNED, resource_type="document", resource_id="row-42"
+)
+
 request = AuthorizationBatchRequest(
     tenant_id=context.tenant_id,
     organization_id=None,
     actions=(
         ActionRequest(
             request_id="check-1",
-            action="urn:mtmf:iam:actions:system:principal:get-object",
-            resource=ResourceTarget(
-                kind=ResourceKind.APPLICATION_OWNED, resource_type="document", resource_id="row-42"
-            ),
+            action=READ_ACTION,
+            resource=row_target,
         ),
     ),
 )
@@ -154,7 +192,22 @@ with HttpMtmfClient(config) as client:
         user_access_token=user_access_token,  # from the consumer's login
         context=context,
     )
-    require(snapshot, context=context, request_id="check-1")
+    # Every local check supplies the exact Action and the ResourceTarget of
+    # the object actually being accessed. `request_id` only disambiguates a
+    # duplicated occurrence; it is never the authorization target.
+    require(
+        snapshot,
+        context=context,
+        action=READ_ACTION,
+        resource=row_target,
+        request_id="check-1",
+    )
+
+    # A capability or object ALLOW never authorizes a different object.
+    other_row = ResourceTarget(
+        kind=ResourceKind.APPLICATION_OWNED, resource_type="document", resource_id="row-43"
+    )
+    assert not is_allowed(snapshot, context=context, action=READ_ACTION, resource=other_row)
 
     # The application still enforces its own row/Tenant predicate.
     row = repository.load(owner_tenant_id=context.tenant_id, resource_id="row-42")

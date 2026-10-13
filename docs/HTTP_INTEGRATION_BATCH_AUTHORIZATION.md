@@ -261,8 +261,14 @@ token, identity credential, or general entitlement.
 
 - Exact reuse binding: Application, acting Principal/Identity, Tenant,
   optional Organization, resource/scope, enumerated Actions and results.
+- Every local `is_allowed`/`require` check MUST supply the exact Action and
+  the exact resource target for the object or capability being accessed;
+  `request_id` is only a correlation discriminator and never the
+  authorization target. A missing resource is never a wildcard, and there
+  is no action-only or request-id-only lookup path.
 - Unknown, missing, duplicate-ambiguous, invalid, mismatched, or expired
-  decisions deny.
+  decisions deny; two identical Action/resource occurrences are ambiguous
+  without an explicit occurrence id.
 - No cross-user, cross-Tenant, cross-Organization, or cross-Application
   replay.
 - `require`/`is_allowed` must deny on any invalid snapshot.

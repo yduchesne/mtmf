@@ -162,14 +162,15 @@ class HttpMtmfClient:
         snapshot: AuthorizationSnapshot | None,
         *,
         context: TrustedActorContext,
+        action: str,
+        resource: ResourceTarget,
         request_id: str | None = None,
-        action: str | None = None,
-        resource: ResourceTarget | None = None,
     ) -> bool:
         """Strictly client-bound variant of the module-level :func:`is_allowed`.
 
-        Additionally requires that ``snapshot`` was issued by *this* client
-        instance. Never performs network I/O.
+        ``action`` and ``resource`` are mandatory (see the module-level
+        helper). Additionally requires that ``snapshot`` was issued by *this*
+        client instance. Never performs network I/O.
         """
         self._ensure_open()
         if not _owned_by(snapshot, self._provenance):
@@ -177,9 +178,9 @@ class HttpMtmfClient:
         return _is_allowed(
             snapshot,
             context=context,
-            request_id=request_id,
             action=action,
             resource=resource,
+            request_id=request_id,
         )
 
     def require(
@@ -187,9 +188,9 @@ class HttpMtmfClient:
         snapshot: AuthorizationSnapshot | None,
         *,
         context: TrustedActorContext,
+        action: str,
+        resource: ResourceTarget,
         request_id: str | None = None,
-        action: str | None = None,
-        resource: ResourceTarget | None = None,
     ) -> None:
         """Strictly client-bound variant of the module-level :func:`require`."""
         self._ensure_open()
@@ -198,9 +199,9 @@ class HttpMtmfClient:
         _require(
             snapshot,
             context=context,
-            request_id=request_id,
             action=action,
             resource=resource,
+            request_id=request_id,
         )
 
     # -- internals ---------------------------------------------------------
