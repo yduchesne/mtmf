@@ -11,7 +11,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.util
+import os
+import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -544,6 +547,575 @@ def test_fw20_compose_model_and_launcher_unchanged():
     nsswitch = (_REPO_ROOT / "dev" / "nsswitch.conf").read_text(encoding="utf-8")
     hosts_line = next(line for line in nsswitch.splitlines() if line.startswith("hosts:"))
     assert hosts_line.split(":", 1)[1].split()[:2] == ["dns", "files"]
-    # FW18 support: the module only emits one bounded startup line.
+    # FW18 support: the module emits at most the startup line, one bounded
+    # non-secret pump-error diagnostic, and one configuration-error line.
     source = _SCRIPT.read_text(encoding="utf-8")
-    assert source.count("print(") == 1
+    assert source.count("print(") <= 3
+
+
+# ==========================================================================
+# Fixup 1: FX-U01-FX-U26
+# ==========================================================================
+
+
+class _CountingResolver(forwarder._TargetResolver):
+    """Resolver whose blocking lookup is a controllable, counting fake."""
+
+    def __init__(self, result=None, *, resolve_timeout=0.2):
+        super().__init__("keycloak", 8443, resolve_timeout=resolve_timeout)
+        self.calls = 0
+        self._result = result
+
+    def _lookup(self):
+        self.calls += 1
+        return self._result or None
+
+
+def _blocking_lookup(release: threading.Event, result):
+    def lookup():
+        release.wait(timeout=5)
+        return result
+
+    return lookup
+
+
+async def _release_worker():
+    # Give the worker thread a chance to finish after its event is released.
+    await asyncio.sleep(0.05)
+
+
+def test_fxu01_dns_resolves_and_caches():
+    async def scenario():
+        resolver = _CountingResolver(("10.0.0.1", 8443))
+        assert await resolver.resolve() == ("10.0.0.1", 8443)
+        assert await resolver.resolve() == ("10.0.0.1", 8443)
+        assert resolver.address == ("10.0.0.1", 8443)
+        assert resolver.calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_fxu02_cached_address_no_new_dns_with_concurrent_clients():
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        resolver = _CountingResolver(("127.0.0.1", tport))
+        await resolver.resolve()
+        async with _Harness(resolver) as harness:
+            payloads = [f"c{i}".encode() * 100 for i in range(20)]
+            results = await asyncio.gather(*(_echo_roundtrip(harness.port, p) for p in payloads))
+            assert results == payloads
+        assert resolver.calls == 1
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu03_concurrent_uncached_resolve_single_call():
+    async def scenario():
+        release = threading.Event()
+        resolver = _CountingResolver(("10.1.1.1", 8443), resolve_timeout=2.0)
+        resolver._lookup = lambda: _slow_counter(resolver, release)
+        tasks = [asyncio.create_task(resolver.resolve()) for _ in range(20)]
+        await asyncio.sleep(0.05)
+        release.set()
+        results = await asyncio.gather(*tasks)
+        assert all(result == ("10.1.1.1", 8443) for result in results)
+        assert resolver.calls == 1
+
+    asyncio.run(scenario())
+
+
+def _slow_counter(resolver, release):
+    resolver.calls += 1
+    release.wait(timeout=5)
+    return resolver._result
+
+
+def test_fxu04_dns_oserror_none_then_retry():
+    async def scenario():
+        calls = {"n": 0}
+
+        def lookup():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("dns failure")
+            return ("10.0.0.2", 8443)
+
+        resolver = forwarder._TargetResolver("keycloak", 8443, resolve_timeout=1.0)
+        resolver._lookup = lookup
+        assert await resolver.resolve() is None
+        assert resolver.address is None
+        assert await resolver.resolve() == ("10.0.0.2", 8443)
+
+    asyncio.run(scenario())
+
+
+def test_fxu05_dns_empty_list_none():
+    async def scenario():
+        resolver = _CountingResolver([])
+        assert await resolver.resolve() is None
+        assert resolver.address is None
+
+    asyncio.run(scenario())
+
+
+def test_fxu06_dns_worker_stalls_bounded():
+    async def scenario():
+        release = threading.Event()
+        resolver = forwarder._TargetResolver("keycloak", 8443, resolve_timeout=0.1)
+        resolver._lookup = lambda: _slow_block(release) or None
+        start = time.monotonic()
+        assert await resolver.resolve() is None
+        assert time.monotonic() - start < 1.0
+        release.set()
+        await _release_worker()
+
+    asyncio.run(scenario())
+
+
+def _slow_block(release):
+    release.wait(timeout=5)
+    return None
+
+
+def test_fxu07_late_dns_result_cannot_populate_cache():
+    async def scenario():
+        release = threading.Event()
+        resolver = forwarder._TargetResolver("keycloak", 8443, resolve_timeout=0.1)
+        resolver._lookup = lambda: _slow_addr(release)
+        assert await resolver.resolve() is None
+        release.set()
+        await _release_worker()
+        assert resolver.address is None
+
+    asyncio.run(scenario())
+
+
+def _slow_addr(release):
+    release.wait(timeout=5)
+    return ("10.9.9.9", 8443)
+
+
+def test_fxu08_invalidate_during_inflight_lookup():
+    async def scenario():
+        release = threading.Event()
+        resolver = forwarder._TargetResolver("keycloak", 8443, resolve_timeout=2.0)
+        resolver._lookup = lambda: _slow_addr(release)
+        task = asyncio.create_task(resolver.resolve())
+        await asyncio.sleep(0.05)
+        resolver.invalidate()
+        release.set()
+        assert await task is None
+        assert resolver.address is None
+        await _release_worker()
+
+    asyncio.run(scenario())
+
+
+def test_fxu09_invalidation_after_refused_connect():
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        probe = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+        dead_port = probe.sockets[0].getsockname()[1]
+        probe.close()
+        await probe.wait_closed()
+        calls = {"n": 0}
+
+        def lookup():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return ("127.0.0.1", dead_port)
+            return ("127.0.0.1", tport)
+
+        resolver = forwarder._TargetResolver("keycloak", tport, resolve_timeout=1.0)
+        resolver._lookup = lookup
+        opened = await forwarder._open_target(resolver)
+        assert opened is not None
+        assert resolver.address == ("127.0.0.1", tport)
+        _, writer = opened
+        writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu10_all_attempts_fail_dns_bounded():
+    async def scenario():
+        resolver = forwarder._TargetResolver("keycloak", 8443, resolve_timeout=0.1)
+        resolver._lookup = lambda: None
+        start = time.monotonic()
+        assert await forwarder._open_target(resolver) is None
+        assert time.monotonic() - start < 3.0
+
+    asyncio.run(scenario())
+
+
+def test_fxu11_cancel_during_dns():
+    async def scenario():
+        release = threading.Event()
+        resolver = forwarder._TargetResolver("keycloak", 8443, resolve_timeout=2.0)
+        resolver._lookup = lambda: _slow_addr(release)
+        task = asyncio.create_task(resolver.resolve())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        release.set()
+        await _release_worker()
+        assert resolver.address is None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "not-a-number"])
+def test_fxu12_invalid_resolve_timeout_rejected(value):
+    env = dict(os.environ)
+    env["MTMF_DEV_FORWARDER_RESOLVE_TIMEOUT"] = value
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    assert "finite positive" in result.stderr
+
+
+def test_fxu13_no_data_no_target_connection(monkeypatch):
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        resolver = _CountingResolver(("127.0.0.1", tport))
+        monkeypatch.setattr(forwarder, "FIRST_BYTE_TIMEOUT_SECONDS", 0.2)
+        async with _Harness(resolver) as harness:
+            reader, writer = await asyncio.open_connection("127.0.0.1", harness.port)
+            data = await asyncio.wait_for(reader.read(), timeout=2)
+            assert data == b""
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+            assert resolver.calls == 0
+            assert all(task.done() for task in harness.tasks)
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu14_bidirectional_and_all_tasks_done():
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            payload = b"bidirectional" * 2000
+            assert await _echo_roundtrip(harness.port, payload) == payload
+            await asyncio.sleep(0.05)
+            assert all(task.done() for task in harness.tasks)
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu15_half_close_response_within_grace():
+    async def scenario():
+        async def read_all_then_reply(reader, writer):
+            await reader.read()
+            await writer.drain()
+            writer.write(b"tail")
+            await writer.drain()
+            writer.close()
+
+        target, tport = await _start_target(read_all_then_reply)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            reader, writer = await asyncio.open_connection("127.0.0.1", harness.port)
+            writer.write(b"req")
+            await writer.drain()
+            writer.write_eof()
+            assert await asyncio.wait_for(reader.read(), timeout=3) == b"tail"
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+            await asyncio.sleep(0.05)
+            assert all(task.done() for task in harness.tasks)
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu16_target_closes_first_tasks_joined():
+    async def scenario():
+        async def send_then_close(reader, writer):
+            await reader.read(1024)
+            writer.write(b"bye")
+            await writer.drain()
+            writer.close()
+
+        target, tport = await _start_target(send_then_close)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            assert await _send_and_read_eof(harness.port, b"x") == b"bye"
+            await asyncio.sleep(0.05)
+            assert all(task.done() for task in harness.tasks)
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu17_client_reset_listener_survives():
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            _reader, writer = await asyncio.open_connection("127.0.0.1", harness.port)
+            writer.write(b"data")
+            await writer.drain()
+            writer.transport.abort()  # type: ignore[attr-defined]
+            await asyncio.sleep(0.1)
+            assert harness.server is not None and harness.server.is_serving()
+            assert await _echo_roundtrip(harness.port, b"ok") == b"ok"
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu18_target_connect_failure_after_first_bytes():
+    async def scenario():
+        probe = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+        dead_port = probe.sockets[0].getsockname()[1]
+        probe.close()
+        await probe.wait_closed()
+        resolver = forwarder._TargetResolver("127.0.0.1", dead_port, resolve_timeout=0.2)
+        async with _Harness(resolver) as harness:
+            assert await _send_and_read_eof(harness.port, b"data") == b""
+            await asyncio.sleep(0.05)
+            assert all(task.done() for task in harness.tasks)
+
+    asyncio.run(scenario())
+
+
+def test_fxu19_cancel_while_waiting_first_completed():
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            _reader, writer = await asyncio.open_connection("127.0.0.1", harness.port)
+            writer.write(b"start")
+            await writer.drain()
+            await asyncio.sleep(0.05)
+            harness.tasks[0].cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await harness.tasks[0]
+            assert harness.tasks[0].done()
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu20_cancel_during_drain_window():
+    async def scenario():
+        gate = asyncio.Event()
+
+        async def delayed_reply(reader, writer):
+            await reader.read()
+            await gate.wait()
+            writer.write(b"late")
+            await writer.drain()
+            writer.close()
+
+        target, tport = await _start_target(delayed_reply)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            writer = (await asyncio.open_connection("127.0.0.1", harness.port))[1]
+            writer.write(b"req")
+            await writer.drain()
+            writer.write_eof()
+            await asyncio.sleep(0.05)
+            harness.tasks[0].cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await harness.tasks[0]
+            assert harness.tasks[0].done()
+            gate.set()
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu21_cancel_while_pump_blocked_in_drain():
+    async def scenario():
+        async def flood(reader, writer):
+            await reader.read(1024)
+            chunk = b"z" * 65536
+            for _ in range(200):
+                writer.write(chunk)
+                await writer.drain()
+            writer.close()
+
+        target, tport = await _start_target(flood)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            _reader, writer = await asyncio.open_connection("127.0.0.1", harness.port)
+            writer.write(b"go")
+            await writer.drain()
+            await asyncio.sleep(0.1)
+            harness.tasks[0].cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await harness.tasks[0]
+            assert harness.tasks[0].done()
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu22_cancel_during_writer_wait_closed(monkeypatch):
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        closing = asyncio.Event()
+        original_close = forwarder._close_writer
+
+        async def slow_close(writer):
+            await closing.wait()
+            await original_close(writer)
+
+        monkeypatch.setattr(forwarder, "_close_writer", slow_close)
+        async with _Harness(resolver) as harness:
+            _reader, writer = await asyncio.open_connection("127.0.0.1", harness.port)
+            writer.write(b"x")
+            await writer.drain()
+            await asyncio.sleep(0.05)
+            harness.tasks[0].cancel()
+            await asyncio.sleep(0.05)
+            closing.set()
+            with contextlib.suppress(asyncio.CancelledError):
+                await harness.tasks[0]
+            assert harness.tasks[0].done()
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu23_pump_oserror_listener_usable(monkeypatch):
+    async def scenario():
+        calls = {"n": 0}
+        original_pipe = forwarder._pipe
+
+        async def flaky_pipe(reader, writer):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("simulated disconnect")
+            await original_pipe(reader, writer)
+
+        monkeypatch.setattr(forwarder, "_pipe", flaky_pipe)
+        target, tport = await _start_target(_echo_target)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            writer = (await asyncio.open_connection("127.0.0.1", harness.port))[1]
+            writer.write(b"x")
+            await writer.drain()
+            await asyncio.sleep(0.1)
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+            assert harness.server is not None and harness.server.is_serving()
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_fxu24_unexpected_pump_exception_surfaced(monkeypatch, capsys):
+    async def scenario():
+        async def bad_pipe(_reader, _writer):
+            raise RuntimeError("programming defect")
+
+        monkeypatch.setattr(forwarder, "_pipe", bad_pipe)
+        target, tport = await _start_target(_echo_target)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            writer = (await asyncio.open_connection("127.0.0.1", harness.port))[1]
+            writer.write(b"x")
+            await writer.drain()
+            await asyncio.sleep(0.1)
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())
+    captured = capsys.readouterr()
+    assert "unexpected pump error (RuntimeError)" in captured.err
+
+
+def test_fxu25_cleanup_budget_bounded():
+    async def scenario():
+        class _SlowWriter:
+            def close(self):
+                return None
+
+            async def wait_closed(self):
+                await asyncio.sleep(1.0)
+
+        tasks = {asyncio.ensure_future(asyncio.sleep(100))}
+        start = time.monotonic()
+        await asyncio.wait_for(
+            forwarder._finish_cleanup(tasks, _SlowWriter(), _SlowWriter()), timeout=3.0
+        )
+        assert time.monotonic() - start < 3.0
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+    asyncio.run(scenario())
+
+
+def test_fxu26_fifty_handler_cancellations_no_growth():
+    async def scenario():
+        target, tport = await _start_target(_echo_target)
+        resolver = forwarder._TargetResolver("127.0.0.1", tport)
+        async with _Harness(resolver) as harness:
+            baseline = len(asyncio.all_tasks())
+            for _ in range(50):
+                _reader, writer = await asyncio.open_connection("127.0.0.1", harness.port)
+                writer.write(b"x")
+                await writer.drain()
+                await asyncio.sleep(0)
+                assert harness.tasks
+                task = harness.tasks[-1]
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                writer.close()
+                with contextlib.suppress(Exception):
+                    await writer.wait_closed()
+            await asyncio.sleep(0.1)
+            assert len(asyncio.all_tasks()) <= baseline + 2
+        target.close()
+        await target.wait_closed()
+
+    asyncio.run(scenario())

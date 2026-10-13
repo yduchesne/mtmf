@@ -11,20 +11,24 @@ and issuer validation remain intact end to end and no second issuer exists.
 
 It is development-only, never host-published, exposes no health or admin
 surface, performs no policy or DNS rewriting, and logs only bounded, non-secret
-startup metadata. It is started by ``compose.dev.yaml`` and is owned by the
-explicit ``mtmf`` Compose project.
+startup/error metadata. It is started by ``compose.dev.yaml`` and is owned by
+the explicit ``mtmf`` Compose project.
 
-Reliability (PR 17-C Amendment 3)
----------------------------------
-The target address is resolved once through a small bounded resolver and cached
-until a connect fails, so each accepted client does not re-issue the bare-name
-``keycloak`` DNS search query (which intermittently exceeded the resolver
-timeout and stalled client handshakes). The target connection is opened lazily,
-only after the client sends its first bytes, so a bare TCP reachability probe
-never opens an incomplete TLS connection. Each client is handled by two
-independent streaming pumps with bounded, explicit teardown (cancel/join, close,
-wait_closed) so client/target reset, half-close, refusal, timeout, or
-cancellation cannot leak tasks or hang the listener.
+Reliability (PR 17-C Amendment 3 + Fixup 1)
+------------------------------------------
+* **Bounded DNS.** The target address is resolved through a small cached
+  resolver with a real caller-facing deadline. A timed-out/blocked resolver
+  worker cannot mutate the cache: the cache commit happens only in the awaiting
+  coroutine and only when the invalidation generation is unchanged.
+* **Race-safe cache.** One ``asyncio.Lock`` serializes lookups and an
+  invalidation generation prevents a stale in-flight result from overwriting a
+  newer invalidation.
+* **Cancellation-safe pumps.** ``_handle`` owns both pump tasks and both
+  writers; a single bounded, shielded cleanup path cancels and joins every pump
+  and closes/awaits both writers on success, error, or cancellation.
+* **Lazy target connect.** The target connection is opened only after the
+  client sends its first bytes, so a bare TCP reachability probe never opens an
+  incomplete TLS connection.
 
 Usage:
     python scripts/mtmf-dev-forwarder.py
@@ -35,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import math
 import os
 import socket
 import sys
@@ -52,24 +57,64 @@ CONNECT_ATTEMPTS = int(os.environ.get("MTMF_DEV_FORWARDER_CONNECT_ATTEMPTS", "3"
 FIRST_BYTE_TIMEOUT_SECONDS = float(os.environ.get("MTMF_DEV_FORWARDER_FIRST_BYTE_TIMEOUT", "5"))
 #: Bounded grace for the target to finish a response after the client half-closes.
 PUMP_DRAIN_TIMEOUT_SECONDS = float(os.environ.get("MTMF_DEV_FORWARDER_DRAIN_TIMEOUT", "10"))
+#: Bounded budget for cancelling/joining pumps and closing writers during cleanup.
+CLEANUP_TIMEOUT_SECONDS = float(os.environ.get("MTMF_DEV_FORWARDER_CLEANUP_TIMEOUT", "2"))
+#: Backoff between bounded target-connect attempts.
+CONNECT_BACKOFF_SECONDS = 0.2
 
 CHUNK_SIZE = 65536
 
 
-class _TargetResolver:
-    """Resolve the Keycloak target address with a bounded, invalidatable cache.
+def _parse_resolve_timeout() -> float:
+    """Return a finite, strictly positive resolver deadline or exit.
 
-    Resolving the bare service name on every connection repeatedly issued the
-    DNS search query for ``<name>.<search-domain>``, which intermittently hit
-    the resolver timeout and stalled a client's TLS handshake by 5-10 s. The
-    address is resolved once and reused; a failed connect invalidates the cache
-    so a rebuilt Keycloak is re-discovered rather than assumed to keep its IP.
+    Validation happens at import/startup so an invalid value fails before the
+    listener is created.
+    """
+    raw = os.environ.get("MTMF_DEV_FORWARDER_RESOLVE_TIMEOUT", "").strip()
+    if not raw:
+        return 2.0
+    try:
+        value = float(raw)
+    except ValueError:
+        raise SystemExit(
+            "MTMF_DEV_FORWARDER_RESOLVE_TIMEOUT must be a finite positive number"
+        ) from None
+    if not math.isfinite(value) or value <= 0:
+        raise SystemExit("MTMF_DEV_FORWARDER_RESOLVE_TIMEOUT must be a finite positive number")
+    return value
+
+
+#: Caller-facing DNS resolution deadline.
+RESOLVE_TIMEOUT_SECONDS = _parse_resolve_timeout()
+
+
+class _TargetResolver:
+    """Resolve the Keycloak target address with a bounded, race-safe cache.
+
+    The DNS lookup runs in a worker thread (``asyncio.to_thread``) behind a real
+    ``asyncio.wait_for`` deadline. Only the awaiting coroutine commits a result,
+    and only when the invalidation generation has not changed, so a late or
+    timed-out worker can never mutate cached state. A single ``asyncio.Lock``
+    coalesces concurrent lookups while the cache is empty.
     """
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        *,
+        resolve_timeout: float = RESOLVE_TIMEOUT_SECONDS,
+    ) -> None:
+        if not math.isfinite(resolve_timeout) or resolve_timeout <= 0:
+            raise ValueError("resolve_timeout must be a finite positive number")
         self._host = host
         self._port = port
+        self._resolve_timeout = resolve_timeout
         self._address: tuple[str, int] | None = None
+        #: Monotonic invalidation generation; incremented synchronously.
+        self._generation = 0
+        self._lock = asyncio.Lock()
 
     @property
     def address(self) -> tuple[str, int] | None:
@@ -77,41 +122,64 @@ class _TargetResolver:
         return self._address
 
     def invalidate(self) -> None:
-        """Discard the cached address so the next resolve is fresh."""
+        """Synchronously discard the cached address and bump the generation."""
+        self._generation += 1
         self._address = None
 
-    async def resolve(self) -> tuple[str, int] | None:
-        """Resolve the target with bounded IPv4-only getaddrinfo."""
-        loop = asyncio.get_running_loop()
+    def _lookup(self) -> tuple[str, int] | None:
+        """Blocking IPv4-only resolution (runs in a worker thread)."""
         try:
-            infos = await loop.run_in_executor(
-                None,
-                lambda: socket.getaddrinfo(
-                    self._host,
-                    self._port,
-                    family=socket.AF_INET,
-                    type=socket.SOCK_STREAM,
-                    flags=socket.AI_ADDRCONFIG,
-                ),
+            infos = socket.getaddrinfo(
+                self._host,
+                self._port,
+                family=socket.AF_INET,
+                type=socket.SOCK_STREAM,
+                flags=socket.AI_ADDRCONFIG,
             )
         except OSError:
             return None
         if not infos:
             return None
-        self._address = infos[0][4]
-        return self._address
+        return infos[0][4]
+
+    async def resolve(self) -> tuple[str, int] | None:
+        """Resolve the target within the deadline; ``None`` on any failure.
+
+        The cache is committed only by this coroutine and only when the
+        generation is unchanged, so a timed-out worker thread that finishes
+        later cannot populate the cache with a stale address. ``CancelledError``
+        propagates to the caller.
+        """
+        async with self._lock:
+            if self._address is not None:
+                return self._address
+            generation = self._generation
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(self._lookup),
+                    timeout=self._resolve_timeout,
+                )
+            except TimeoutError, OSError:
+                return None
+            if result is None:
+                return None
+            if generation != self._generation or self._address is not None:
+                # Invalidated while this lookup was in flight.
+                return None
+            self._address = result
+            return result
 
 
 async def _open_target(
     resolver: _TargetResolver,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
-    """Open the Keycloak listener with a bounded connect, re-resolving on failure."""
+    """Open the Keycloak listener with bounded connect attempts and re-resolution."""
     for _ in range(CONNECT_ATTEMPTS):
         address = resolver.address
         if address is None:
             address = await resolver.resolve()
         if address is None:
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(CONNECT_BACKOFF_SECONDS)
             continue
         try:
             return await asyncio.wait_for(
@@ -120,7 +188,7 @@ async def _open_target(
             )
         except OSError:
             resolver.invalidate()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(CONNECT_BACKOFF_SECONDS)
     return None
 
 
@@ -144,11 +212,57 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
 
 
 async def _close_writer(writer: asyncio.StreamWriter) -> None:
-    """Close a writer and await its completion, suppressing expected errors."""
+    """Close a writer and await its completion within a bounded budget."""
     with contextlib.suppress(OSError, RuntimeError):
         writer.close()
-    with contextlib.suppress(OSError, RuntimeError):
-        await writer.wait_closed()
+    with contextlib.suppress(OSError, RuntimeError, TimeoutError):
+        await asyncio.wait_for(writer.wait_closed(), timeout=CLEANUP_TIMEOUT_SECONDS)
+
+
+async def _finish_cleanup(
+    tasks: set[asyncio.Task[None]],
+    target_writer: asyncio.StreamWriter | None,
+    client_writer: asyncio.StreamWriter,
+) -> None:
+    """Cancel/join every registered pump, then close both writers.
+
+    Runs as the single owner cleanup path. Bounded so it cannot hang the
+    handler: pumps are joined within ``CLEANUP_TIMEOUT_SECONDS`` and writers are
+    closed with a bounded ``wait_closed``. Expected disconnect errors are
+    suppressed; an unexpected pump exception is surfaced as a bounded,
+    non-secret diagnostic rather than silently discarded. Writers are closed
+    only after the pumps have had their cancellation/join opportunity.
+    """
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    results: list[object] = []
+    if tasks:
+        try:
+            gathered = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=CLEANUP_TIMEOUT_SECONDS,
+            )
+            results = list(gathered)
+        except TimeoutError:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+    unexpected = [
+        result
+        for result in results
+        if isinstance(result, BaseException)
+        and not isinstance(result, (asyncio.CancelledError, OSError))
+    ]
+    if unexpected:
+        print(
+            f"mtmf development forwarder: unexpected pump error ({type(unexpected[0]).__name__})",
+            file=sys.stderr,
+            flush=True,
+        )
+    if target_writer is not None:
+        await _close_writer(target_writer)
+    await _close_writer(client_writer)
 
 
 async def _handle(
@@ -159,6 +273,7 @@ async def _handle(
 ) -> None:
     """Forward one client connection to the pinned Keycloak HTTPS listener."""
     target_writer: asyncio.StreamWriter | None = None
+    tasks: set[asyncio.Task[None]] = set()
     try:
         # Lazy connect: wait for the client's first bytes. A bare TCP
         # reachability check that connects and closes without data never opens a
@@ -183,25 +298,20 @@ async def _handle(
             return
 
         client_to_target = asyncio.create_task(_pipe(client_reader, target_writer))
+        tasks.add(client_to_target)
         target_to_client = asyncio.create_task(_pipe(target_reader, client_writer))
-        tasks = {client_to_target, target_to_client}
-        try:
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            if target_to_client in done:
-                # The target closed: no further response is possible.
-                for task in pending:
-                    task.cancel()
-            elif pending:
-                # The client finished/half-closed: give the target a bounded
-                # window to deliver the remainder of the response.
-                _, still_pending = await asyncio.wait(pending, timeout=PUMP_DRAIN_TIMEOUT_SECONDS)
-                for task in still_pending:
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
+        tasks.add(target_to_client)
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        if target_to_client in done:
+            # The target closed: no further response is possible.
+            for task in pending:
+                task.cancel()
+        elif pending:
+            # The client finished/half-closed: give the target a bounded window
+            # to deliver the remainder of the response.
+            _, still_pending = await asyncio.wait(pending, timeout=PUMP_DRAIN_TIMEOUT_SECONDS)
+            for task in still_pending:
+                task.cancel()
     except asyncio.CancelledError:
         raise
     except OSError:
@@ -209,14 +319,21 @@ async def _handle(
         # listener; no payload or secret detail is logged.
         return
     finally:
-        if target_writer is not None:
-            await _close_writer(target_writer)
-        await _close_writer(client_writer)
+        # Single owner cleanup. Shield the cleanup task so a cancellation of the
+        # handler cannot abandon the pumps; if the handler is cancelled while
+        # waiting, join the same cleanup task and re-raise cancellation.
+        cleanup_task = asyncio.ensure_future(_finish_cleanup(tasks, target_writer, client_writer))
+        try:
+            await asyncio.shield(cleanup_task)
+        except asyncio.CancelledError:
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.shield(cleanup_task)
+            raise
 
 
 async def main() -> None:
     """Serve the canonical-port TCP forwarder until terminated."""
-    resolver = _TargetResolver(TARGET_HOST, TARGET_PORT)
+    resolver = _TargetResolver(TARGET_HOST, TARGET_PORT, resolve_timeout=RESOLVE_TIMEOUT_SECONDS)
     # Warm the resolver cache before accepting clients so the first request does
     # not pay the DNS search-query cost. Failure is fine: Keycloak may not be
     # reachable yet, and connections resolve lazily.
@@ -238,3 +355,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         sys.exit(0)
+    except ValueError as exc:
+        print(f"mtmf development forwarder configuration error: {exc}", file=sys.stderr)
+        sys.exit(2)

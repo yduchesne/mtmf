@@ -166,12 +166,14 @@ the `mtmf-dev-keycloak-data` volume across restarts.
   configured; restore the realm before restarting.
 - **`refusing to remove ...`** — MTMF ownership labels do not match; the
   resource is foreign and is never removed.
-- **Container probe times out** — the forwarder resolves `keycloak` once, caches the
-  address, and re-resolves on a failed connect, so it no longer issues a DNS
-  search query per request; `preflight`/`up` also retain a bounded probe retry as
-  defense in depth. A persistent failure indicates a real problem with the
-  `forwarder` container or the network, not a normal transient. This does **not**
-  indicate Compose recreation and does not require restarting Keycloak.
+- **Container probe times out** — the forwarder resolves `keycloak` once with a
+  bounded (default 2 s, `MTMF_DEV_FORWARDER_RESOLVE_TIMEOUT`) deadline, caches the
+  address, and re-resolves on a failed connect, so it no longer issues an
+  unbounded DNS search query per request; `preflight`/`up` also retain a bounded
+  probe retry as defense in depth. A persistent failure indicates a real problem
+  with the `forwarder` container or the network, not a normal transient. This
+  does **not** indicate Compose recreation and does not require restarting
+  Keycloak.
 
 `up-host-network` remains a documented development fallback; it is no longer
 the normal path.
