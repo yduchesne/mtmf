@@ -26,8 +26,7 @@
 ## 1. Purpose and dominant invariant (C01)
 
 MTMF is the authoritative **Policy Decision Point (PDP)**. It exposes a
-separately deployed, versioned HTTPS API. Consuming applications (ATI, Digr,
-Darkula, Hammeridian) are **Policy Enforcement Points (PEPs)**: they
+separately deployed, versioned HTTPS API. Consuming applications (ATI and Darkula) are **Policy Enforcement Points (PEPs)**: they
 authenticate their own end users, request authorization decisions, and
 enforce the returned effects at handlers, workflows, and data-access
 boundaries.
@@ -230,7 +229,7 @@ available.
   When resource-level policy is MTMF-owned, the required qualifier must be
   present and validated before `ALLOW`; when the resource is application-owned,
   the PEP independently checks row/resource isolation.
-- MTMF does not know arbitrary ATI/Digr/Darkula/Hammeridian domain objects and
+- MTMF does not know arbitrary ATI/Darkula domain objects and
   cannot enforce their SQL row predicates.
 
 **Resource-qualifier ownership (approved T4).** Capability-level authorization
