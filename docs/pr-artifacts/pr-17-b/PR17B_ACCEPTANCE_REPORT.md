@@ -77,22 +77,27 @@ matched its binding, confirming the flow is subject-agnostic.
 
 ## 4. Acceptance matrix status
 
+**Amended 2026-10-12:** the previously unexercised cases below were completed live in the
+acceptance-completion amendment on tip `ca23d11`. See
+[`PR17B_AMENDMENT_ACCEPTANCE_REPORT.md`](PR17B_AMENDMENT_ACCEPTANCE_REPORT.md) for the exact
+commands, topology, and evidence; that report supersedes this summary.
+
 | ID | Status | Note |
 | --- | --- | --- |
-| I01, I02, I03, I04, I05, I06, I07, I08, I09, I11, I17, I19 | PASS | Live or live-suite evidence above |
-| I12 two simultaneous initializers | Design-covered; **not separately exercised live** | Serialized by the existing advisory lock; unit-level concurrency/reconciliation tests exist in `test_pr17_dev_initializer.py` for the base bootstrap. |
-| I13 kill after Keycloak create before MTMF binding | Design-covered; **not separately exercised live** | Verified by the unit/uncertain-outcome re-read design and by the safe-rerun I02 behavior. |
-| I14 kill after MTMF commit / restart | Equivalent to I02 restart | PASS |
-| I15 network timeout after POST | Unit `test_u19_timeout_after_commit_is_reconciled`; live not injected | Fail-closed bounded re-read. |
-| I16 container env/mounts inspection | Unit `test_u26_*` + `test_u24_initializer_mounts_secret_directory_read_only`; live container inspect not run | Compose-wiring assertions on `compose.dev.yaml`. |
-| I10 incompatible existing MTMF binding | Existing PR 17 integration `test_dev17_initializer_rejects_conflicting_root` and `ensure_user_binding` conflict guard; not re-injected against the new subject | No auto-rebind/delete by design. |
-| I18 multiple Applications | Existing PR 17 fixture behavior preserved | Not re-run with multiple keys in this PR. |
-| I20 Tenant key/name override in actual Compose | Unit `test_u24_initializer_forwards_dev_user_and_tenant_configuration`; live Compose launch not run | Forwarding corrected; `_dev_fixture` reads both. |
+| I01–I09, I11, I17, I19 | PASS | Live or live-suite evidence above |
+| I10 incompatible existing MTMF binding | PASS | Live amendment I10: sanctioned conflict seed, fail-closed, no rebind. |
+| I12 two simultaneous initializers | PASS | Live amendment I12: barrier-launched processes converged on one user/binding. |
+| I13 kill after Keycloak create before MTMF binding | PASS | Live amendment I13: failpoint exit 99, no MTMF rows, same `sub` on rerun. |
+| I14 kill after MTMF commit / restart | PASS | Live amendment I13/I14 third run: stable counts, same binding, password unchanged. |
+| I15 network timeout after POST | PASS | Live amendment I15a/b/c: real proxy, lost-response reconciliation, unsuccessful and indeterminate fail-closed. |
+| I16 container env/mounts inspection | PASS | Live amendment I16: real Compose containers + composed-image run; read-only mount, privileged vars initializer-only. |
+| I18 multiple Applications | PASS | Live amendment I18: two approved clients, no duplicates across restart. |
+| I20 Tenant key/name override | PASS | Live amendment I20: override persisted, idempotent, conflicting name fails closed. |
 
 ## 5. Unit test matrix mapping
 
 `tests/unit/service/test_pr17b_development_user.py` (45 tests) and
-`tests/unit/service/test_pr17b_initialize_script.py` (11 tests) implement the matrix:
+`tests/unit/service/test_pr17b_initialize_script.py` (13 tests) implement the matrix:
 
 - U01 happy existing; U02 create-once; U03 matching assertion; U04 no mutation; U05 repeated;
 - U06 missing + disabled creation; U07 mismatch; U08 email/disabled; U09 ambiguous; U10 fuzzy-only;
@@ -107,6 +112,9 @@ refusal/preflight tests; see `PR17B_IMPLEMENTATION_REPORT.md`.
 
 ## 6. Not run / blockers
 
-- No item is a hard blocker; the unexercised I-cases above are design/unit-covered but not independently
-  reproduced against the live stack in this environment.
+- All I-cases are now `PASS`; the amendment completed the previously unexecuted cases. See
+  [`PR17B_AMENDMENT_ACCEPTANCE_REPORT.md`](PR17B_AMENDMENT_ACCEPTANCE_REPORT.md).
+- `scripts/mtmf-dev-stack.py up` as one command remains limited by the pre-existing issuer-hostname
+  blocker; I16/I20 use the real Compose container definitions plus a documented host-network composed-image
+  run (see the amendment acceptance report §5).
 - Human review is outstanding. Status: **implementation + live acceptance delivered, NOT DONE.**

@@ -35,10 +35,13 @@ potential STOP conditions and their resolution follow.
 | D-4 | Decision | Compose mounts `$MTMF_DEV_SECRET_DIR` read-only at `/run/mtmf-secrets`. | Accepted; no plaintext password in Compose/`.env`. |
 | D-5 | Hardening | Brokered accounts (`origin`) are rejected in addition to `federationLink`/service accounts. | Added in `9e074fb`; unit tested. |
 | SD-1 | Pre-existing behavior | The existing PR 17 advisory lock is held across `ensure_client`/`verify_issuer` remote calls. | Retained as the existing bounded lock contract; **no DB transaction** is held; new user I/O is outside the lock. Not a blocking STOP. |
-| SD-2 | Coverage gap | Live I12 (simultaneous initializers), I13 (kill after create), I15 (injected timeout after POST), I16 (live container inspection), I10 (injected incompatible binding), I18 (multi-Application), I20 (live Compose launch) were not all independently reproduced against the live stack. | Design- and unit-covered; recorded in `PR17B_ACCEPTANCE_REPORT.md` §4. Not a hard blocker, but part of why the PR is not DONE. |
+| SD-2 | Coverage gap (RESOLVED in the acceptance-completion amendment) | Live I10/I12/I13/I15/I16/I18/I20 were not all independently reproduced against the live stack. | Completed on tip `ca23d11`: all listed cases now PASS. See [`PR17B_AMENDMENT_ACCEPTANCE_REPORT.md`](PR17B_AMENDMENT_ACCEPTANCE_REPORT.md). |
+| D-6 | Feature defect fixed | `ensure_ordinary_tenant` reused an existing Tenant by ID without comparing its configured name, so a conflicting `MTMF_DEV_TENANT_NAME` did not fail closed. | Reproduced designing I20; fixed in `ca23d11`; I20 is the regression test. |
+| SD-4 | Environment limitation | `scripts/mtmf-dev-stack.py up` as a single command is blocked by the pre-existing issuer-hostname limitation (PR 17 Amendment #1). | I16/I20 use the real Compose container definitions plus a documented host-network composed-image run; no approved design changed. |
 | SD-3 | Harness environment | The PR 14 live suite requires the fixture CA to be trusted (`SSL_CERT_FILE`); without it, 20 cases fail with `attestation credential request failed`. | Environment/harness failure, not a PR 17-B regression; re-run with the CA trusted passed 51/51. |
 
 ## Open items before DONE
 
-- Complete or explicitly waive the unexercised live I-cases (SD-2).
-- Human security/architecture review and approval. **No merge without human approval.**
+- ~~Complete or explicitly waive the unexercised live I-cases (SD-2).~~ Resolved by the acceptance-completion
+  amendment (`ca23d11`); all I-cases PASS.
+- Human security/architecture review. **No merge without human approval.**
