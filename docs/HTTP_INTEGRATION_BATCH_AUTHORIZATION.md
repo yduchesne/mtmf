@@ -125,7 +125,7 @@ Tenant context, and cannot be mixed or overridden by a request-body field.
 
 ## PR 19 audit and telemetry architecture (approved; not implemented)
 
-Authorization decisions and rejected trust-boundary requests use structured, privacy-preserving OpenTelemetry logs with correlated traces and low-cardinality metrics. MTMF does **not** synchronously persist each decision in PostgreSQL. Existing PostgreSQL audit for security-state mutations remains authoritative and atomic; PR 19 must inventory and close justified mutation-audit gaps without weakening stored-function privilege boundaries. OTel export is bounded and asynchronous; exporter or collector outages must not change PDP ALLOW/DENY semantics, and best-effort delivery must not be described as tamper-evident or complete audit. Provision an MTMF-owned Collector, Prometheus, Jaeger, Loki and four Grafana dashboards-as-code. See [PR 19 Hybrid Audit and Observability Architecture](PR19_HYBRID_AUDIT_OBSERVABILITY_ARCHITECTURE.md) for the binding design, redaction, reliability, acceptance and performance requirements.
+Authorization decisions and rejected trust-boundary requests use structured, privacy-preserving OpenTelemetry logs with correlated traces and low-cardinality metrics. MTMF does **not** synchronously persist each decision in PostgreSQL. Existing PostgreSQL audit for security-state mutations remains authoritative and atomic; PR 19 must inventory and close justified mutation-audit gaps without weakening stored-function privilege boundaries. OTel export is bounded and asynchronous; exporter or collector outages must not change PDP ALLOW/DENY semantics, and best-effort delivery must not be described as tamper-evident or complete audit. Provision an MTMF-owned Collector, Prometheus, Jaeger, Loki and four Grafana dashboards-as-code. See [Audit and Observability Architecture](AUDIT_OBSERVABILITY_ARCHITECTURE.md) for the binding design, redaction, reliability, acceptance and performance requirements.
 
 ## 3A. OAuth access-token lifecycle and refresh-token boundary (PRs 14 and 18; NOT IMPLEMENTED)
 
@@ -342,7 +342,7 @@ sensitive access.
 | 16 | Python/Rust native batch and parity benchmarks | No |
 | 17 | Authenticated HTTP service endpoint | Partial — FastAPI/Uvicorn PDP for the frozen PR 15 batch contract, PR 14 trust composition, PR 13 eligibility, PR 16 Python batch, bounded TTL/limits/readiness, and an opt-in development initializer are implemented and unit/real-PostgreSQL verified; live Keycloak + real-ASGI acceptance is NOT EXECUTED and the production issuer/root gates remain deferred |
 | 18 | HTTP client and scoped snapshot helper | No |
-| 19 | Hybrid audit, decision observability, and provisioned Grafana dashboards ([architecture](PR19_HYBRID_AUDIT_OBSERVABILITY_ARCHITECTURE.md)) | No — planned |
+| 19 | Hybrid audit, decision observability, and provisioned Grafana dashboards ([architecture](AUDIT_OBSERVABILITY_ARCHITECTURE.md)) | No — planned |
 | 20 | ATI PEP reference integration and E2E validation | No |
 
 ## 11. Normative terminology
