@@ -246,7 +246,7 @@ Instrument application use cases, subscription checks, trusted actor boundary, b
 
 ### PR 20 — v0.1 integration, conformance, and ATI reference validation [REVISED from former PR 16 — PLANNED]
 
-Exercise end-to-end authenticated HTTP flows against isolated PostgreSQL, including ATI as first reference consuming application. Verify subscribed/unsubscribed/suspended Tenant outcomes, user/Tenant context spoofing rejection, scoped batch ALLOW/DENY, client helper default-deny and expiry, resource-level PEP enforcement, policy revocation stale-window behavior, Rust/Python parity, failure modes, and migration/concurrency/contract tests. This PR is not a requirement to integrate Digr, Darkula, or Hammeridian into v0.1.
+Exercise end-to-end authenticated HTTP flows against isolated PostgreSQL, including ATI as first reference consuming application. Verify subscribed/unsubscribed/suspended Tenant outcomes, user/Tenant context spoofing rejection, scoped batch ALLOW/DENY, client helper default-deny and expiry, resource-level PEP enforcement, policy revocation stale-window behavior, Rust/Python parity, failure modes, and migration/concurrency/contract tests. This PR requires ATI as the first reference consuming application; integration with Darkula is not required for v0.1.
 
 **Dependency notes:** PR 12 precedes the new API contract; PRs 13 and 14 may overlap after PR 12; PR 15 freezes transport semantics; PRs 16 and 17 may overlap after PR 15 but must converge before PR 18/20 validation. Existing PR 10 and PR 11 deliverables remain intact. All PRs 12–20 are FUTURE WORK; this documentation change does not implement any of them.
 
