@@ -3,7 +3,7 @@
 **PR:** PR 17-B — strict created-resource provenance follow-up
 **Baseline:** `docs/pr-artifacts/pr-17-b/PR17B_CREATION_PROVENANCE_BASELINE.md`
 **Starting tip:** `f84cadd371a3f889fe79fd98464908b3a88b4225`
-**Amended code tip:** recorded in `PR17B_CREATION_PROVENANCE_ACCEPTANCE_REPORT.md`
+**Amended code tip:** `acddeb3f3c8caabc631ab577729df0fb236fd0f5`
 
 Deterministic unit tests extend `tests/unit/service/test_pr17b_development_user.py`
 and `tests/unit/service/test_pr17b_initialize_script.py` using the existing fake
