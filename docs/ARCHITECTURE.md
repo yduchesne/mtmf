@@ -89,14 +89,21 @@ The core should remain independent of external transport concerns.
 
 ### 3.3 mtmf-client
 
-> **Historical (pre-PR 12).** The dual `LocalConnector`/`HttpConnector` design below is **not** the v0.1 external integration target. Under PR 12, `mtmf-client` is an HTTP-only, non-authoritative convenience layer (PR 18); it does not embed a PDP and is not an alternative authorization authority. This paragraph is retained only to explain earlier packaging discussion.
+> **Historical (pre-PR 12).** An earlier design proposed a location-transparent
+dual `LocalConnector`/`HttpConnector` pair. That design is **not** the v0.1
+external integration target and no `LocalConnector`/`HttpConnector` exists.
+The paragraph is retained only to explain earlier packaging discussion.
 
-`mtmf-client` is the consumer-facing client implementation and depends on `mtmf-api`.
-
-It provides at least:
-
-- `LocalConnector`;
-- `HttpConnector`.
+**Current (PR 18).** `mtmf-client` is the HTTP-only, non-authoritative
+consumer library. It obtains an OAuth 2.0 Client Credentials *service* access
+token, propagates a separately verified end-user access token in its own
+header, calls the frozen v1 `POST /v1/authorization/evaluate` endpoint,
+strictly validates the response against the original request, and returns an
+immutable, context-bound, monotonically expiring `AuthorizationSnapshot` with
+fail-closed `is_allowed`/`require` helpers. It depends only on `mtmf-api` and
+`httpx`: it imports no `mtmf-core`, `mtmf-service`, FastAPI, PostgreSQL,
+Alembic or native engine code, embeds no PDP, and makes no authorization
+decision. See [packages/mtmf-client/README.md](../packages/mtmf-client/README.md).
 
 Both implement the same Connector/service contract.
 
@@ -539,6 +546,8 @@ layer. The PR 17 authenticated HTTP batch endpoint and the opt-in development
 initializer are **implemented and unit/real-PostgreSQL verified**, but the
 live Keycloak + real-ASGI end-to-end acceptance matrix and the production
 issuer/root recovery gates remain outstanding, so PR 17 is not yet DONE. The
-PR 18 client snapshot helper remains **not implemented**. See
+PR 18 `mtmf-client` HTTP client and scoped snapshot/PEP helper are
+**implemented and live-verified** against a real Keycloak / Uvicorn /
+PostgreSQL topology; PR 18 is **ready for human review, not DONE**. See
 [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)
 and [ROADMAP_V01.md](ROADMAP_V01.md).

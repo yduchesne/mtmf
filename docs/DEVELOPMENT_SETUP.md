@@ -373,6 +373,36 @@ curl -sk -X POST "$MTMF_AUTH_ADMIN_BASE/realms/master/protocol/openid-connect/to
 # then GET /admin/realms/<realm>/users?username=<user>&exact=true with the bearer token
 ```
 
+## Official Python client (`mtmf-client`) local configuration
+
+The official consumer client is an HTTPS-only library. It never disables
+TLS verification, so for the local development stack it must be given the
+disposable development CA (`MTMF_DEV_CA_DIR/dev-ca.crt`) through
+`ca_bundle` (or the process trust store via `SSL_CERT_FILE`). The
+client's token endpoint and issuer are the canonical development values:
+
+| Setting | Development value |
+| --- | --- |
+| MTMF base URL | `https://<mtmf-service>` (v1 route is `/v1/authorization/evaluate`) |
+| Token endpoint | `https://keycloak.mtmf.test:28443/realms/mtmf-dev/protocol/openid-connect/token` |
+| Expected issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-dev` |
+| CA bundle | `$(MTMF_DEV_CA_DIR)/dev-ca.crt` |
+| Service credential | a development OAuth client id + an owner-only secret file |
+| Acting user | a separately obtained end-user access token, propagated in `X-MTMF-User-Authorization` |
+
+The client stores no OAuth refresh token and will not fall back to an
+unverified TLS connection. The client currently caps every authorization
+snapshot at the 15-second security-sensitive ceiling because the
+authoritative Action sensitivity classifier is not a public contract. See
+[packages/mtmf-client/README.md](../packages/mtmf-client/README.md).
+
+Run the opt-in real-topology slice with:
+
+```sh
+MTMF_PR18_LIVE=1 uv run --no-sync pytest \
+  tests/integration/postgres/test_pr18_live_client.py --no-cov
+```
+
 ## Security and production boundary
 
 The initializer is **development-only**, short-lived, and privileged. The long-running MTMF service and ATI must never receive Keycloak administrator, MTMF root, migrator, or database owner credentials. MTMF's protected root foundation is not the same as an automatically configured production root login; production root authentication and recovery are separate requirements. Production customer provisioning must use an explicitly authorized administrative workflow, **not** ordinary ATI startup or automatic environment-variable creation.
