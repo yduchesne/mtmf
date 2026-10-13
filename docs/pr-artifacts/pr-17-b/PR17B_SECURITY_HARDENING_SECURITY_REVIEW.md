@@ -1,6 +1,7 @@
 # PR 17-B Security-Hardening Security Review
 
 **PR:** PR 17-B — security-hardening amendment
+**Amended code tip:** `6471e392d4b2f0ecc617ced9c70e33ef10c489ba`
 **Starting tip:** `0c9ee1e6ae75d41b56d4353c85c65060a0432f64`
 
 ## 1. Finding 1 — unearned email verification (fixed)

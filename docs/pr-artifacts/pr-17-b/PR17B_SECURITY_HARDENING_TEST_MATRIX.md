@@ -1,7 +1,7 @@
 # PR 17-B Security-Hardening Test Matrix
 
 **PR:** PR 17-B — security-hardening amendment
-**Amended tip:** pending commit (see `PR17B_SECURITY_HARDENING_ACCEPTANCE_REPORT.md`)
+**Amended tip:** `6471e392d4b2f0ecc617ced9c70e33ef10c489ba`
 **Starting tip:** `0c9ee1e6ae75d41b56d4353c85c65060a0432f64`
 **Base:** `b60c50b9b134a28d2a1199ce01abc608c7f319d3`
 
