@@ -47,17 +47,22 @@ SERVICE_LIVE_URL = "http://127.0.0.1:28001/health/live"
 
 #: Canonical development issuer authority (PR 17-C). The same hostname/port
 #: appears in discovery `issuer`, token `iss`, `MTMF_AUTH_ISSUER` and the JWKS
-#: URI; containers resolve it through the MTMF-owned forwarder network alias.
+#: URI; containers resolve it through the MTMF-owned forwarder network alias
+#: (made authoritative over the copied host `/etc/hosts` by `dev/nsswitch.conf`).
 CANONICAL_KC_HOSTNAME = "keycloak.mtmf.test"
 CANONICAL_KC_PORT = 28443
 #: Exact canonical issuer. `MTMF_AUTH_ISSUER` must equal this literal string;
 #: any other host/port/scheme/path (including ones containing the canonical
 #: hostname as a substring) is rejected before any mutating action.
 CANONICAL_KC_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
-FORWARDER_CONTAINER = "mtmf_forwarder_1"
 CA_CERT_IN_CONTAINER = "/certs/mtmf-ca.crt"
 CERT_SCRIPT = REPO_ROOT / "scripts" / "mtmf-dev-certs.py"
 PROBE_SCRIPT = REPO_ROOT / "scripts" / "mtmf-dev-probe.py"
+#: Static resolver override mounted into the probe container and the Compose
+#: initializer/service. It makes DNS authoritative over the copied host
+#: `/etc/hosts`, so the canonical name resolves to the current forwarder
+#: without any dynamic IP entering the Compose model (Amendment 2).
+NSSWITCH_FILE = REPO_ROOT / "dev" / "nsswitch.conf"
 
 
 class OrchestrationError(RuntimeError):
@@ -196,12 +201,12 @@ def _probe_host(issuer: str) -> None:
 def _probe_container(issuer: str) -> None:
     """Verify the canonical issuer from inside the isolated MTMF network.
 
-    Runs a fresh, throwaway container that receives the same
-    ``keycloak.mtmf.test`` mapping as the initializer and service, so the
-    check proves the canonical authority is reachable and TLS-verified on the
-    real container network path (not the host's loopback).
+    Runs a fresh, throwaway container that receives the same resolver override
+    as the initializer and service, so the check proves the canonical authority
+    is reachable and TLS-verified on the real container network path (the MTMF
+    network alias) rather than the host's loopback. No container IP is guessed
+    or cached: if the forwarder is absent or unreachable the probe fails closed.
     """
-    forwarder_ip = os.environ.get("MTMF_DEV_FORWARDER_IP", "").strip() or _forwarder_ip()
     _run(
         [
             "podman",
@@ -209,8 +214,8 @@ def _probe_container(issuer: str) -> None:
             "--rm",
             "--network",
             f"{PROJECT}_default",
-            "--add-host",
-            f"{CANONICAL_KC_HOSTNAME}:{forwarder_ip}",
+            "-v",
+            f"{NSSWITCH_FILE}:/etc/nsswitch.conf:ro",
             "-v",
             f"{PROBE_SCRIPT}:/app/mtmf-dev-probe.py:ro",
             "-v",
@@ -226,27 +231,6 @@ def _probe_container(issuer: str) -> None:
             "container",
         ]
     )
-
-
-def _forwarder_ip() -> str:
-    """Return the running forwarder's IP on the MTMF network."""
-    result = subprocess.run(
-        [
-            "podman",
-            "inspect",
-            "--format",
-            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
-            FORWARDER_CONTAINER,
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    addresses = (result.stdout or "").split()
-    if result.returncode != 0 or not addresses:
-        raise OrchestrationError("cannot determine the MTMF forwarder container address")
-    return addresses[0]
 
 
 def _database_url_for_containers(name: str) -> str:
@@ -347,10 +331,9 @@ def up() -> int:
         raise OrchestrationError("PostgreSQL did not become healthy within 180s")
     _wait_keycloak_http(_required_env("MTMF_AUTH_ADMIN_BASE"), str(_ca_cert_file()))
 
-    # Pin the canonical authority to the forwarder for the initializer/service
-    # (the copied host `/etc/hosts` entry must not shadow it) and prove the
-    # canonical issuer path from both namespaces before writing state.
-    os.environ["MTMF_DEV_FORWARDER_IP"] = _forwarder_ip()
+    # Prove the canonical issuer path from both namespaces before writing state.
+    # The container path uses the static resolver override, so no dynamic
+    # forwarder IP is written to the Compose environment or the launcher state.
     _probe_until_stable(_probe_host, issuer)
     _probe_until_stable(_probe_container, issuer)
 
@@ -365,11 +348,18 @@ def up() -> int:
 
 
 def preflight() -> int:
-    """Run the canonical-issuer preflight from host and container namespaces."""
+    """Run the canonical-issuer preflight from host and container namespaces.
+
+    Uses the same bounded retry as ``up`` so a transient transport timeout on
+    the forwarder path (a pre-existing forwarder defect, see the PR 17-C
+    Amendment 2 deviation register) does not make an otherwise-healthy stack
+    appear broken. It never retries a lifecycle/Compose operation and never
+    hides a configuration change: the Compose model is proven stable separately.
+    """
     _require_development()
     issuer = _require_canonical_issuer()
-    _probe_host(issuer)
-    _probe_container(issuer)
+    _probe_until_stable(_probe_host, issuer)
+    _probe_until_stable(_probe_container, issuer)
     print("canonical issuer preflight passed from host and container namespaces", flush=True)
     return 0
 

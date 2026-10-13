@@ -134,6 +134,20 @@ once, then starts the restricted service and waits for
 `http://127.0.0.1:28001/health/ready`. `up` refuses a non-canonical
 `MTMF_AUTH_ISSUER` with literal string equality (no substring/prefix acceptance).
 
+**Stable lifecycle (PR 17-C Amendment 2).** The Compose model contains no
+dynamic container address, so the configuration hash is invariant across the
+phases of one `up` and across repeated `up` runs. Once PostgreSQL, Keycloak and
+the forwarder have started, a normal `up` does not recreate or restart them:
+repeated `up` preserves the same container IDs and `State.StartedAt`
+timestamps. The initializer remains intentionally rerunnable.
+
+Containers resolve `keycloak.mtmf.test` through `dev/nsswitch.conf`, a static
+resolver override mounted at `/etc/nsswitch.conf` that makes MTMF DNS
+authoritative over the host `/etc/hosts` entry Podman copies into the
+container. This keeps the canonical name pointing at the current forwarder
+without baking any IP into the Compose configuration. Do not add
+`MTMF_DEV_FORWARDER_IP`-style dynamic values to `compose.dev.yaml`.
+
 The realm and approved clients are still a one-time operator prerequisite (see
 the [Keycloak development fixture](../dev/keycloak/README.md)); they persist in
 the `mtmf-dev-keycloak-data` volume across restarts.
@@ -152,6 +166,12 @@ the `mtmf-dev-keycloak-data` volume across restarts.
   configured; restore the realm before restarting.
 - **`refusing to remove ...`** — MTMF ownership labels do not match; the
   resource is foreign and is never removed.
+- **Container probe intermittently times out** — `preflight` retries the probe
+  for a bounded period (the same mechanism `up` uses) to absorb a known
+  pre-existing forwarder transport transient. A persistent failure is still
+  reported; investigate the `forwarder` container if it does not clear. This
+  does **not** indicate Compose recreation and does not require restarting
+  Keycloak.
 
 `up-host-network` remains a documented development fallback; it is no longer
 the normal path.

@@ -153,13 +153,11 @@ services:
       # Public development CA certificate only; the private keys stay on the
       # host and are never mounted.
       - ${MTMF_DEV_CA_DIR:-/tmp/mtmf-dev-ca}/dev-ca.crt:/certs/mtmf-ca.crt:ro
-    # Pin the canonical authority to the MTMF-owned forwarder IP. Podman
-    # copies the host `/etc/hosts` into every container, so an operator
-    # loopback entry for `keycloak.mtmf.test` would otherwise shadow the
-    # MTMF network alias. `--add-host` is written before the copied entries
-    # and wins, keeping the canonical authority correct inside the container.
-    extra_hosts:
-      - "keycloak.mtmf.test:${MTMF_DEV_FORWARDER_IP:-127.0.0.1}"
+      # Resolver override: DNS (the MTMF network alias) is authoritative over
+      # the host `/etc/hosts` entry Podman copies into the container, so
+      # `keycloak.mtmf.test` resolves to the current forwarder without baking a
+      # dynamic IP into the Compose model (PR 17-C Amendment 2).
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -203,11 +201,9 @@ services:
     volumes:
       # Public development CA certificate only.
       - ${MTMF_DEV_CA_DIR:-/tmp/mtmf-dev-ca}/dev-ca.crt:/certs/mtmf-ca.crt:ro
-    # See the initializer note: pin the canonical authority to the
-    # MTMF-owned forwarder IP so the copied host `/etc/hosts` entry cannot
-    # shadow the canonical network alias.
-    extra_hosts:
-      - "keycloak.mtmf.test:${MTMF_DEV_FORWARDER_IP:-127.0.0.1}"
+      # Resolver override mirroring the initializer: DNS wins, so the canonical
+      # name resolves to the current forwarder without a dynamic Compose input.
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
     ports:
       - "127.0.0.1:28001:28001"
     depends_on:
