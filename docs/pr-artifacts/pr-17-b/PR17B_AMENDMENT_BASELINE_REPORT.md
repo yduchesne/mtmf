@@ -4,7 +4,7 @@
 **Amendment:** acceptance-completion amendment
 **Base commit:** `b60c50b9b134a28d2a1199ce01abc608c7f319d3` (`origin/main`)
 **Reported starting tip:** `f0de6b1` — verified correct
-**Final amendment tip:** `ca23d11ebbb2f7c316be444aeb594c38d7114d6f`
+**Final amendment tip:** `e860e214d7cbddbe0b58d82267041a687ad39907` (reports) · code/test tip `ca23d11ebbb2f7c316be444aeb594c38d7114d6f`
 **Branch:** `dev/pr17b-keycloak-user-provisioning`
 **Working tree:** clean at the start and end of the amendment.
 
@@ -25,7 +25,8 @@ artifact commit. Full commit provenance:
 | `daeed82dd7ff49cbc7715be3769ab67f93f00db1` | PR 17-B artifacts |
 | `9e074fb09e92b1db37f96496f3f256ef49196e1a` | brokered-`origin` account hardening |
 | `f0de6b13f440d42db55a0d19057268822e96df9f` | artifact provenance/count corrections (starting tip) |
-| `ca23d11ebbb2f7c316be444aeb594c38d7114d6f` | this amendment (failpoint, live harness, Tenant-name fix) |
+| `ca23d11ebbb2f7c316be444aeb594c38d7114d6f` | this amendment code/test (failpoint, live harness, Tenant-name fix) |
+| `e860e214d7cbddbe0b58d82267041a687ad39907` | this amendment reports (branch tip) |
 
 ## 2. Live infrastructure inventory
 

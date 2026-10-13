@@ -2,7 +2,7 @@
 
 **PR:** PR 17-B — Development Keycloak user provisioning and verified MTMF identity binding
 **Amendment:** acceptance-completion amendment
-**Final amendment tip:** `ca23d11ebbb2f7c316be444aeb594c38d7114d6f`
+**Final amendment tip:** `e860e214d7cbddbe0b58d82267041a687ad39907` (reports; code/test tip `ca23d11ebbb2f7c316be444aeb594c38d7114d6f`)
 
 ## 1. New production-code changes (smallest delta)
 
