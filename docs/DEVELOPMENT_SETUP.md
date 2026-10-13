@@ -29,7 +29,7 @@ The development one-shot reads the following variables. They are **not** part of
 | Variable | Required | Behavior |
 | --- | --- | --- |
 | `MTMF_DEV_USER_USERNAME` | Yes | Exact Keycloak username to create or verify. Must be lowercase, trimmed, and free of control characters and `/ \ ? #`. No fabricated default. |
-| `MTMF_DEV_USER_EMAIL` | No | Expected email. Compared case-insensitively against the existing account; a mismatch fails closed. Never a lookup fallback or identity key. |
+| `MTMF_DEV_USER_EMAIL` | No | Expected email. Compared case-insensitively against the existing account; a mismatch fails closed. It is an attribute consistency check, **not** proof of email control, and is never a lookup fallback or identity key. |
 | `MTMF_DEV_USER_CREATE` | No | Explicit `true` or `false`; **default `false`**. Creation is opt-in. Unknown values fail configuration validation. |
 | `MTMF_DEV_USER_PASSWORD_FILE` | Only when creating a missing user | Container path to the initial password file (see the secret-file rules below). Read only when a user must be created. |
 | `MTMF_DEV_USER_SUBJECT` | No | Optional assertion. When non-empty it must equal Keycloak's actual user ID; a mismatch stops before any MTMF binding. Empty is treated as unset. |
@@ -56,13 +56,20 @@ MTMF_DEV_USER_PASSWORD_FILE=/run/mtmf-secrets/dev-user-password
 
 The initializer never resets or changes the password of an existing user. For a newly created user, the initial password is non-temporary (so local sign-in works immediately) and Keycloak marks the account enabled. Do **not** enable direct-access (password) grants on approved clients merely to make login easier; use the realm's approved browser/OIDC flow.
 
+### Email verification and creation provenance
+
+- **Email is not automatically verified.** A newly created user is submitted with `emailVerified=false`; the initializer has not proven control of the configured address. An existing account's `emailVerified` state is never modified, and a valid existing account is not rejected merely because its email is unverified. An email match remains an attribute consistency check only.
+- **Existing account reuse is an operator-approved trust decision** within the isolated development realm. When exactly one exact-username account already exists, it is validated read-only (immutable `id`, `enabled`, non-federated, optional email/subject checks) and reused. It is never repaired, renamed, or password-reset.
+- **A create is bound only with authoritative provenance.** After a successful create, the account read back must match the immutable user id in Keycloak's own `Location` response header. A conflict (`409`) or an uncertain create (timeout / lost response / transport failure / server error) is accepted only when `MTMF_DEV_USER_SUBJECT` is supplied and equals the authoritative subject; otherwise the initializer fails closed and performs no MTMF write. A later rerun reuses the now-existing account under the read-only rule above.
+- **A definite rejection (`400`/`401`/`403`/`422`, etc.) always fails closed.** A matching username that appears afterwards is never treated as proof that this invocation created it, and is not bound.
+
 ## Secret file setup
 
-Plaintext passwords must never appear in `compose.dev.yaml`, a committed `.env`, or command-line arguments. The initializer accepts a read-only mount and validates the file before reading it:
+Plaintext passwords must never appear in `compose.dev.yaml`, a committed `.env`, or command-line arguments. The initializer opens the configured file **once** with `O_NOFOLLOW` (no final-component symlink) and validates it with `fstat` on that same descriptor before reading a bounded number of bytes from it, so a path substitution between validation and reading cannot be observed. The file must be:
 
-- it must be a **regular file** (not a symlink or directory);
-- it must be owned by the initializer user and **not group- or other-accessible** (`0600`, or owner-only under a `0700` directory);
-- it must be non-empty, bounded in size, and valid UTF-8.
+- a **regular file** (not a symlink, FIFO, device, or directory);
+- owned by the initializer user and **not group- or other-accessible** (`0600`, or owner-only under a `0700` directory);
+- non-empty, at most 8192 bytes, and valid UTF-8 (no NUL bytes).
 
 Create it once, for example:
 
@@ -81,7 +88,7 @@ Compose mounts `$MTMF_DEV_SECRET_DIR` (default `/tmp/mtmf-dev-secrets`) read-onl
 - **User is missing and creation is disabled:** initialization stops with an actionable error; no MTMF subject is invented.
 - **User is disabled, drifted, federated, or ambiguous:** initialization stops and performs no repair.
 - **Subject assertion mismatch or conflicting MTMF binding:** initialization stops before writing MTMF state and requires explicit operator remediation.
-- **Partial failure:** Keycloak and PostgreSQL cannot commit atomically. If Keycloak user creation succeeded but MTMF initialization failed, the Keycloak account remains; a later rerun verifies that same account and completes reconciliation without resetting its password. No cross-system rollback is claimed.
+- **Partial failure:** Keycloak and PostgreSQL cannot commit atomically. If a create committed but its response was lost (or the outcome is otherwise uncertain), the initializer fails closed without a second POST and without binding a merely-visible username; a later rerun reuses the now-existing account without resetting its password, or the operator supplies `MTMF_DEV_USER_SUBJECT`. No cross-system rollback is claimed.
 
 ## Troubleshooting
 

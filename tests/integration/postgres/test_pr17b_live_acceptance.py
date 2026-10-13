@@ -402,7 +402,7 @@ def test_i13_i14_kill_after_create_then_restart_is_idempotent(
 # --------------------------------------------------------------------------
 
 
-def test_i15a_lost_create_response_is_reconciled(
+def test_i15a_lost_create_response_fails_closed_then_reconciles(
     db: psycopg.Connection[Any], tmp_path: Path
 ) -> None:
 
@@ -411,24 +411,32 @@ def test_i15a_lost_create_response_is_reconciled(
     password = _password()
     password_file = _write_password(tmp_path / "secrets", password)
     ca_file = _required("MTMF_PR14_KC_CA_FILE")
+    env = _base_env(
+        tmp_path / "secrets-out",
+        MTMF_DEV_USER_USERNAME=username,
+        MTMF_DEV_USER_EMAIL=f"{username}@example.invalid",
+        MTMF_DEV_USER_CREATE="true",
+        MTMF_DEV_USER_PASSWORD_FILE=str(password_file),
+    )
     try:
         with FaultProxy(_kc_base(), ca_file, fault="drop_response") as proxy:
-            result = _run_initializer(
-                _base_env(
-                    tmp_path / "secrets-out",
-                    MTMF_AUTH_ADMIN_BASE=proxy.base_url,
-                    MTMF_DEV_USER_USERNAME=username,
-                    MTMF_DEV_USER_EMAIL=f"{username}@example.invalid",
-                    MTMF_DEV_USER_CREATE="true",
-                    MTMF_DEV_USER_PASSWORD_FILE=str(password_file),
-                )
-            )
-        assert result.returncode == 0, result.stderr
+            first = _run_initializer({**env, "MTMF_AUTH_ADMIN_BASE": proxy.base_url})
+        # The real POST committed, but without an independent correlation the
+        # initializer must not bind the merely-visible matching username.
+        assert first.returncode != 0, first.stderr
+        assert "not verifiably created" in first.stderr
+        assert proxy.create_post_count() == 1
         users = admin.find_users(username)
         assert len(users) == 1
+        assert _active_binding_identity(db, str(users[0]["id"])) is None
+        assert _counts(db) == (0, 0, 0, 0, 0)
+
+        # An unchanged rerun reuses the now-existing account under the
+        # verified-account contract and completes without a second POST.
+        second = _run_initializer(env)
+        assert second.returncode == 0, second.stderr
+        assert len(admin.find_users(username)) == 1
         assert _active_binding_identity(db, str(users[0]["id"])) is not None
-        # Exactly one create POST: no blind retry was issued.
-        assert proxy.create_post_count() == 1
         assert _counts(db) == (1, 1, 1, 1, 1)
     finally:
         admin.delete_user(username)
@@ -453,7 +461,7 @@ def test_i15b_unsuccessful_create_fails_closed(db: psycopg.Connection[Any], tmp_
                 )
             )
         assert result.returncode != 0
-        assert "could not be created or verified" in result.stderr
+        assert "rejected the development user creation" in result.stderr
         assert admin.find_users(username) == []
         assert _counts(db) == (0, 0, 0, 0, 0)
     finally:
@@ -595,5 +603,38 @@ def test_i20_tenant_override_is_idempotent_and_conflict_fails_closed(
         assert db.execute("SELECT name FROM mtmf.tenant WHERE scope = 2").fetchone() == (
             tenant_name,
         )
+    finally:
+        admin.delete_user(username)
+
+
+# --------------------------------------------------------------------------
+# SH16 — newly created user with unverified email can complete real OIDC login
+# --------------------------------------------------------------------------
+
+
+def test_sh16_created_user_with_unverified_email_can_login(
+    db: psycopg.Connection[Any], tmp_path: Path
+) -> None:
+    del db  # the initializer runs against the freshly migrated schema
+    admin = AdminRest()
+    username = _unique("sh16")
+    password = _password()
+    password_file = _write_password(tmp_path / "secrets", password)
+    env = _base_env(
+        tmp_path / "secrets-out",
+        MTMF_DEV_USER_USERNAME=username,
+        MTMF_DEV_USER_EMAIL=f"{username}@example.invalid",
+        MTMF_DEV_USER_CREATE="true",
+        MTMF_DEV_USER_PASSWORD_FILE=str(password_file),
+    )
+    try:
+        result = _run_initializer(env)
+        assert result.returncode == 0, result.stderr
+        users = admin.find_users(username)
+        assert len(users) == 1
+        # The initializer must not claim email ownership it has not proven.
+        assert users[0].get("emailVerified") is False
+        # The approved browser/OIDC authorization-code flow still succeeds.
+        assert _oidc_login_sub(username, password) == str(users[0]["id"])
     finally:
         admin.delete_user(username)

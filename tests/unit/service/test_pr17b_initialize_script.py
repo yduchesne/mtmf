@@ -115,6 +115,10 @@ def test_test_failpoint_is_inert_by_default_and_triggers_when_set(
 ) -> None:
     monkeypatch.delenv(_script.TEST_FAILPOINT_ENV, raising=False)
     _script._reach_test_failpoint("after-user-verify")  # inert
+    monkeypatch.setenv(_script.TEST_FAILPOINT_ENV, "after-user-verif")
+    _script._reach_test_failpoint("after-user-verify")  # inert near miss
+    monkeypatch.setenv(_script.TEST_FAILPOINT_ENV, "some-other-failpoint")
+    _script._reach_test_failpoint("after-user-verify")  # inert different value
     monkeypatch.setenv(_script.TEST_FAILPOINT_ENV, "after-user-verify")
     with pytest.raises(SystemExit) as excinfo:
         _script._reach_test_failpoint("after-user-verify")

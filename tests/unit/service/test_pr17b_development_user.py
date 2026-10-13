@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import urllib.error
 from pathlib import Path
 from typing import Any
@@ -33,16 +34,24 @@ class FakeTransport:
         self.users = [dict(user) for user in (users or [])]
         self.calls: list[tuple[str, str, Any]] = []
         self.post_hook: Any = None
+        self.create_location: str | None = None
+        self.lookup_error_after_create: Any = None
 
     def request(self, method: str, path: str, body: Any | None = None) -> Any:
         self.calls.append((method, path, body))
-        if method == "GET":
-            return [dict(user) for user in self.users]
-        if method == "POST":
-            if self.post_hook is not None:
-                self.post_hook(self, body)
-            return None
-        raise AssertionError(f"unexpected method {method!r}")
+        if method != "GET":
+            raise AssertionError(f"unexpected method {method!r}")
+        if self.lookup_error_after_create is not None and any(
+            call[0] == "POST" for call in self.calls
+        ):
+            raise self.lookup_error_after_create
+        return [dict(user) for user in self.users]
+
+    def create_user(self, path: str, body: Any) -> str | None:
+        self.calls.append(("POST", path, body))
+        if self.post_hook is not None:
+            self.post_hook(self, body)
+        return self.create_location
 
 
 def _user(
@@ -393,7 +402,22 @@ def test_u18_special_username_is_url_encoded():
     assert transport.calls[0][1].endswith("username=dev%2Buser%40example&exact=true")
 
 
-def test_u19_conflict_after_commit_is_reconciled_with_a_single_post(tmp_path: Path):
+def test_sh07_conflict_without_assertion_fails_closed(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-raced"))
+        raise _http_error(409, b'{"errorMessage":"User exists"}')
+
+    transport.post_hook = hook
+    with pytest.raises(BootstrapError, match="not verifiably created"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+    assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
+
+
+def test_sh08_conflict_with_matching_assertion_is_accepted(tmp_path: Path):
     transport = FakeTransport([])
 
     def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
@@ -402,13 +426,32 @@ def test_u19_conflict_after_commit_is_reconciled_with_a_single_post(tmp_path: Pa
 
     transport.post_hook = hook
     subject = _provisioner(transport).ensure_user(
-        _config(create=True, password_file=_secure_password_file(tmp_path))
+        _config(
+            create=True,
+            password_file=_secure_password_file(tmp_path),
+            expected_subject="kc-raced",
+        )
     )
     assert subject == "kc-raced"
     assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
 
 
-def test_u19_timeout_after_commit_is_reconciled(tmp_path: Path):
+def test_sh09_lost_response_without_assertion_fails_closed(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-timeout"))
+        raise urllib.error.URLError("timed out")
+
+    transport.post_hook = hook
+    with pytest.raises(BootstrapError, match="not verifiably created"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+    assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
+
+
+def test_sh09_lost_response_with_matching_assertion_is_accepted(tmp_path: Path):
     transport = FakeTransport([])
 
     def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
@@ -417,7 +460,11 @@ def test_u19_timeout_after_commit_is_reconciled(tmp_path: Path):
 
     transport.post_hook = hook
     subject = _provisioner(transport).ensure_user(
-        _config(create=True, password_file=_secure_password_file(tmp_path))
+        _config(
+            create=True,
+            password_file=_secure_password_file(tmp_path),
+            expected_subject="kc-timeout",
+        )
     )
     assert subject == "kc-timeout"
     assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
@@ -556,7 +603,7 @@ def test_create_includes_email_verification(tmp_path: Path):
         )
     )
     assert subject == "kc-email"
-    assert transport.calls[1][2]["emailVerified"] is True
+    assert transport.calls[1][2]["emailVerified"] is False
 
 
 def test_read_rows_none_payload_is_absent():
@@ -635,9 +682,197 @@ def test_password_file_strips_crlf_and_rejects_blank_after_trim(tmp_path: Path):
 def test_password_file_unreadable_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     target = _secure_password_file(tmp_path)
 
-    def explode(self: Path) -> bytes:
+    def explode(path: object, flags: int) -> int:
+        del path, flags
         raise OSError("denied")
 
-    monkeypatch.setattr(Path, "read_bytes", explode)
+    monkeypatch.setattr(os, "open", explode)
     with pytest.raises(DevUserConfigurationError, match="not readable"):
         load_dev_user_password(target)
+
+
+# --------------------------------------------------------------------------
+# SH security-hardening matrix
+# --------------------------------------------------------------------------
+
+
+def test_sh02_existing_user_reuse_is_read_only_regardless_of_email_verification():
+    transport = FakeTransport(
+        [_user(subject="kc-sub-1", email="dev@example.invalid", emailVerified=False)]
+    )
+    subject = _provisioner(transport).ensure_user(_config(email="dev@example.invalid"))
+    assert subject == "kc-sub-1"
+    assert [call[0] for call in transport.calls] == ["GET"]
+
+
+def test_sh04_definite_rejection_is_not_converted_by_a_matching_lookup(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        # An unrelated creator's account becomes visible, but this POST was rejected.
+        fake.users.append(_user(body["username"], subject="kc-other"))
+        raise _http_error(400, b'{"errorMessage":"rejected"}')
+
+    transport.post_hook = hook
+    with pytest.raises(BootstrapError, match="rejected the development user creation"):
+        _provisioner(transport).ensure_user(
+            _config(
+                create=True,
+                password_file=_secure_password_file(tmp_path),
+                expected_subject="kc-other",
+            )
+        )
+    # Only the initial lookup and the rejected POST were attempted: no acceptance re-read.
+    assert [call[0] for call in transport.calls] == ["GET", "POST"]
+
+
+@pytest.mark.parametrize("code", [400, 401, 403, 422])
+def test_sh05_definite_4xx_fails_closed(code: int, tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        raise _http_error(code, b'{"errorMessage":"SUPERSECRET"}')
+
+    transport.post_hook = hook
+    with pytest.raises(BootstrapError) as excinfo:
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+    message = str(excinfo.value)
+    assert str(code) in message
+    assert "SUPERSECRET" not in message
+    assert [call[0] for call in transport.calls] == ["GET", "POST"]
+
+
+def test_sh06_success_with_matching_location_is_accepted(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-created"))
+
+    transport.post_hook = hook
+    transport.create_location = (
+        "https://127.0.0.1:28443/admin/realms/mtmf-pr14-dev/users/kc-created"
+    )
+    subject = _provisioner(transport).ensure_user(
+        _config(create=True, password_file=_secure_password_file(tmp_path))
+    )
+    assert subject == "kc-created"
+
+
+def test_sh06_success_with_mismatched_location_is_rejected(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-created"))
+
+    transport.post_hook = hook
+    transport.create_location = "https://127.0.0.1:28443/admin/realms/mtmf-pr14-dev/users/other-id"
+    with pytest.raises(BootstrapError, match="does not match the resource created"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+
+
+def test_sh10_indeterminate_post_with_failed_lookup_fails_closed(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        raise urllib.error.URLError("dropped")
+
+    transport.post_hook = hook
+    transport.lookup_error_after_create = _http_error(503)
+    with pytest.raises(BootstrapError):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+    assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
+
+
+def test_sh11_success_with_mismatched_assertion_fails(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-created"))
+
+    transport.post_hook = hook
+    transport.create_location = (
+        "https://127.0.0.1:28443/admin/realms/mtmf-pr14-dev/users/kc-created"
+    )
+    with pytest.raises(BootstrapError, match="assertion does not match"):
+        _provisioner(transport).ensure_user(
+            _config(
+                create=True,
+                password_file=_secure_password_file(tmp_path),
+                expected_subject="other-sub",
+            )
+        )
+
+
+def test_sh13_validation_and_read_use_the_same_descriptor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    target = _secure_password_file(tmp_path, "secret")
+    seen: list[int] = []
+    real_fstat = os.fstat
+    real_read = os.read
+
+    def spy_fstat(fd: int) -> os.stat_result:
+        seen.append(fd)
+        return real_fstat(fd)
+
+    def spy_read(fd: int, size: int) -> bytes:
+        seen.append(fd)
+        return real_read(fd, size)
+
+    monkeypatch.setattr(os, "fstat", spy_fstat)
+    monkeypatch.setattr(os, "read", spy_read)
+    assert load_dev_user_password(target) == "secret"
+    assert seen and len(set(seen)) == 1
+
+
+def test_sh13_oversize_after_fstat_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    target = tmp_path / "grow"
+    target.write_bytes(b"a" * 9000)
+    target.chmod(0o600)
+    real_fstat = os.fstat
+
+    def fake_fstat(fd: int) -> os.stat_result:
+        info = real_fstat(fd)
+        return os.stat_result(
+            (
+                info.st_mode,
+                info.st_ino,
+                info.st_dev,
+                info.st_nlink,
+                info.st_uid,
+                info.st_gid,
+                10,
+                info.st_atime,
+                info.st_mtime,
+                info.st_ctime,
+            )
+        )
+
+    monkeypatch.setattr(os, "fstat", fake_fstat)
+    with pytest.raises(DevUserConfigurationError, match="too large"):
+        load_dev_user_password(target)
+
+
+def test_sh13_descriptor_is_closed_on_validation_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    target = tmp_path / "insecure"
+    target.write_text("secret")
+    target.chmod(0o644)
+    closed: list[int] = []
+    real_close = os.close
+
+    def spy_close(fd: int) -> None:
+        closed.append(fd)
+        real_close(fd)
+
+    monkeypatch.setattr(os, "close", spy_close)
+    with pytest.raises(DevUserConfigurationError):
+        load_dev_user_password(target)
+    assert closed

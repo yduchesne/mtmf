@@ -470,6 +470,27 @@ class KeycloakCredentialProvisioner:
         """Public Admin REST transport used by the development user provisioner."""
         return self._request(method, path, body)
 
+    def create_user(self, path: str, body: Any) -> str | None:
+        """POST a new user and return Keycloak's authoritative created-resource location.
+
+        A non-2xx response raises :class:`urllib.error.HTTPError` so the
+        provisioner can classify it. The successful response body is empty; the
+        ``Location`` header's final path segment is the created immutable id.
+        """
+        headers = {
+            "Authorization": f"Bearer {self._admin_token()}",
+            "Content-Type": "application/json",
+        }
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            data=json.dumps(body).encode(),
+            method="POST",
+            headers=headers,
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            response.read(_MAX_RESPONSE_BYTES + 1)
+            return response.headers.get("Location")
+
     def _approved_policy(self) -> ExpectedClientPolicy:
         path = os.environ.get(
             "MTMF_AUTH_EXPECTED_CLIENT_POLICY", "dev/keycloak/expected-client-policy.json"

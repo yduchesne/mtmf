@@ -20,6 +20,7 @@ module performs no MTMF persistence and never imports a database driver.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -28,6 +29,7 @@ import urllib.error
 import urllib.parse
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -69,6 +71,17 @@ class KeycloakAdminTransport(Protocol):
 
     def request(self, method: str, path: str, body: Any | None = None) -> Any:
         """Perform one Admin REST call and return parsed JSON (or ``None``)."""
+        ...
+
+    def create_user(self, path: str, body: Any) -> str | None:
+        """POST a new user and return the authoritative created-resource location.
+
+        Implementations raise the same transport exceptions as :meth:`request`
+        and return Keycloak's ``Location`` header on success (whose final path
+        segment is the created user's immutable id), or ``None`` when the
+        authority does not provide one. The location is the creation provenance
+        used to distinguish this invocation's create from an unrelated account.
+        """
         ...
 
 
@@ -184,12 +197,28 @@ def _parse_expected_subject(source: Mapping[str, str]) -> str | None:
     return value
 
 
+def _read_bounded(descriptor: int) -> bytes:
+    """Read at most ``_MAX_PASSWORD_BYTES + 1`` bytes from one open descriptor."""
+    chunks: list[bytes] = []
+    remaining = _MAX_PASSWORD_BYTES + 1
+    while remaining > 0:
+        chunk = os.read(descriptor, remaining)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def load_dev_user_password(path: Path | None) -> str:
     """Securely read a development password file for user creation only.
 
-    The file must be an owner-only regular file (no symlink, directory,
-    device, or group/other-readable mode), bounded in size, valid UTF-8, and
-    non-empty. The content is returned for immediate use and never logged.
+    The file is opened **once** with ``O_NOFOLLOW`` and validated with
+    ``fstat`` on that same descriptor, so a pathname substitution between
+    validation and read cannot be observed. The file must be an owner-only
+    regular file (no symlink, FIFO, device, or directory; no group/other mode
+    bits), bounded in size, valid UTF-8, and non-empty. The content is returned
+    for immediate use and never logged.
 
     :raises DevUserConfigurationError: when the path is missing or unsafe.
     """
@@ -197,36 +226,46 @@ def load_dev_user_password(path: Path | None) -> str:
         raise DevUserConfigurationError(
             "creation is enabled but MTMF_DEV_USER_PASSWORD_FILE is not configured"
         )
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise DevUserConfigurationError(
+            "this platform cannot open the development user password file without following "
+            "symbolic links; refusing to read it"
+        )
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0)
     try:
-        info = path.lstat()
+        descriptor = os.open(path, flags)
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise DevUserConfigurationError(
+                "the development user password file must not be a symbolic link"
+            ) from exc
         raise DevUserConfigurationError(
             "the development user password file is not readable"
         ) from exc
-    if stat.S_ISLNK(info.st_mode):
-        raise DevUserConfigurationError(
-            "the development user password file must not be a symbolic link"
-        )
-    if not stat.S_ISREG(info.st_mode):
-        raise DevUserConfigurationError("the development user password file must be a regular file")
-    if info.st_size <= 0:
-        raise DevUserConfigurationError("the development user password file is empty")
-    if info.st_size > _MAX_PASSWORD_BYTES:
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise DevUserConfigurationError(
+                "the development user password file must be a regular file"
+            )
+        if info.st_size <= 0:
+            raise DevUserConfigurationError("the development user password file is empty")
+        if info.st_size > _MAX_PASSWORD_BYTES:
+            raise DevUserConfigurationError("the development user password file is too large")
+        if info.st_mode & 0o077:
+            raise DevUserConfigurationError(
+                "the development user password file must not be group- or other-accessible"
+            )
+        if os.geteuid() != 0 and info.st_uid != os.geteuid():
+            raise DevUserConfigurationError(
+                "the development user password file must be owned by the initializer user"
+            )
+        raw = _read_bounded(descriptor)
+    finally:
+        os.close(descriptor)
+    if len(raw) > _MAX_PASSWORD_BYTES:
         raise DevUserConfigurationError("the development user password file is too large")
-    if info.st_mode & 0o077:
-        raise DevUserConfigurationError(
-            "the development user password file must not be group- or other-accessible"
-        )
-    if os.geteuid() != 0 and info.st_uid != os.geteuid():
-        raise DevUserConfigurationError(
-            "the development user password file must be owned by the initializer user"
-        )
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise DevUserConfigurationError(
-            "the development user password file is not readable"
-        ) from exc
     if b"\x00" in raw:
         raise DevUserConfigurationError("the development user password file contains invalid bytes")
     try:
@@ -251,6 +290,15 @@ class _VerifiedUser:
     enabled: bool
     email: str | None
     federated: bool
+
+
+class _CreateOutcome(StrEnum):
+    """How one bounded user-creation attempt concluded."""
+
+    CREATED = "created"
+    REJECTED = "rejected"
+    CONFLICT = "conflict"
+    INDETERMINATE = "indeterminate"
 
 
 class KeycloakDevUserProvisioner:
@@ -281,10 +329,17 @@ class KeycloakDevUserProvisioner:
     def ensure_user(self, config: DevUserConfig) -> str:
         """Return the verified Keycloak user ID / OIDC ``sub``.
 
+        Creation provenance is explicit and fail-closed: an existing account is
+        reused read-only; a successful create is accepted only when the account
+        read back matches Keycloak's own ``Location`` for that create; and a
+        conflict or indeterminate outcome is accepted only when the operator
+        asserted the expected subject. A definite rejection is never converted
+        into a success by a later matching lookup.
+
         :raises BootstrapError: on a missing user with creation disabled, an
             ambiguous lookup, a disabled/federated/drifted account, an unsafe
-            secret file, an uncertain creation outcome, or a failed subject
-            assertion. No MTMF state is touched.
+            secret file, a rejected/uncertain creation without independent
+            correlation, or a failed subject assertion. No MTMF state is touched.
         """
         matches = self._lookup_exact(config.username)
         if len(matches) > 1:
@@ -292,22 +347,41 @@ class KeycloakDevUserProvisioner:
                 "multiple Keycloak users match the configured development username; "
                 "refusing to select one"
             )
-        if not matches:
-            if not config.create:
-                raise BootstrapError(
-                    "no Keycloak user matches the configured development username and "
-                    "creation is not enabled (MTMF_DEV_USER_CREATE)"
-                )
-            password = load_dev_user_password(config.password_file)
-            failure = self._create_once(config, password)
-            matches = self._lookup_exact(config.username)
-            if len(matches) != 1:
-                detail = f" ({failure})" if failure is not None else ""
-                raise BootstrapError(
-                    "the development Keycloak user could not be created or verified" + detail
-                )
+        if matches:
+            return _bind_existing(matches[0], config)
+        if not config.create:
+            raise BootstrapError(
+                "no Keycloak user matches the configured development username and "
+                "creation is not enabled (MTMF_DEV_USER_CREATE)"
+            )
+        password = load_dev_user_password(config.password_file)
+        outcome, location, detail = self._attempt_create(config, password)
+        if outcome is _CreateOutcome.REJECTED:
+            raise BootstrapError(
+                "Keycloak rejected the development user creation; no MTMF binding was created"
+                + (f" ({detail})" if detail else "")
+            )
+        matches = self._lookup_exact(config.username)
+        if len(matches) != 1:
+            raise BootstrapError(
+                "the development Keycloak user could not be created or verified"
+                + (f" ({detail})" if detail else "")
+            )
         verified = _validate_user(matches[0])
         _verify_attributes(verified, config)
+        if outcome is _CreateOutcome.CREATED:
+            created_subject = _created_subject(location)
+            if created_subject is not None and created_subject != verified.subject:
+                raise BootstrapError(
+                    "the Keycloak account read back does not match the resource created by "
+                    "this invocation; refusing to bind"
+                )
+        elif config.expected_subject is None:
+            raise BootstrapError(
+                "the development Keycloak user was not verifiably created by this invocation "
+                "(conflict or uncertain create outcome); rerun to reuse the existing account "
+                "or provide MTMF_DEV_USER_SUBJECT to assert the expected subject"
+            )
         if config.expected_subject is not None and config.expected_subject != verified.subject:
             raise BootstrapError(
                 "the configured MTMF_DEV_USER_SUBJECT assertion does not match the "
@@ -346,11 +420,14 @@ class KeycloakDevUserProvisioner:
             rows.append(entry)
         return rows
 
-    def _create_once(self, config: DevUserConfig, password: str) -> str | None:
-        """Attempt one user creation; return a redacted failure reason.
+    def _attempt_create(
+        self, config: DevUserConfig, password: str
+    ) -> tuple[_CreateOutcome, str | None, str | None]:
+        """Perform exactly one create POST and classify the outcome.
 
-        A conflict or uncertain outcome is not raised: the caller performs a
-        bounded authoritative re-read and accepts only an exact match.
+        Returns ``(outcome, location, redacted_detail)``. The caller performs
+        the bounded authoritative re-read; this method never retries and never
+        treats a definite rejection as success.
         """
         body: dict[str, Any] = {
             "username": config.username,
@@ -365,16 +442,18 @@ class KeycloakDevUserProvisioner:
         }
         if config.email is not None:
             body["email"] = config.email
-            body["emailVerified"] = True
+            # The initializer has not proven control of this address, so it must
+            # not claim the email is verified.
+            body["emailVerified"] = False
         try:
-            self._transport.request("POST", f"/admin/realms/{self._realm}/users", body)
+            location = self._transport.create_user(f"/admin/realms/{self._realm}/users", body)
         except urllib.error.HTTPError as exc:
-            return f"Keycloak returned HTTP {exc.code}"
+            return _classify_http_status(exc.code), None, f"Keycloak returned HTTP {exc.code}"
         except urllib.error.URLError, TimeoutError, OSError:
-            return "the Keycloak request failed or timed out"
+            return _CreateOutcome.INDETERMINATE, None, "the Keycloak request failed or timed out"
         except json.JSONDecodeError:
-            return "the Keycloak response was malformed"
-        return None
+            return _CreateOutcome.INDETERMINATE, None, "the Keycloak response was malformed"
+        return _CreateOutcome.CREATED, location, None
 
     def _call(self, method: str, path: str, body: Any | None = None) -> Any:
         try:
@@ -437,6 +516,35 @@ def _verify_attributes(verified: _VerifiedUser, config: DevUserConfig) -> None:
                 "the configured development Keycloak user email does not match; no repair "
                 "is performed"
             )
+
+
+def _bind_existing(row: Mapping[str, Any], config: DevUserConfig) -> str:
+    """Validate and return the subject of an existing account (read-only)."""
+    verified = _validate_user(row)
+    _verify_attributes(verified, config)
+    if config.expected_subject is not None and config.expected_subject != verified.subject:
+        raise BootstrapError(
+            "the configured MTMF_DEV_USER_SUBJECT assertion does not match the "
+            "Keycloak user ID; no MTMF binding was created"
+        )
+    return verified.subject
+
+
+def _classify_http_status(code: int) -> _CreateOutcome:
+    """Classify a create-POST HTTP failure without claiming false certainty."""
+    if code == 409:
+        return _CreateOutcome.CONFLICT
+    if 400 <= code < 500 and code != 408:
+        return _CreateOutcome.REJECTED
+    return _CreateOutcome.INDETERMINATE
+
+
+def _created_subject(location: str | None) -> str | None:
+    """Return the created user id from Keycloak's ``Location`` header."""
+    if not location:
+        return None
+    candidate = urllib.parse.urlparse(location).path.rstrip("/").rsplit("/", 1)[-1]
+    return candidate or None
 
 
 def _sleep(seconds: float) -> None:
