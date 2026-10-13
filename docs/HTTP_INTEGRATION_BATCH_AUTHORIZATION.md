@@ -123,6 +123,10 @@ Application–Tenant authorization is explicitly registered and verified. Each
 request/batch is bound to exactly one verified Application and one acting
 Tenant context, and cannot be mixed or overridden by a request-body field.
 
+## PR 19 audit and telemetry architecture (approved; not implemented)
+
+Authorization decisions and rejected trust-boundary requests use structured, privacy-preserving OpenTelemetry logs with correlated traces and low-cardinality metrics. MTMF does **not** synchronously persist each decision in PostgreSQL. Existing PostgreSQL audit for security-state mutations remains authoritative and atomic; PR 19 must inventory and close justified mutation-audit gaps without weakening stored-function privilege boundaries. OTel export is bounded and asynchronous; exporter or collector outages must not change PDP ALLOW/DENY semantics, and best-effort delivery must not be described as tamper-evident or complete audit. Provision an MTMF-owned Collector, Prometheus, Jaeger, Loki and four Grafana dashboards-as-code. See [Audit and Observability Architecture](AUDIT_OBSERVABILITY_ARCHITECTURE.md) for the binding design, redaction, reliability, acceptance and performance requirements.
+
 ## 3A. OAuth access-token lifecycle and refresh-token boundary (PRs 14 and 18; NOT IMPLEMENTED)
 
 **Status: PR 18 implements the official Python client.** MTMF is an OAuth 2.0 protected resource server and authorization PDP, **not** an OAuth authorization server or refresh-token issuer. The trusted external issuer/authorization server issues access tokens. PR 14 owns validation and trusted identity mapping; PR 18 implements the official Python client's provider-neutral Client Credentials service-token acquisition/renewal, explicit end-user token propagation, strict v1 response validation, and the scoped snapshot/PEP helper (`packages/mtmf-client`). See [packages/mtmf-client/README.md](../packages/mtmf-client/README.md).
@@ -338,7 +342,7 @@ sensitive access.
 | 16 | Python/Rust native batch and parity benchmarks | No |
 | 17 | Authenticated HTTP service endpoint | Partial — FastAPI/Uvicorn PDP for the frozen PR 15 batch contract, PR 14 trust composition, PR 13 eligibility, PR 16 Python batch, bounded TTL/limits/readiness, and an opt-in development initializer are implemented and unit/real-PostgreSQL verified; live Keycloak + real-ASGI acceptance is NOT EXECUTED and the production issuer/root gates remain deferred |
 | 18 | HTTP client and scoped snapshot helper | No |
-| 19 | Decision observability/audit | No |
+| 19 | Hybrid audit, decision observability, and provisioned Grafana dashboards ([architecture](AUDIT_OBSERVABILITY_ARCHITECTURE.md)) | No — planned |
 | 20 | ATI PEP reference integration and E2E validation | No |
 
 ## 11. Normative terminology
