@@ -25,6 +25,30 @@ _spec.loader.exec_module(stack)
 
 ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
 
+#: Canonical issuer variants that must be rejected before any side effect.
+BAD_ISSUERS = [
+    "https://evil-keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+    "https://keycloak.mtmf.test.evil.example/realms/mtmf-pr14-dev",
+    "https://keycloak.mtmf.test:28444/realms/mtmf-pr14-dev",
+    "http://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+    "https://keycloak.mtmf.test:28443/realms/other",
+    "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev/",
+    "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev?x=1",
+    "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev#frag",
+    "https://user:secret@keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+    "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+]
+
+
+def _load_probe() -> Any:
+    probe_script = Path(__file__).resolve().parents[3] / "scripts" / "mtmf-dev-probe.py"
+    spec = importlib.util.spec_from_file_location("mtmf_dev_probe_for_constants", probe_script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
 
 def _set_development_env(monkeypatch: pytest.MonkeyPatch, issuer: str = ISSUER) -> None:
     monkeypatch.setenv("MTMF_SERVICE_DEPLOYMENT_MODE", "development")
@@ -81,6 +105,37 @@ def test_up_rejects_non_canonical_issuer(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(stack, "_run", lambda *a, **k: pytest.fail("must not run"))
     with pytest.raises(stack.OrchestrationError):
         stack.up()
+
+
+@pytest.mark.parametrize("bad", BAD_ISSUERS)
+@pytest.mark.parametrize("entrypoint", ["up", "preflight"])
+def test_am03_am07_rejected_before_side_effects(
+    monkeypatch: pytest.MonkeyPatch, bad: str, entrypoint: str
+):
+    # Only the minimal environment is set: acceptance must happen before the
+    # database URLs are read, certificate material is prepared, or Compose runs.
+    monkeypatch.setenv("MTMF_SERVICE_DEPLOYMENT_MODE", "development")
+    monkeypatch.setenv("MTMF_AUTH_ISSUER", bad)
+    monkeypatch.delenv("MTMF_MIGRATOR_DATABASE_URL", raising=False)
+    monkeypatch.delenv("MTMF_RUNTIME_DATABASE_URL", raising=False)
+    monkeypatch.setattr(stack, "_prepare_certificates", lambda: pytest.fail("must not prepare"))
+    monkeypatch.setattr(stack, "_run", lambda *a, **k: pytest.fail("must not run"))
+    monkeypatch.setattr(stack, "_probe_host", lambda *a: pytest.fail("must not probe"))
+    monkeypatch.setattr(stack, "_probe_container", lambda *a: pytest.fail("must not probe"))
+    monkeypatch.setattr(stack, "_forwarder_ip", lambda: pytest.fail("must not inspect"))
+    with pytest.raises(stack.OrchestrationError) as exc:
+        getattr(stack, entrypoint)()
+    # AM07/AM24: the untrusted supplied value (which may contain credentials)
+    # is never echoed in the failure diagnostic.
+    message = str(exc.value)
+    assert bad not in message
+    assert "secret" not in message
+
+
+def test_constants_agree_with_probe():
+    probe = _load_probe()
+    assert stack.CANONICAL_KC_ISSUER == probe.CANONICAL_ISSUER == ISSUER
+    assert f"{ISSUER}/protocol/openid-connect/certs" == probe.EXPECTED_JWKS_URI
 
 
 def test_prepare_certificates_generates_then_hardens(monkeypatch: pytest.MonkeyPatch):

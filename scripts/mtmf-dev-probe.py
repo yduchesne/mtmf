@@ -8,14 +8,16 @@ runs in. It checks, in order and fail-closed:
 1. DNS resolution of the canonical hostname;
 2. TCP reachability on the canonical port (``28443``);
 3. TLS trust and hostname/SAN verification against the MTMF development CA;
-4. discovery ``issuer`` exact equality with the configured trust anchor;
-5. JWKS endpoint availability and shape.
+4. discovery ``issuer`` exact equality with the canonical trust anchor;
+5. discovery ``jwks_uri`` exact equality with the canonical Keycloak certs
+   endpoint, checked **before** the JWKS request is made;
+6. JWKS endpoint availability and shape.
 
 It is run twice by the development launcher: once on the WSL host and once
 inside the isolated MTMF Compose network, because a host success does **not**
 prove container reachability and vice versa. It never disables TLS
-verification, never accepts a mismatched issuer, and never falls back to
-another host.
+verification, never accepts a mismatched issuer or JWKS URI, and never falls
+back to another host.
 
 Usage:
     python scripts/mtmf-dev-probe.py \
@@ -36,6 +38,15 @@ import urllib.request
 from dataclasses import dataclass, field
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
+
+#: Exact canonical development issuer (PR 17-C). Must agree with
+#: ``CANONICAL_KC_ISSUER`` in ``scripts/mtmf-dev-stack.py``; a unit test asserts
+#: the two literals are identical.
+CANONICAL_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+
+#: Exact canonical Keycloak JWKS resource appended to the canonical issuer.
+EXPECTED_JWKS_SUFFIX = "/protocol/openid-connect/certs"
+EXPECTED_JWKS_URI = CANONICAL_ISSUER + EXPECTED_JWKS_SUFFIX
 
 
 class ProbeError(RuntimeError):
@@ -58,13 +69,37 @@ class ProbeReport:
 
 
 def _parse_issuer(issuer: str) -> tuple[str, int]:
-    """Return the canonical ``(host, port)`` for ``issuer`` or fail closed."""
+    """Return the canonical ``(host, port)`` for ``issuer`` or fail closed.
+
+    The supplied issuer must be the literal canonical issuer; any other
+    host/port/scheme/path (including values containing the canonical hostname
+    as a substring) is rejected. The untrusted value is never echoed.
+    """
+    if issuer != CANONICAL_ISSUER:
+        raise ProbeError(
+            "the issuer must exactly equal the canonical development issuer "
+            f"{CANONICAL_ISSUER} (rejected the supplied value)"
+        )
     parsed = urllib.parse.urlparse(issuer)
-    if parsed.scheme != "https":
-        raise ProbeError("the canonical issuer must use https")
-    if not parsed.hostname:
-        raise ProbeError("the canonical issuer has no hostname")
-    return parsed.hostname.lower(), parsed.port or 443
+    if parsed.scheme != "https" or parsed.hostname != "keycloak.mtmf.test":
+        raise ProbeError("the canonical issuer must use https://keycloak.mtmf.test")
+    if parsed.port != 28443:
+        raise ProbeError("the canonical issuer must use port 28443")
+    return parsed.hostname, parsed.port
+
+
+def _require_expected_jwks_uri(jwks_uri: object) -> str:
+    """Return the JWKS URI only when it is the exact canonical endpoint.
+
+    This is a pure, network-free check applied to the untrusted discovery
+    document before any JWKS request. Prefix/suffix/hostname-only matching,
+    normalization, percent-decoding, and relative URLs are all rejected.
+    """
+    if not isinstance(jwks_uri, str) or jwks_uri != EXPECTED_JWKS_URI:
+        raise ProbeError(
+            "discovery jwks_uri does not equal the expected canonical Keycloak endpoint"
+        )
+    return jwks_uri
 
 
 def resolve_host(host: str) -> list[str]:
@@ -130,7 +165,7 @@ def _fetch(url: str, context: ssl.SSLContext, *, timeout: float, what: str) -> b
 def check_issuer(issuer: str, ca_file: str, *, namespace: str, timeout: float) -> ProbeReport:
     """Run the full canonical-issuer preflight and return collected diagnostics."""
     host, port = _parse_issuer(issuer)
-    anchor = issuer.rstrip("/")
+    anchor = CANONICAL_ISSUER
     report = ProbeReport(namespace=namespace, host=host, port=port)
     report.addresses = resolve_host(host)
     report.record(f"dns {host} -> {', '.join(report.addresses)}")
@@ -144,13 +179,12 @@ def check_issuer(issuer: str, ca_file: str, *, namespace: str, timeout: float) -
         raise ProbeError("discovery document is not a JSON object")
     if discovery.get("issuer") != anchor:
         raise ProbeError(
-            "discovery issuer mismatch: the live issuer does not equal the configured "
+            "discovery issuer mismatch: the live issuer does not equal the canonical "
             "trust anchor; refusing to continue"
         )
     report.record(f"discovery issuer == {anchor}")
-    jwks_uri = discovery.get("jwks_uri")
-    if not isinstance(jwks_uri, str) or not jwks_uri.startswith(anchor):
-        raise ProbeError("discovery jwks_uri does not belong to the configured issuer")
+    jwks_uri = _require_expected_jwks_uri(discovery.get("jwks_uri"))
+    report.record(f"discovery jwks_uri == {jwks_uri}")
     jwks = json.loads(_fetch(jwks_uri, context, timeout=timeout, what="jwks"))
     if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list) or not jwks["keys"]:
         raise ProbeError("the JWKS document contains no signing keys")

@@ -83,9 +83,39 @@ namespace mapping. Import the **public** `$(MTMF_DEV_CA_DIR)/dev-ca.crt`
 checks verify TLS. Only the public CA certificate is mounted into the
 initializer and service at `/certs/mtmf-ca.crt`.
 
-Regenerating the material (`--rotate`) or changing the hostname requires
-refreshing the trust stores; the canonical SAN must always agree with the
-canonical hostname.
+Certificate generation is **idempotent only for a complete, validated set**.
+The four authoritative components are `dev-ca.key`, `dev-ca.crt`, `server.key`,
+and `server.crt`. `generate` classifies the directory and fails closed without
+generating or deleting anything when the state is:
+
+- **partial** (1–3 components present, e.g. after an interrupted operation), or
+- **non-regular** (a managed path is a symlink, directory, or device), or
+- **complete but invalid** (bad SAN, broken chain, mismatched CA/leaf key pair,
+  or group/other-accessible private key).
+
+`dev-ca.srl` is serial bookkeeping and is ignored for classification; a stale
+serial on an otherwise empty directory is removed before a fresh CA is created
+and can never associate a new CA with an old certificate.
+
+Recover a partial or invalid directory deliberately, with the stack stopped:
+
+```bash
+uv run --no-sync python scripts/mtmf-dev-stack.py down           # stop first; volumes preserved
+uv run --no-sync python scripts/mtmf-dev-certs.py generate --rotate
+uv run --no-sync python scripts/mtmf-dev-stack.py up
+```
+
+`--rotate` is destructive (it removes the previous CA and leaf before creating
+a replacement) and must only be run while the stack is stopped. If a rotation
+is interrupted, the directory is partial and the next normal `generate`/`up`
+fails closed until the operator completes an explicit rotation. Regenerating
+the material or changing the hostname requires refreshing the Windows/WSL trust
+stores; the canonical SAN must always agree with the canonical hostname.
+
+`MTMF_AUTH_ISSUER` must equal the exact canonical issuer
+`https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev`. Any other host, port,
+scheme, realm, trailing slash, query, fragment, or userinfo is rejected before
+certificate generation, Compose startup, or database rewriting.
 
 ### Start, verify and stop
 
@@ -102,7 +132,7 @@ the forwarder, waits for real health, proves the canonical issuer from **both**
 the host and container namespaces, runs the privileged initializer exactly
 once, then starts the restricted service and waits for
 `http://127.0.0.1:28001/health/ready`. `up` refuses a non-canonical
-`MTMF_AUTH_ISSUER`.
+`MTMF_AUTH_ISSUER` with literal string equality (no substring/prefix acceptance).
 
 The realm and approved clients are still a one-time operator prerequisite (see
 the [Keycloak development fixture](../dev/keycloak/README.md)); they persist in

@@ -50,6 +50,10 @@ SERVICE_LIVE_URL = "http://127.0.0.1:28001/health/live"
 #: URI; containers resolve it through the MTMF-owned forwarder network alias.
 CANONICAL_KC_HOSTNAME = "keycloak.mtmf.test"
 CANONICAL_KC_PORT = 28443
+#: Exact canonical issuer. `MTMF_AUTH_ISSUER` must equal this literal string;
+#: any other host/port/scheme/path (including ones containing the canonical
+#: hostname as a substring) is rejected before any mutating action.
+CANONICAL_KC_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
 FORWARDER_CONTAINER = "mtmf_forwarder_1"
 CA_CERT_IN_CONTAINER = "/certs/mtmf-ca.crt"
 CERT_SCRIPT = REPO_ROOT / "scripts" / "mtmf-dev-certs.py"
@@ -137,6 +141,22 @@ def _required_env(name: str) -> str:
     if not value:
         raise OrchestrationError(f"required environment {name} is not set")
     return value
+
+
+def _require_canonical_issuer() -> str:
+    """Return the configured issuer only when it is the exact canonical value.
+
+    Called before certificate generation, Compose startup, Podman inspection,
+    database-URL rewriting, or any other side effect. The untrusted supplied
+    value is never echoed (it could contain credentials).
+    """
+    issuer = _required_env("MTMF_AUTH_ISSUER")
+    if issuer != CANONICAL_KC_ISSUER:
+        raise OrchestrationError(
+            "MTMF_AUTH_ISSUER must exactly equal the canonical development issuer "
+            f"{CANONICAL_KC_ISSUER} (rejected the supplied value)"
+        )
+    return issuer
 
 
 def _ca_dir() -> Path:
@@ -298,14 +318,9 @@ def _postgres_inspect() -> None:
 def up() -> int:
     """Bring up the development stack in the required order."""
     _require_development()
+    issuer = _require_canonical_issuer()
     _required_env("MTMF_MIGRATOR_DATABASE_URL")
     _required_env("MTMF_RUNTIME_DATABASE_URL")
-    issuer = _required_env("MTMF_AUTH_ISSUER")
-    if CANONICAL_KC_HOSTNAME not in issuer:
-        raise OrchestrationError(
-            "MTMF_AUTH_ISSUER must use the canonical development authority "
-            f"{CANONICAL_KC_HOSTNAME}:{CANONICAL_KC_PORT}"
-        )
 
     # Containers cannot reach the host loopback: address the database by its
     # Compose service name over the isolated network.
@@ -352,12 +367,7 @@ def up() -> int:
 def preflight() -> int:
     """Run the canonical-issuer preflight from host and container namespaces."""
     _require_development()
-    issuer = _required_env("MTMF_AUTH_ISSUER")
-    if CANONICAL_KC_HOSTNAME not in issuer:
-        raise OrchestrationError(
-            "MTMF_AUTH_ISSUER must use the canonical development authority "
-            f"{CANONICAL_KC_HOSTNAME}:{CANONICAL_KC_PORT}"
-        )
+    issuer = _require_canonical_issuer()
     _probe_host(issuer)
     _probe_container(issuer)
     print("canonical issuer preflight passed from host and container namespaces", flush=True)

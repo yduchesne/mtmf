@@ -4,8 +4,10 @@
 This helper creates a disposable, uncommitted local certificate authority and
 a server leaf certificate for the canonical MTMF development issuer authority
 ``https://keycloak.mtmf.test:28443`` using the system OpenSSL tooling. It is
-development-only, idempotent, and never overwrites an existing private key
-unless the operator explicitly asks to rotate.
+development-only, idempotent **only when a complete, validated set already
+exists**, and never overwrites an existing private key unless the operator
+explicitly asks to rotate. Partially populated or inconsistent material fails
+closed without generating or deleting anything.
 
 The generated material lives under ``MTMF_DEV_CA_DIR`` (default
 ``/tmp/mtmf-dev-ca``):
@@ -33,8 +35,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import enum
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -60,6 +64,15 @@ _SERIAL = "dev-ca.srl"
 
 class CertError(RuntimeError):
     """Certificate material could not be generated, verified, or hardened."""
+
+
+class MaterialState(enum.Enum):
+    """Classification of the four authoritative managed PKI components."""
+
+    EMPTY = "empty"
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    NONREGULAR = "nonregular"
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,36 +228,79 @@ def _set_permissions(paths: CertPaths) -> None:
             os.chmod(public, 0o644)
 
 
-def _exists(paths: CertPaths) -> bool:
-    return all(
-        path.exists() for path in (paths.ca_key, paths.ca_cert, paths.server_key, paths.server_cert)
-    )
+def _inspect_material(paths: CertPaths) -> tuple[MaterialState, list[str]]:
+    """Classify managed PKI material using non-following filesystem inspection.
+
+    ``dev-ca.srl`` is deliberately ignored: it is serial bookkeeping, not one of
+    the four authoritative PKI components, and a stale serial on otherwise
+    empty material cannot associate a fresh CA with a previous certificate.
+    """
+    managed = (paths.ca_key, paths.ca_cert, paths.server_key, paths.server_cert)
+    nonregular: list[str] = []
+    missing: list[str] = []
+    present = 0
+    for path in managed:
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            missing.append(str(path))
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            nonregular.append(str(path))
+        else:
+            present += 1
+    if nonregular:
+        return MaterialState.NONREGULAR, nonregular
+    if present == 0:
+        return MaterialState.EMPTY, []
+    if present == len(managed):
+        return MaterialState.COMPLETE, []
+    return MaterialState.PARTIAL, missing
 
 
 def generate(directory: Path, *, hostname: str = DEFAULT_HOSTNAME, rotate: bool = False) -> bool:
-    """Generate certificate material if absent; return whether it was created.
+    """Generate certificate material or fail closed on inconsistent state.
 
-    Existing material is preserved unless ``rotate`` is explicitly requested.
+    ``EMPTY`` generates a complete CA + leaf set. ``COMPLETE`` is validated and
+    reused unchanged. ``PARTIAL`` and ``NONREGULAR`` are rejected without
+    generating or deleting anything. ``COMPLETE`` material that fails chain,
+    SAN, key-pair, or permission validation is rejected without regeneration.
+    ``rotate`` is the explicit destructive operator workflow and requires the
+    stack to be stopped.
     """
     paths = CertPaths.resolve(directory)
-    if _exists(paths) and not rotate:
-        check(directory, hostname=hostname)
-        return False
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    # Never partially reuse a half-written key set: only regenerate the missing
-    # pair. Rotation removes the previous material first so no stale key is
-    # silently reused by the new CA.
     if rotate:
+        # Explicit, destructive rotation only. Interruption leaves PARTIAL
+        # material that normal `generate` refuses to regenerate.
         for path in (paths.ca_key, paths.ca_cert, paths.server_key, paths.server_cert):
             path.unlink(missing_ok=True)
         (directory / _SERIAL).unlink(missing_ok=True)
-    if not paths.ca_key.exists() or not paths.ca_cert.exists():
-        _make_ca(paths)
-    if not paths.server_key.exists() or not paths.server_cert.exists():
-        _make_leaf(paths, hostname)
+        _generate_all(paths, hostname)
+        return True
+    state, detail = _inspect_material(paths)
+    if state is MaterialState.EMPTY:
+        _generate_all(paths, hostname)
+        return True
+    if state is MaterialState.COMPLETE:
+        # Validates SAN, chain, key pairs and permissions; raises on failure so
+        # an inconsistent pre-existing set is never silently replaced.
+        check(directory, hostname=hostname)
+        return False
+    raise CertError(
+        "refusing to generate: existing certificate material is "
+        f"{state.value} ({detail}); no file was generated or removed"
+    )
+
+
+def _generate_all(paths: CertPaths, hostname: str) -> None:
+    """Create a complete CA + leaf set and validate it."""
+    # A stale serial file on otherwise empty material must not be reused.
+    (paths.directory / _SERIAL).unlink(missing_ok=True)
+    _make_ca(paths)
+    _make_leaf(paths, hostname)
     _set_permissions(paths)
-    check(directory, hostname=hostname)
-    return True
+    check(paths.directory, hostname=hostname)
 
 
 def harden(directory: Path, *, container_uid: int = KEYCLOAK_CONTAINER_UID) -> None:
@@ -294,6 +350,39 @@ def _certificate_san(cert: Path) -> str:
     return result.stdout.strip()
 
 
+def _public_key_pem(*, cert: Path | None = None, key: Path | None = None) -> str:
+    """Return normalized public-key material for a certificate or private key.
+
+    The hardened leaf key is owner-mapped to the Keycloak container UID and is
+    intentionally unreadable by the host user. In that case the extraction is
+    retried inside the rootless Podman user namespace (where the mapped owner is
+    readable) rather than widening the key's permissions. Private-key content is
+    never printed or logged.
+    """
+    if cert is not None:
+        args = [_openssl(), "x509", "-in", str(cert), "-noout", "-pubkey"]
+    elif key is not None:
+        args = [_openssl(), "pkey", "-in", str(key), "-pubout"]
+    else:
+        raise CertError("no certificate or key was supplied for public-key extraction")
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        return "".join(result.stdout.split())
+    if key is not None and shutil.which("podman"):
+        namespaced = subprocess.run(
+            ["podman", "unshare", *args], capture_output=True, text=True, check=False
+        )
+        if namespaced.returncode == 0 and namespaced.stdout.strip():
+            return "".join(namespaced.stdout.split())
+    raise CertError("could not read certificate or private-key public material")
+
+
+def _require_key_matches_cert(cert: Path, key: Path, *, label: str) -> None:
+    """Require a certificate and private key to share the same public key."""
+    if _public_key_pem(cert=cert) != _public_key_pem(key=key):
+        raise CertError(f"the {label} certificate and private key do not match")
+
+
 def verify_chain(paths: CertPaths) -> None:
     """Require the leaf to verify against the CA and remain valid now."""
     result = subprocess.run(
@@ -313,16 +402,22 @@ def verify_chain(paths: CertPaths) -> None:
 
 
 def check(directory: Path, *, hostname: str = DEFAULT_HOSTNAME) -> None:
-    """Fail closed unless the leaf has the canonical SAN and verifies."""
+    """Fail closed unless the complete set validates: SAN, chain, pairs, modes."""
     paths = CertPaths.resolve(directory)
-    if not _exists(paths):
-        raise CertError(f"certificate material is incomplete under {directory}")
+    state, detail = _inspect_material(paths)
+    if state is not MaterialState.COMPLETE:
+        raise CertError(
+            f"certificate material is not a complete regular set ({state.value}: {detail})"
+        )
     san = _certificate_san(paths.server_cert)
     if f"DNS:{hostname}" not in san:
         raise CertError(f"the server certificate is missing SAN DNS:{hostname}")
     verify_chain(paths)
-    if paths.ca_key.stat().st_mode & 0o077:
-        raise CertError("the CA private key is group/other accessible")
+    _require_key_matches_cert(paths.ca_cert, paths.ca_key, label="CA")
+    _require_key_matches_cert(paths.server_cert, paths.server_key, label="server")
+    for label, private in (("CA", paths.ca_key), ("server", paths.server_key)):
+        if private.stat().st_mode & 0o077:
+            raise CertError(f"the {label} private key is group/other accessible")
 
 
 def print_paths(directory: Path) -> None:
@@ -344,7 +439,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hostname", default=DEFAULT_HOSTNAME)
     sub = parser.add_subparsers(dest="command", required=True)
     generate_parser = sub.add_parser("generate", help="create missing CA/leaf material")
-    generate_parser.add_argument("--rotate", action="store_true", help="replace existing material")
+    generate_parser.add_argument(
+        "--rotate",
+        action="store_true",
+        help="destructively replace existing material (stop the stack first)",
+    )
     harden_parser = sub.add_parser("harden", help="map the leaf key to the container UID")
     harden_parser.add_argument("--container-uid", type=int, default=KEYCLOAK_CONTAINER_UID)
     sub.add_parser("check", help="verify SAN, chain, and private-key permissions")
