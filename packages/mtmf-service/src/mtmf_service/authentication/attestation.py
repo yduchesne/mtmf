@@ -39,6 +39,9 @@ from mtmf_core.authentication.contracts import (
     AuthenticationFailure,
     IssuerProfile,
 )
+from mtmf_service.authentication.development_authority import (
+    is_approved_development_authority,
+)
 
 __all__ = [
     "AdminRestReader",
@@ -137,15 +140,10 @@ class HttpAdminRestReader:
                 AuthenticationFailure.ATTESTATION_UNAVAILABLE,
                 "the attestation reader client credential is not configured",
             )
-        parsed = urllib.parse.urlparse(base_url)
-        if parsed.scheme != "https" or (parsed.hostname or "") not in {
-            "127.0.0.1",
-            "localhost",
-            "::1",
-        }:
+        if not is_approved_development_authority(base_url, require_https=True):
             raise AuthenticationError(
                 AuthenticationFailure.ATTESTATION_UNAVAILABLE,
-                "the attestation reader requires the approved loopback HTTPS issuer",
+                "the attestation reader requires the approved development HTTPS authority",
             )
         if not realm:
             raise AuthenticationError(

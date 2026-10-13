@@ -8,6 +8,17 @@ collect reproducible, sanitized evidence about issuer claim behavior for the
 PR 14 authentication security decisions. It does **not** implement any MTMF
 authentication; see [`docs/PR14_KEYCLOAK_EVIDENCE.md`](../../docs/PR14_KEYCLOAK_EVIDENCE.md).
 
+> **Distinction from the canonical development stack (PR 17-C).** This
+> `mtmf-pr14-keycloak` fixture is an **evidence-only** fixture. The supported
+> normal development path is the root `compose.yaml` + `compose.dev.yaml`
+> stack driven by `scripts/mtmf-dev-stack.py`, whose canonical issuer is
+> `https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev` (see
+> [`docs/DEVELOPMENT_SETUP.md`](../../docs/DEVELOPMENT_SETUP.md)). The fixture's
+> loopback issuer `https://127.0.0.1:28443` remains for evidence collection and
+> the documented host-network fallback only. `setup-realm.py` is the one-time
+> realm/client bootstrap used by both and persists in the corresponding
+> Keycloak volume.
+
 ## What is here
 
 | Path | Purpose |

@@ -45,6 +45,25 @@ def test_non_loopback_issuer_is_rejected():
         _config(issuer="https://idp.example.com/realms/x", jwks_uri="https://idp.example.com/k")
 
 
+def test_canonical_development_issuer_is_accepted():
+    canonical = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+    config = _config(
+        issuer=canonical,
+        jwks_uri=f"{canonical}/protocol/openid-connect/certs",
+        admin_base_url="https://keycloak.mtmf.test:28443",
+    )
+    assert config.issuer == canonical
+
+
+def test_canonical_lookalike_issuer_is_rejected():
+    with pytest.raises(AuthenticationConfigError):
+        _config(
+            issuer="https://evil.keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+            jwks_uri="https://evil.keycloak.mtmf.test:28443/certs",
+            admin_base_url="https://evil.keycloak.mtmf.test:28443",
+        )
+
+
 def test_jwks_must_belong_to_the_issuer():
     with pytest.raises(AuthenticationConfigError):
         _config(jwks_uri="https://127.0.0.1:28443/other/certs")

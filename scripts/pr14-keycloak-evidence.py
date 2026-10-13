@@ -166,6 +166,15 @@ class IssuerError(RuntimeError):
     """A remote issuer operation failed."""
 
 
+#: Canonical PR 17-C development authority. It is the only non-loopback host
+#: the evidence tooling accepts without the explicit ``--allow-nonlocal``
+#: override; arbitrary remote hosts remain rejected.
+CANONICAL_DEVELOPMENT_HOST = "keycloak.mtmf.test"
+APPROVED_DEVELOPMENT_HOSTS = frozenset(
+    {"127.0.0.1", "localhost", "::1", CANONICAL_DEVELOPMENT_HOST}
+)
+
+
 @dataclass
 class Issuer:
     """A configured local OIDC issuer and its token endpoints."""
@@ -206,8 +215,10 @@ class Issuer:
 
     def guard(self) -> None:
         host = urllib.parse.urlparse(self.base).hostname or ""
-        if host not in {"127.0.0.1", "localhost", "::1"} and not self.allow_nonlocal:
-            raise IssuerError("refusing to send evidence credentials to a non-loopback issuer")
+        if host not in APPROVED_DEVELOPMENT_HOSTS and not self.allow_nonlocal:
+            raise IssuerError(
+                "refusing to send evidence credentials to an unsupported non-loopback issuer"
+            )
 
 
 def _post_form(

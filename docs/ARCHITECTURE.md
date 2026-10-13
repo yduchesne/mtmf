@@ -453,9 +453,13 @@ runtime reads Keycloak through a dedicated, least-privilege
 **client-credentials** reader (read-only `view-realm`/`view-clients`/`query-clients`),
 never a human/admin password grant; the reader secret is delivered through a
 mounted file and the runtime holds no bootstrap/migrator/owner/root credential.
-The approved local development topology runs the service container with Podman
-`--network=host` bound to loopback and the retained issuer
-`https://127.0.0.1:28443`; it is development-only and not a production design.
+The approved local development topology (PR 17-C) runs the standard Compose
+stack on an isolated `mtmf` network with one canonical, TLS-verified authority
+`https://keycloak.mtmf.test:28443`; a non-privileged MTMF-owned TCP forwarder
+maps the canonical port `28443` to Keycloak's internal `8443` without
+terminating TLS, and the loopback-bound `--network=host` launcher
+(`up-host-network`) remains only a documented development fallback. This is
+development-only and not a production design.
 
 ## 14. Observability
 

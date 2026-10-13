@@ -74,6 +74,18 @@ def test_u05_non_loopback_base_rejected():
         HttpAdminRestReader("https://idp.example.test", REALM, "c", "s")
 
 
+def test_u05_canonical_development_base_accepted():
+    reader = HttpAdminRestReader(
+        "https://keycloak.mtmf.test:28443", REALM, "c", "s", opener=FakeOpener([])
+    )
+    assert reader is not None
+
+
+def test_u05_subdomain_lookalike_base_rejected():
+    with pytest.raises(AuthenticationError):
+        HttpAdminRestReader("https://evil.keycloak.mtmf.test", REALM, "c", "s")
+
+
 def test_u03_missing_reader_credential_rejected():
     with pytest.raises(AuthenticationError):
         HttpAdminRestReader(BASE, REALM, "", "s")

@@ -9,9 +9,12 @@ value is rejected at construction.
 from __future__ import annotations
 
 import os
-import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
+
+from mtmf_service.authentication.development_authority import (
+    is_approved_development_authority,
+)
 
 __all__ = ["AuthenticationConfigError", "IssuerConfig"]
 
@@ -48,8 +51,12 @@ def _secret(name: str) -> str:
 
 
 def _is_loopback(url: str) -> bool:
-    host = urllib.parse.urlparse(url).hostname or ""
-    return host in {"127.0.0.1", "localhost", "::1"}
+    """Return whether ``url`` names an approved development authority.
+
+    The set retains loopback and includes the canonical development host
+    ``keycloak.mtmf.test`` used by the isolated Compose stack (PR 17-C).
+    """
+    return is_approved_development_authority(url)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,8 +113,8 @@ class IssuerConfig:
             )
         if not _is_loopback(self.issuer) or not _is_loopback(self.admin_base_url):
             raise AuthenticationConfigError(
-                "the development issuer and admin base must be loopback; "
-                "production trust is out of scope"
+                "the development issuer and admin base must be an approved development "
+                "authority (loopback or keycloak.mtmf.test); production trust is out of scope"
             )
         if not self.jwks_uri.startswith(self.issuer.rstrip("/") + "/"):
             raise AuthenticationConfigError("jwks_uri must belong to the configured issuer")

@@ -22,6 +22,110 @@ A **Tenant** represents a customer. An **Application** represents a product such
 
 With `scripts/mtmf-dev-stack.py`, these steps are ordered automatically: `keycloak -> initializer -> HTTP service`. The initializer is a one-shot container that exits before the unprivileged service starts; the service is not declared ready unless the initializer exited successfully.
 
+## Canonical issuer and development networking (PR 17-C)
+
+The standard development stack uses **one canonical Keycloak authority**:
+
+| Item | Canonical value |
+| --- | --- |
+| Keycloak hostname | `keycloak.mtmf.test` |
+| Public issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev` |
+| JWKS URI | `https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev/protocol/openid-connect/certs` |
+| Keycloak admin base | `https://keycloak.mtmf.test:28443` |
+| Keycloak internal HTTPS | `8443` (unchanged) |
+
+A **single authority is not the same as a single IP address**. DNS may resolve the
+hostname differently in each namespace, provided the TLS endpoint, hostname and
+issuer are identical everywhere:
+
+- **Windows browser / WSL2 host** resolve `keycloak.mtmf.test` to `127.0.0.1`
+  through an operator-managed `hosts` entry and reach the loopback-published
+  Keycloak `28443` port.
+- **MTMF containers** resolve `keycloak.mtmf.test` through the MTMF-owned
+  `forwarder` network alias. The forwarder is non-privileged, never
+  host-published, and forwards bytes on the canonical port `28443` to
+  Keycloak's internal `8443` **without terminating TLS**, so certificate,
+  hostname/SAN and issuer validation remain intact and no second issuer exists.
+
+### Operator host mapping
+
+Add the mapping once on **both** the Windows host and the WSL2 Ubuntu host
+(administrator/root only for the `hosts` edit):
+
+```text
+127.0.0.1 keycloak.mtmf.test
+```
+
+- Windows: `C:\Windows\System32\drivers\etc\hosts`.
+- WSL2 Ubuntu: `/etc/hosts`. WSL regenerates `/etc/hosts` on some restarts; if
+  the entry disappears, re-add it (or configure a WSL `hosts` generator) rather
+  than exposing ports on all interfaces.
+
+Do **not** copy the WSL `/etc/hosts` into containers. Containers use the MTMF
+network alias, not host loopback.
+
+### Local development CA and TLS trust
+
+Generate the disposable development CA and the `keycloak.mtmf.test` leaf
+(private keys stay uncommitted and are never mounted into the runtime):
+
+```bash
+uv run --no-sync python scripts/mtmf-dev-certs.py generate
+uv run --no-sync python scripts/mtmf-dev-certs.py harden   # owner-map the leaf key to the Keycloak container UID
+uv run --no-sync python scripts/mtmf-dev-certs.py check
+```
+
+`harden` fails closed rather than making the leaf key world-readable; if Podman
+cannot map the key to the Keycloak container UID, stop and fix the user
+namespace mapping. Import the **public** `$(MTMF_DEV_CA_DIR)/dev-ca.crt`
+(default `/tmp/mtmf-dev-ca/dev-ca.crt`) into the Windows trusted root store
+(operator-controlled) and into the WSL trust store so the browser and host-side
+checks verify TLS. Only the public CA certificate is mounted into the
+initializer and service at `/certs/mtmf-ca.crt`.
+
+Regenerating the material (`--rotate`) or changing the hostname requires
+refreshing the trust stores; the canonical SAN must always agree with the
+canonical hostname.
+
+### Start, verify and stop
+
+```bash
+set -a && . ./.env && set +a
+uv run python scripts/mtmf-dev-stack.py up          # canonical, isolated Compose path (no host networking)
+uv run python scripts/mtmf-dev-stack.py preflight   # re-run host + container issuer preflight only
+uv run python scripts/mtmf-dev-stack.py status
+uv run python scripts/mtmf-dev-stack.py down         # stop; volumes/data preserved
+```
+
+The launcher prepares the certificate material, starts PostgreSQL, Keycloak and
+the forwarder, waits for real health, proves the canonical issuer from **both**
+the host and container namespaces, runs the privileged initializer exactly
+once, then starts the restricted service and waits for
+`http://127.0.0.1:28001/health/ready`. `up` refuses a non-canonical
+`MTMF_AUTH_ISSUER`.
+
+The realm and approved clients are still a one-time operator prerequisite (see
+the [Keycloak development fixture](../dev/keycloak/README.md)); they persist in
+the `mtmf-dev-keycloak-data` volume across restarts.
+
+### Diagnostics and recovery
+
+- **`does not resolve`** — add the operator `hosts` mapping on the reported
+  namespace and re-run `preflight`.
+- **TLS/CA failure** — the `dev-ca.crt` is not trusted (import it) or the leaf
+  was regenerated (refresh trust). The tooling never falls back to an insecure
+  or unverified connection.
+- **`discovery issuer mismatch`** — the live Keycloak hostname does not equal
+  the configured trust anchor; fix the Keycloak hostname or the MTMF issuer,
+  never rewrite the issuer.
+- **`JWKS ... contains no signing keys`** — the realm is missing or not
+  configured; restore the realm before restarting.
+- **`refusing to remove ...`** — MTMF ownership labels do not match; the
+  resource is foreign and is never removed.
+
+`up-host-network` remains a documented development fallback; it is no longer
+the normal path.
+
 ## Development user configuration
 
 The development one-shot reads the following variables. They are **not** part of the runtime `ServiceSettings`, so the long-running HTTP service never receives them.
