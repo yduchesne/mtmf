@@ -178,6 +178,64 @@ the `mtmf-dev-keycloak-data` volume across restarts.
 `up-host-network` remains a documented development fallback; it is no longer
 the normal path.
 
+## Canonical development Keycloak administrator (`mtmf-admin`)
+
+The standard development stack uses **one** canonical Keycloak master-realm
+administrator, `mtmf-admin`. It is strictly a development bootstrap/operator
+identity and is distinct from every other actor:
+
+| Concept | Value |
+| --- | --- |
+| Canonical development master-realm administrator | `mtmf-admin` (Keycloak `master` realm) |
+| Development end user | `MTMF_DEV_USER_USERNAME` (e.g. `ati-admin`) in realm `mtmf-pr14-dev` |
+| Keycloak development realm | `mtmf-pr14-dev` |
+| MTMF root identity | the protected canonical root Principal/Identity (not a Keycloak admin) |
+| Read-only service attestation credential | least-privilege client `mtmf-attestation-reader` (no admin password) |
+
+Configuration:
+
+- `MTMF_DEV_KC_ADMIN_USERNAME` — defaults to `mtmf-admin`. The launcher rejects
+  an explicit empty/whitespace/uppercase value or a PR-numbered legacy name
+  (`mtmf-pr14-admin`, `mtmf-pr14-admin2`) **before** certificates, Compose or
+  database writes.
+- `MTMF_DEV_KC_ADMIN_PASSWORD` — required at runtime; supplied from a password
+  manager/approved store, never committed. Environment-variable exposure is a
+  development-only limitation.
+- `MTMF_AUTH_ADMIN_USERNAME` / `MTMF_AUTH_ADMIN_PASSWORD` — the privileged
+  one-shot initializer's Admin REST credential. It must refer to the **same**
+  `mtmf-admin` account and credential; the launcher enforces this.
+
+### Fresh volume vs existing volume
+
+- **Fresh volume:** the Keycloak bootstrap creates `mtmf-admin` from
+  `MTMF_DEV_KC_ADMIN_PASSWORD`. Nothing else is required.
+- **Existing volume:** bootstrap variables **do not** rename or reset existing
+  users. Run the explicit, operator-supervised, development-only migration:
+
+```bash
+# Read-only inspection (default)
+uv run python scripts/mtmf-dev-admin-migrate.py --inspect
+# Explicit migration: create/verify mtmf-admin, then disable (not delete) the
+# legacy PR-numbered administrators after independent verification.
+MTMF_DEV_KC_ADMIN_PASSWORD="$MTMF_DEV_KC_ADMIN_PASSWORD" \
+MTMF_DEV_KC_RECOVERY_PASSWORD="$MTMF_DEV_KC_RECOVERY_PASSWORD" \
+  uv run python scripts/mtmf-dev-admin-migrate.py --apply
+```
+
+Passwords are read only from the environment or an owner-only
+`MTMF_DEV_KC_*_PASSWORD_FILE`; they are never passed on the command line,
+printed, or committed. The migration never resets an existing account's
+password and never disables the last verified enabled administrator. If the
+recovery credential is unavailable, `mtmf-admin` cannot be independently
+verified, an account is federated/has required actions/has unexpected roles, or
+an outcome is ambiguous, the tool **stops** without further mutation.
+
+**Credential custody and rollback:** keep the `mtmf-admin` credential in a
+password manager/approved secret store (not `/tmp`). The operational rollback
+for a failed migration is to re-enable a legacy administrator **only while an
+independently verified administrator is still working**; there is no password
+recovery for a disabled account, so re-enable it before losing access.
+
 ## Development user configuration
 
 The development one-shot reads the following variables. They are **not** part of the runtime `ServiceSettings`, so the long-running HTTP service never receives them.

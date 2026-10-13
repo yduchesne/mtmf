@@ -55,8 +55,12 @@ services:
       - --https-certificate-file=/opt/keycloak/conf/tls/server.crt
       - --https-certificate-key-file=/opt/keycloak/conf/tls/server.key
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD:?set MTMF_PR14_KC_ADMIN_PASSWORD}
+      # Canonical development-only master-realm administrator (PR 17-C Fixup 2).
+      # On a fresh volume Keycloak creates `mtmf-admin`; on an existing volume the
+      # bootstrap variables do not rename/reset users and an explicit Admin REST
+      # migration is required (see docs/DEVELOPMENT_SETUP.md).
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_DEV_KC_ADMIN_USERNAME:-mtmf-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_DEV_KC_ADMIN_PASSWORD:?set MTMF_DEV_KC_ADMIN_PASSWORD}
       KC_HTTP_ENABLED: "true"
       KC_HTTPS_ENABLED: "true"
       KC_HOSTNAME_STRICT: "true"
@@ -124,10 +128,11 @@ services:
       MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
       MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-pr14-dev}
       MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:-https://keycloak.mtmf.test:28443}
-      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:?set attestation reader username}
-      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set attestation reader password}
-      MTMF_PR14_KC_ADMIN_USERNAME: ${MTMF_PR14_KC_ADMIN_USERNAME:-mtmf-pr14-admin}
-      MTMF_PR14_KC_ADMIN_PASSWORD: ${MTMF_PR14_KC_ADMIN_PASSWORD:?set admin password}
+      # The initializer's Admin REST client uses the SAME canonical development
+      # administrator identity/credential as the Keycloak bootstrap above; it is
+      # never a separate master-admin login. The launcher enforces this.
+      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:-mtmf-admin}
+      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set MTMF_AUTH_ADMIN_PASSWORD}
       MTMF_DEV_APPLICATION_KEYS: ${MTMF_DEV_APPLICATION_KEYS:-sample-app}
       MTMF_DEV_TENANT_KEY: ${MTMF_DEV_TENANT_KEY:-dev}
       MTMF_DEV_TENANT_NAME: ${MTMF_DEV_TENANT_NAME:-Development Tenant}

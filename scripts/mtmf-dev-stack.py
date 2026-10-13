@@ -55,6 +55,11 @@ CANONICAL_KC_PORT = 28443
 #: any other host/port/scheme/path (including ones containing the canonical
 #: hostname as a substring) is rejected before any mutating action.
 CANONICAL_KC_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+#: Canonical development-only Keycloak master-realm administrator (PR 17-C
+#: Fixup 2). PR-numbered legacy administrators are never accepted as the
+#: active standard-stack bootstrap identity.
+CANONICAL_DEV_ADMIN_USERNAME = "mtmf-admin"
+LEGACY_DEV_ADMIN_USERNAMES = frozenset({"mtmf-pr14-admin", "mtmf-pr14-admin2"})
 CA_CERT_IN_CONTAINER = "/certs/mtmf-ca.crt"
 CERT_SCRIPT = REPO_ROOT / "scripts" / "mtmf-dev-certs.py"
 PROBE_SCRIPT = REPO_ROOT / "scripts" / "mtmf-dev-probe.py"
@@ -162,6 +167,55 @@ def _require_canonical_issuer() -> str:
             f"{CANONICAL_KC_ISSUER} (rejected the supplied value)"
         )
     return issuer
+
+
+def _canonical_dev_admin_username() -> str:
+    """Return the canonical dev admin username or fail closed.
+
+    Unset defaults to ``mtmf-admin``; an explicit empty/whitespace/uppercase or
+    PR-numbered legacy value is rejected before any side effect.
+    """
+    raw = os.environ.get("MTMF_DEV_KC_ADMIN_USERNAME")
+    if raw is None:
+        return CANONICAL_DEV_ADMIN_USERNAME
+    if raw == "" or any(character.isspace() for character in raw):
+        raise OrchestrationError(
+            "MTMF_DEV_KC_ADMIN_USERNAME must not be empty or contain whitespace"
+        )
+    if raw in LEGACY_DEV_ADMIN_USERNAMES or raw != CANONICAL_DEV_ADMIN_USERNAME:
+        raise OrchestrationError(
+            f"MTMF_DEV_KC_ADMIN_USERNAME must be exactly {CANONICAL_DEV_ADMIN_USERNAME!r}; "
+            "PR-numbered legacy administrators are not accepted"
+        )
+    return raw
+
+
+def _require_canonical_dev_admin() -> str:
+    """Require the one canonical development administrator identity/credential.
+
+    Runs at the start of standard-stack startup, before certificates, Compose
+    or database writes. The Keycloak bootstrap and the initializer's Admin REST
+    client must both target the same ``mtmf-admin`` account with the same
+    credential; no independent second master-admin login is permitted.
+    """
+    username = _canonical_dev_admin_username()
+    dev_password = os.environ.get("MTMF_DEV_KC_ADMIN_PASSWORD", "")
+    if not dev_password.strip():
+        raise OrchestrationError("MTMF_DEV_KC_ADMIN_PASSWORD is required")
+    auth_username = os.environ.get("MTMF_AUTH_ADMIN_USERNAME")
+    if auth_username is not None and auth_username != username:
+        raise OrchestrationError(
+            f"MTMF_AUTH_ADMIN_USERNAME must be the canonical development administrator {username!r}"
+        )
+    auth_password = os.environ.get("MTMF_AUTH_ADMIN_PASSWORD", "")
+    if not auth_password.strip():
+        raise OrchestrationError("MTMF_AUTH_ADMIN_PASSWORD is required")
+    if auth_password != dev_password:
+        raise OrchestrationError(
+            "MTMF_AUTH_ADMIN_PASSWORD must refer to the same canonical administrator "
+            "credential as MTMF_DEV_KC_ADMIN_PASSWORD"
+        )
+    return username
 
 
 def _ca_dir() -> Path:
@@ -303,6 +357,7 @@ def up() -> int:
     """Bring up the development stack in the required order."""
     _require_development()
     issuer = _require_canonical_issuer()
+    _require_canonical_dev_admin()
     _required_env("MTMF_MIGRATOR_DATABASE_URL")
     _required_env("MTMF_RUNTIME_DATABASE_URL")
 
@@ -478,6 +533,7 @@ def up_host_network() -> int:
     migrator/owner/root/bootstrap credential. Development profile only.
     """
     _require_development()
+    _require_canonical_dev_admin()
     _required_env("MTMF_RUNTIME_DATABASE_URL")
     _required_env("MTMF_MIGRATOR_DATABASE_URL")
     _required_env("MTMF_AUTH_ISSUER")

@@ -62,6 +62,11 @@ def _set_development_env(monkeypatch: pytest.MonkeyPatch, issuer: str = ISSUER) 
     monkeypatch.setenv("MTMF_RUNTIME_DATABASE_URL", "postgresql+psycopg://r:y@127.0.0.1/db")
     monkeypatch.setenv("MTMF_AUTH_ISSUER", issuer)
     monkeypatch.setenv("MTMF_AUTH_ADMIN_BASE", "https://keycloak.mtmf.test:28443")
+    # Canonical development administrator (PR 17-C Fixup 2).
+    monkeypatch.setenv("MTMF_DEV_KC_ADMIN_USERNAME", "mtmf-admin")
+    monkeypatch.setenv("MTMF_DEV_KC_ADMIN_PASSWORD", "development-admin-password")
+    monkeypatch.setenv("MTMF_AUTH_ADMIN_USERNAME", "mtmf-admin")
+    monkeypatch.setenv("MTMF_AUTH_ADMIN_PASSWORD", "development-admin-password")
 
 
 def _record(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
@@ -309,3 +314,89 @@ def test_lc14_secrets_are_redacted(monkeypatch: pytest.MonkeyPatch):
     redacted = stack._redact("value=supersecretvalue")
     assert "supersecretvalue" not in redacted
     assert "<redacted>" in redacted
+
+
+# --------------------------------------------------------------------------
+# Fixup 2: canonical development administrator CA-U01-CA-U08
+# --------------------------------------------------------------------------
+
+
+def _admin_env(monkeypatch: pytest.MonkeyPatch, **overrides: str | None) -> None:
+    base = {
+        "MTMF_DEV_KC_ADMIN_USERNAME": "mtmf-admin",
+        "MTMF_DEV_KC_ADMIN_PASSWORD": "development-admin-password",
+        "MTMF_AUTH_ADMIN_USERNAME": "mtmf-admin",
+        "MTMF_AUTH_ADMIN_PASSWORD": "development-admin-password",
+    }
+    base.update(overrides)
+    for name, value in base.items():
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+
+
+def test_cau01_username_unset_defaults_to_canonical(monkeypatch: pytest.MonkeyPatch):
+    _admin_env(monkeypatch, MTMF_DEV_KC_ADMIN_USERNAME=None)
+    assert stack._require_canonical_dev_admin() == "mtmf-admin"
+    assert stack._canonical_dev_admin_username() == "mtmf-admin"
+
+
+def test_cau02_explicit_canonical_accepted(monkeypatch: pytest.MonkeyPatch):
+    _admin_env(monkeypatch)
+    assert stack._require_canonical_dev_admin() == "mtmf-admin"
+
+
+@pytest.mark.parametrize("legacy", ["mtmf-pr14-admin", "mtmf-pr14-admin2"])
+def test_cau03_legacy_pr_numbered_rejected_before_side_effects(
+    monkeypatch: pytest.MonkeyPatch, legacy: str
+):
+    _admin_env(monkeypatch, MTMF_DEV_KC_ADMIN_USERNAME=legacy)
+    monkeypatch.setattr(stack, "_prepare_certificates", lambda: pytest.fail("must not prepare"))
+    monkeypatch.setattr(stack, "_run", lambda *a, **k: pytest.fail("must not run"))
+    with pytest.raises(stack.OrchestrationError):
+        stack._require_canonical_dev_admin()
+    with pytest.raises(stack.OrchestrationError):
+        stack.up()
+
+
+@pytest.mark.parametrize("bad", ["", "  ", "mtmf-admin ", " mtmf-admin", "MTMF-ADMIN", "someone"])
+def test_cau04_empty_whitespace_uppercase_or_other_rejected(
+    monkeypatch: pytest.MonkeyPatch, bad: str
+):
+    _admin_env(monkeypatch, MTMF_DEV_KC_ADMIN_USERNAME=bad)
+    with pytest.raises(stack.OrchestrationError):
+        stack._require_canonical_dev_admin()
+
+
+def test_cau05_bootstrap_password_missing_fails_before_compose(monkeypatch: pytest.MonkeyPatch):
+    _admin_env(monkeypatch, MTMF_DEV_KC_ADMIN_PASSWORD="")
+    monkeypatch.setattr(stack, "_run", lambda *a, **k: pytest.fail("must not run compose"))
+    with pytest.raises(stack.OrchestrationError):
+        stack._require_canonical_dev_admin()
+    with pytest.raises(stack.OrchestrationError):
+        stack.up()
+
+
+def test_cau06_initializer_credential_missing_fails_closed(monkeypatch: pytest.MonkeyPatch):
+    _admin_env(monkeypatch, MTMF_AUTH_ADMIN_PASSWORD="")
+    with pytest.raises(stack.OrchestrationError):
+        stack._require_canonical_dev_admin()
+
+
+def test_cau07_normal_config_targets_one_account(monkeypatch: pytest.MonkeyPatch):
+    _admin_env(monkeypatch)
+    assert stack._require_canonical_dev_admin() == "mtmf-admin"
+    assert os.environ["MTMF_DEV_KC_ADMIN_USERNAME"] == os.environ["MTMF_AUTH_ADMIN_USERNAME"]
+
+
+def test_cau08_wrong_initializer_username_fails_closed(monkeypatch: pytest.MonkeyPatch):
+    _admin_env(monkeypatch, MTMF_AUTH_ADMIN_USERNAME="mtmf-pr14-admin2")
+    with pytest.raises(stack.OrchestrationError):
+        stack._require_canonical_dev_admin()
+
+
+def test_cau07b_mismatched_passwords_fail_closed(monkeypatch: pytest.MonkeyPatch):
+    _admin_env(monkeypatch, MTMF_AUTH_ADMIN_PASSWORD="different-password")
+    with pytest.raises(stack.OrchestrationError):
+        stack._require_canonical_dev_admin()
