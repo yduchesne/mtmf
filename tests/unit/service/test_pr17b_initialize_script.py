@@ -110,6 +110,31 @@ def test_preflight_issuer_normalizes_transport_failures_without_leaking():
         provisioner.preflight_issuer("https://127.0.0.1:28443/realms/mtmf-pr14-dev")
 
 
+def test_test_failpoint_is_inert_by_default_and_triggers_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(_script.TEST_FAILPOINT_ENV, raising=False)
+    _script._reach_test_failpoint("after-user-verify")  # inert
+    monkeypatch.setenv(_script.TEST_FAILPOINT_ENV, "after-user-verify")
+    with pytest.raises(SystemExit) as excinfo:
+        _script._reach_test_failpoint("after-user-verify")
+    assert excinfo.value.code == 99
+
+
+def test_entry_point_failpoint_stops_before_any_mtmf_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_development_env(monkeypatch, MTMF_DEV_TEST_FAILPOINT="after-user-verify")
+    monkeypatch.setattr(_script, "PostgresProvisioner", lambda config: _FakeProvisioner(config))
+    monkeypatch.setattr(_script, "KeycloakCredentialProvisioner", _FakeKeycloak)
+
+    def explode(**kwargs: Any) -> None:
+        raise AssertionError("the MTMF bootstrap must not run after the failpoint")
+
+    monkeypatch.setattr(_script, "DevelopmentBootstrap", explode)
+    with pytest.raises(SystemExit) as excinfo:
+        _script.main([])
+    assert excinfo.value.code == 99
+
+
 def test_dev_fixture_uses_the_verified_subject(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MTMF_AUTH_ISSUER", "https://127.0.0.1:28443/realms/mtmf-pr14-dev")
     monkeypatch.setenv("MTMF_AUTH_SERVICE_AUDIENCE", "mtmf-service-api")

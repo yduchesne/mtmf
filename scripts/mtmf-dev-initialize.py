@@ -87,6 +87,21 @@ def _deterministic(name: str) -> uuid.UUID:
     return uuid.uuid5(_FIXTURE_NAMESPACE, name)
 
 
+#: Test-only inter-system failpoint selector. It is read exclusively by this
+#: privileged initializer, is inert unless explicitly set, and is never part
+#: of the HTTP service environment. The live PR 17-B acceptance harness sets
+#: it to ``after-user-verify`` to terminate after the Keycloak user is
+#: verified and before any MTMF bootstrap write (I13).
+TEST_FAILPOINT_ENV = "MTMF_DEV_TEST_FAILPOINT"
+
+
+def _reach_test_failpoint(name: str) -> None:
+    """Terminate deterministically at a test-only orchestration boundary."""
+    if os.environ.get(TEST_FAILPOINT_ENV, "").strip() == name:
+        print(f"test failpoint reached: {name}", file=sys.stderr)
+        raise SystemExit(99)
+
+
 class PostgresProvisioner:
     """Privileged PostgreSQL provisioner using only sanctioned primitives."""
 
@@ -189,8 +204,13 @@ class PostgresProvisioner:
                     ),
                 )
         # The Tenant's owner Identity must exist before the Tenant row, so
-        # tenant creation follows principal/identity creation.
-        if self._scalar("SELECT 1 FROM mtmf.tenant WHERE id = %s", (tenant_id,)) is None:
+        # tenant creation follows principal/identity creation. An existing
+        # Tenant must match the configured name exactly; a drifted name fails
+        # closed instead of being silently reused or renamed.
+        existing_tenant_name = self._scalar(
+            "SELECT name FROM mtmf.tenant WHERE id = %s", (tenant_id,)
+        )
+        if existing_tenant_name is None:
             self._execute(
                 "SELECT mtmf.tenant_add(%s, %s, %s, %s, %s, %s, %s::jsonb)",
                 (
@@ -202,6 +222,11 @@ class PostgresProvisioner:
                     int(DeletionStatus.NOT_DELETED),
                     empty,
                 ),
+            )
+        elif existing_tenant_name != fixture.tenant.name:
+            raise BootstrapError(
+                "the existing development Tenant conflicts with the configured tenant name; "
+                "no automatic rename is performed"
             )
         for principal in (principal_id, user_principal_id):
             if (
@@ -629,6 +654,7 @@ def main(argv: list[str] | None = None) -> int:
         config = DevUserConfig.from_env()
         credentials.preflight_issuer(os.environ.get("MTMF_AUTH_ISSUER", "").rstrip("/"))
         subject = KeycloakDevUserProvisioner(credentials, credentials.realm).ensure_user(config)
+        _reach_test_failpoint("after-user-verify")
         DevelopmentBootstrap(
             mode=settings.deployment_mode,
             fixture=_dev_fixture(subject),
