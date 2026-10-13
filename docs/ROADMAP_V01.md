@@ -242,7 +242,7 @@ Implement `mtmf-client` as an HTTP-only integration package, with service creden
 
 ### PR 19 — Observability and security/audit hardening [EXISTING, RENUMBERED from PR 15 — PLANNED]
 
-Instrument application use cases, subscription checks, trusted actor boundary, batch PDP evaluation, UnitOfWork, repositories, PostgreSQL, HTTP transport, and client integration. Add privacy-preserving decision audit and trace correlation, plus operational failure metrics; do not log sensitive tokens or authorization policy contents.
+Instrument application use cases, subscription checks, trusted actor boundary, batch PDP evaluation, UnitOfWork, repositories, PostgreSQL, HTTP transport, and client integration. Implement the approved [hybrid audit and observability architecture](PR19_HYBRID_AUDIT_OBSERVABILITY_ARCHITECTURE.md): structured OTel batch-decision and security-rejection events (not synchronous per-decision PostgreSQL inserts), atomic PostgreSQL audit for authoritative security-state mutations, trace correlation, bounded asynchronous export and observable loss/failure behavior. Provision an MTMF-owned OTel Collector, Prometheus, Jaeger, Loki and Grafana stack with four dashboards-as-code (Overview, Authorization Decisions, Authentication & Security, Persistence & Dependencies). Require live end-to-end observability acceptance and controlled baseline performance comparisons targeting <=5% throughput degradation and <=10% p99 latency increase; do not log sensitive tokens, identifiers as metric labels, or authorization policy contents. **PLANNED; not implemented.**
 
 ### PR 20 — v0.1 integration, conformance, and ATI reference validation [REVISED from former PR 16 — PLANNED]
 
