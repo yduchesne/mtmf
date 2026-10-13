@@ -70,10 +70,14 @@ from mtmf_service.development_bootstrap import (
     TenantFixture,
     UserFixture,
 )
+from mtmf_service.development_user import DevUserConfig, KeycloakDevUserProvisioner
 from mtmf_service.settings import DeploymentMode, ServiceSettings
 
 #: Stable, non-secret fixture namespace for deterministic UUIDv5 identities.
 _FIXTURE_NAMESPACE = uuid.UUID("6f2c1f0e-6f4f-4b64-9b5e-2f6d1f2a4c17")
+
+#: Upper bound for any single Keycloak Admin REST response body.
+_MAX_RESPONSE_BYTES = 1024 * 1024
 
 TENANT_ADMIN_ROLE_URN = "urn:mtmf:iam:roles:system:tenant-administrator"
 
@@ -81,6 +85,21 @@ TENANT_ADMIN_ROLE_URN = "urn:mtmf:iam:roles:system:tenant-administrator"
 def _deterministic(name: str) -> uuid.UUID:
     """Derive a stable fixture UUID from a non-secret manifest name."""
     return uuid.uuid5(_FIXTURE_NAMESPACE, name)
+
+
+#: Test-only inter-system failpoint selector. It is read exclusively by this
+#: privileged initializer, is inert unless explicitly set, and is never part
+#: of the HTTP service environment. The live PR 17-B acceptance harness sets
+#: it to ``after-user-verify`` to terminate after the Keycloak user is
+#: verified and before any MTMF bootstrap write (I13).
+TEST_FAILPOINT_ENV = "MTMF_DEV_TEST_FAILPOINT"
+
+
+def _reach_test_failpoint(name: str) -> None:
+    """Terminate deterministically at a test-only orchestration boundary."""
+    if os.environ.get(TEST_FAILPOINT_ENV, "").strip() == name:
+        print(f"test failpoint reached: {name}", file=sys.stderr)
+        raise SystemExit(99)
 
 
 class PostgresProvisioner:
@@ -185,8 +204,13 @@ class PostgresProvisioner:
                     ),
                 )
         # The Tenant's owner Identity must exist before the Tenant row, so
-        # tenant creation follows principal/identity creation.
-        if self._scalar("SELECT 1 FROM mtmf.tenant WHERE id = %s", (tenant_id,)) is None:
+        # tenant creation follows principal/identity creation. An existing
+        # Tenant must match the configured name exactly; a drifted name fails
+        # closed instead of being silently reused or renamed.
+        existing_tenant_name = self._scalar(
+            "SELECT name FROM mtmf.tenant WHERE id = %s", (tenant_id,)
+        )
+        if existing_tenant_name is None:
             self._execute(
                 "SELECT mtmf.tenant_add(%s, %s, %s, %s, %s, %s, %s::jsonb)",
                 (
@@ -198,6 +222,11 @@ class PostgresProvisioner:
                     int(DeletionStatus.NOT_DELETED),
                     empty,
                 ),
+            )
+        elif existing_tenant_name != fixture.tenant.name:
+            raise BootstrapError(
+                "the existing development Tenant conflicts with the configured tenant name; "
+                "no automatic rename is performed"
             )
         for principal in (principal_id, user_principal_id):
             if (
@@ -417,7 +446,10 @@ class KeycloakCredentialProvisioner:
             f"{self.base_url}/realms/master/protocol/openid-connect/token", data=data
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            return json.loads(response.read())["access_token"]
+            payload = response.read(_MAX_RESPONSE_BYTES + 1)
+        if len(payload) > _MAX_RESPONSE_BYTES:
+            raise BootstrapError("the Keycloak token response exceeded the bounded size")
+        return json.loads(payload)["access_token"]
 
     def _request(self, method: str, path: str, body: Any | None = None) -> Any:
         headers = {"Authorization": f"Bearer {self._admin_token()}"}
@@ -429,8 +461,35 @@ class KeycloakCredentialProvisioner:
             f"{self.base_url}{path}", data=data, method=method, headers=headers
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            payload = response.read()
+            payload = response.read(_MAX_RESPONSE_BYTES + 1)
+        if len(payload) > _MAX_RESPONSE_BYTES:
+            raise BootstrapError("the Keycloak response exceeded the bounded size")
         return json.loads(payload) if payload else None
+
+    def request(self, method: str, path: str, body: Any | None = None) -> Any:
+        """Public Admin REST transport used by the development user provisioner."""
+        return self._request(method, path, body)
+
+    def create_user(self, path: str, body: Any) -> str | None:
+        """POST a new user and return Keycloak's authoritative created-resource location.
+
+        A non-2xx response raises :class:`urllib.error.HTTPError` so the
+        provisioner can classify it. The successful response body is empty; the
+        ``Location`` header's final path segment is the created immutable id.
+        """
+        headers = {
+            "Authorization": f"Bearer {self._admin_token()}",
+            "Content-Type": "application/json",
+        }
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            data=json.dumps(body).encode(),
+            method="POST",
+            headers=headers,
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            response.read(_MAX_RESPONSE_BYTES + 1)
+            return response.headers.get("Location")
 
     def _approved_policy(self) -> ExpectedClientPolicy:
         path = os.environ.get(
@@ -500,12 +559,32 @@ class KeycloakCredentialProvisioner:
             handle.write(secret)
         os.chmod(target, 0o600)
 
+    def preflight_issuer(self, expected_issuer: str) -> None:
+        """Validate the live issuer discovery before any user provisioning."""
+        if not expected_issuer:
+            raise BootstrapError("the configured issuer trust anchor is empty")
+        try:
+            discovery = self._request(
+                "GET", f"/realms/{self.realm}/.well-known/openid-configuration"
+            )
+            if not isinstance(discovery, dict) or discovery.get("issuer") != expected_issuer:
+                raise BootstrapError("the live issuer does not match the configured trust anchor")
+            self._request("GET", f"/realms/{self.realm}/protocol/openid-connect/certs")
+        except BootstrapError:
+            raise
+        except urllib.error.HTTPError as exc:
+            raise BootstrapError(
+                f"the development issuer preflight failed with HTTP {exc.code}"
+            ) from None
+        except urllib.error.URLError, OSError, ValueError:
+            raise BootstrapError(
+                "the development issuer preflight could not be completed; verify the issuer "
+                "trust anchor, credential, and network reachability"
+            ) from None
+
     def verify_issuer(self, fixture: BootstrapFixture) -> None:
         """Freshly attest the realm projection and every approved client."""
-        discovery = self._request("GET", f"/realms/{self.realm}/.well-known/openid-configuration")
-        if discovery.get("issuer") != fixture.issuer:
-            raise BootstrapError("the live issuer does not match the configured trust anchor")
-        self._request("GET", f"/realms/{self.realm}/protocol/openid-connect/certs")
+        self.preflight_issuer(fixture.issuer)
         manifest_path = os.environ.get(
             "MTMF_AUTH_EXPECTED_MANIFEST", "dev/keycloak/expected-realm-security.json"
         )
@@ -535,8 +614,13 @@ class _AdminReadAdapter:
         return self._provisioner._request("GET", path)
 
 
-def _dev_fixture() -> BootstrapFixture:
-    """Build the generic, application-neutral development fixture."""
+def _dev_fixture(subject: str) -> BootstrapFixture:
+    """Build the generic, application-neutral development fixture.
+
+    The acting-user ``subject`` must be the authoritative Keycloak user ID
+    already verified by :class:`KeycloakDevUserProvisioner`; there is no
+    fabricated fallback.
+    """
     applications = tuple(
         ApplicationFixture(key.strip(), key.strip())
         for key in (os.environ.get("MTMF_DEV_APPLICATION_KEYS", "sample-app") or "").split(",")
@@ -550,7 +634,7 @@ def _dev_fixture() -> BootstrapFixture:
             identity_name="Development Tenant Steward Identity",
         ),
         user=UserFixture(
-            subject=os.environ.get("MTMF_DEV_USER_SUBJECT", "mtmf-dev-user"),
+            subject=subject,
             principal_name="Development User Principal",
             identity_name="Development User Identity",
         ),
@@ -588,9 +672,15 @@ def main(argv: list[str] | None = None) -> int:
         admin_password=os.environ.get("MTMF_AUTH_ADMIN_PASSWORD", ""),
     )
     try:
+        config = DevUserConfig.from_env()
+        credentials.preflight_issuer(os.environ.get("MTMF_AUTH_ISSUER", "").rstrip("/"))
+        subject = KeycloakDevUserProvisioner(
+            credentials, credentials.realm, admin_base_url=credentials.base_url
+        ).ensure_user(config)
+        _reach_test_failpoint("after-user-verify")
         DevelopmentBootstrap(
             mode=settings.deployment_mode,
-            fixture=_dev_fixture(),
+            fixture=_dev_fixture(subject),
             provisioning=provisioner,
             credentials=credentials,
             lock=provisioner,
