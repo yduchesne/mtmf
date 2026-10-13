@@ -567,7 +567,7 @@
       ]
     }
   ],
-  "realm": "mtmf-pr14-dev",
+  "realm": "mtmf-dev",
   "realmSecurity": {
     "accessTokenLifespan": 300,
     "accessTokenLifespanForImplicitFlow": 900,

@@ -29,8 +29,8 @@ The standard development stack uses **one canonical Keycloak authority**:
 | Item | Canonical value |
 | --- | --- |
 | Keycloak hostname | `keycloak.mtmf.test` |
-| Public issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev` |
-| JWKS URI | `https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev/protocol/openid-connect/certs` |
+| Public issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-dev` |
+| JWKS URI | `https://keycloak.mtmf.test:28443/realms/mtmf-dev/protocol/openid-connect/certs` |
 | Keycloak admin base | `https://keycloak.mtmf.test:28443` |
 | Keycloak internal HTTPS | `8443` (unchanged) |
 
@@ -113,7 +113,7 @@ the material or changing the hostname requires refreshing the Windows/WSL trust
 stores; the canonical SAN must always agree with the canonical hostname.
 
 `MTMF_AUTH_ISSUER` must equal the exact canonical issuer
-`https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev`. Any other host, port,
+`https://keycloak.mtmf.test:28443/realms/mtmf-dev`. Any other host, port,
 scheme, realm, trailing slash, query, fragment, or userinfo is rejected before
 certificate generation, Compose startup, or database rewriting.
 
@@ -187,8 +187,8 @@ identity and is distinct from every other actor:
 | Concept | Value |
 | --- | --- |
 | Canonical development master-realm administrator | `mtmf-admin` (Keycloak `master` realm) |
-| Development end user | `MTMF_DEV_USER_USERNAME` (e.g. `ati-admin`) in realm `mtmf-pr14-dev` |
-| Keycloak development realm | `mtmf-pr14-dev` |
+| Development end user | `MTMF_DEV_USER_USERNAME` (e.g. `ati-admin`) in realm `mtmf-dev` |
+| Keycloak development realm | `mtmf-dev` |
 | MTMF root identity | the protected canonical root Principal/Identity (not a Keycloak admin) |
 | Read-only service attestation credential | least-privilege client `mtmf-attestation-reader` (no admin password) |
 
@@ -235,6 +235,59 @@ password manager/approved secret store (not `/tmp`). The operational rollback
 for a failed migration is to re-enable a legacy administrator **only while an
 independently verified administrator is still working**; there is no password
 recovery for a disabled account, so re-enable it before losing access.
+
+## Canonical development realm (`mtmf-dev`) and clean reset
+
+The standard development stack uses one realm, `mtmf-dev`; the canonical issuer
+is `https://keycloak.mtmf.test:28443/realms/mtmf-dev`. The separate PR 14
+evidence-only fixture (`dev/keycloak/`) intentionally remains on
+`mtmf-pr14-dev` and is not part of the standard stack. The launcher enforces the
+exact issuer, JWKS endpoint, and realm before any side effect.
+
+### Provisioning the realm (one-time operator prerequisite)
+
+The launcher does not create the realm. On a fresh or reset environment,
+provision `mtmf-dev` and its approved clients **before** `up`, explicitly
+passing the realm:
+
+```bash
+uv run --no-sync python dev/keycloak/setup-realm.py \
+  --base https://keycloak.mtmf.test:28443 \
+  --realm mtmf-dev \
+  --ca-file "$MTMF_PR14_KC_CA_FILE" \
+  --allow-nonlocal
+```
+
+Then `up` runs the privileged initializer, which fails closed unless the
+issuer's realm segment is exactly `mtmf-dev`.
+
+### Existing-volume STOP and explicit clean reset
+
+A persistent volume created for the old `mtmf-pr14-dev` realm is **not** migrated
+automatically. After this change, a standard `up` against such a volume fails
+closed with an actionable error; it never auto-creates `mtmf-dev`, repoints
+existing identity bindings, or resets accounts.
+
+Converting an existing development environment is a destructive,
+explicitly operator-approved clean reset. It is **not** performed by the tooling
+and must never be automated. Consequences: Keycloak user `sub` values, client
+secrets, and MTMF identity bindings all change, and existing development data is
+discarded.
+
+Operator procedure (MTMF-only):
+
+1. Confirm you may permanently discard the current MTMF development Keycloak and
+   PostgreSQL state.
+2. Record the standard `mtmf` Compose project's exact containers and volumes;
+   keep the separate `mtmf-pr14-keycloak` evidence volume.
+3. `uv run python scripts/mtmf-dev-stack.py down` (preserves volumes).
+4. Remove only the explicitly confirmed standard-stack volumes
+   (`mtmf-dev-keycloak-data`, `mtmf_mtmf-postgres-data`). Do not remove
+   `mtmf-pr14-keycloak-data` or host CA material.
+5. Prepare a new securely held `mtmf-admin` credential outside `/tmp`.
+6. Start the clean stack, provision `mtmf-dev` (above), and run `up`.
+7. Verify discovery `issuer`, `jwks_uri`, and token `iss` are exactly the
+   canonical `mtmf-dev` values; no old-issuer token is accepted.
 
 ## Development user configuration
 

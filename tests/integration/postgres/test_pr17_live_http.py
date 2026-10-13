@@ -51,7 +51,7 @@ pytestmark = pytest.mark.skipif(
     reason="live PR 17 HTTP acceptance is opt-in (set MTMF_PR17_LIVE=1)",
 )
 
-REALM = "mtmf-pr14-dev"
+REALM = os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-dev")
 SHARED_AUDIENCE = "mtmf-same-client-api"
 SAME_CLIENT = "mtmf-evidence-same-client"
 SAME_SECRET = "mtmf-evidence-same-client-dev-secret"

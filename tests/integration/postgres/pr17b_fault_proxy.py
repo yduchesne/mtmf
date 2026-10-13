@@ -48,7 +48,7 @@ class FaultProxy:
         ca_file: str,
         *,
         fault: str = "none",
-        realm: str = "mtmf-pr14-dev",
+        realm: str = "mtmf-dev",
     ) -> None:
         if fault not in {
             "none",

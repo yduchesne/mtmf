@@ -54,7 +54,10 @@ CANONICAL_KC_PORT = 28443
 #: Exact canonical issuer. `MTMF_AUTH_ISSUER` must equal this literal string;
 #: any other host/port/scheme/path (including ones containing the canonical
 #: hostname as a substring) is rejected before any mutating action.
-CANONICAL_KC_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+CANONICAL_KC_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
+#: Canonical development realm and JWKS endpoint (PR 17-C Fixup 3).
+CANONICAL_KC_REALM = "mtmf-dev"
+CANONICAL_KC_JWKS_URI = CANONICAL_KC_ISSUER + "/protocol/openid-connect/certs"
 #: Canonical development-only Keycloak master-realm administrator (PR 17-C
 #: Fixup 2). PR-numbered legacy administrators are never accepted as the
 #: active standard-stack bootstrap identity.
@@ -153,18 +156,45 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _exact_env(name: str) -> str:
+    """Return an environment value without silently stripping whitespace.
+
+    Missing/empty values and values with leading/trailing whitespace fail
+    closed; the raw value is compared exactly by the caller.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        raise OrchestrationError(f"required environment {name} is not set")
+    if raw != raw.strip():
+        raise OrchestrationError(f"{name} must not contain leading or trailing whitespace")
+    return raw
+
+
 def _require_canonical_issuer() -> str:
-    """Return the configured issuer only when it is the exact canonical value.
+    """Require the exact canonical issuer, JWKS endpoint, and realm.
 
     Called before certificate generation, Compose startup, Podman inspection,
     database-URL rewriting, or any other side effect. The untrusted supplied
-    value is never echoed (it could contain credentials).
+    values are never echoed. All three environment contracts must match exactly;
+    there is no alternate issuer or dual-realm compatibility.
     """
-    issuer = _required_env("MTMF_AUTH_ISSUER")
+    issuer = _exact_env("MTMF_AUTH_ISSUER")
     if issuer != CANONICAL_KC_ISSUER:
         raise OrchestrationError(
             "MTMF_AUTH_ISSUER must exactly equal the canonical development issuer "
             f"{CANONICAL_KC_ISSUER} (rejected the supplied value)"
+        )
+    realm = _exact_env("MTMF_AUTH_ADMIN_REALM")
+    if realm != CANONICAL_KC_REALM:
+        raise OrchestrationError(
+            "MTMF_AUTH_ADMIN_REALM must exactly equal the canonical development realm "
+            f"{CANONICAL_KC_REALM} (rejected the supplied value)"
+        )
+    jwks_uri = _exact_env("MTMF_AUTH_JWKS_URI")
+    if jwks_uri != CANONICAL_KC_JWKS_URI:
+        raise OrchestrationError(
+            "MTMF_AUTH_JWKS_URI must exactly equal the canonical development JWKS "
+            f"endpoint {CANONICAL_KC_JWKS_URI} (rejected the supplied value)"
         )
     return issuer
 
@@ -533,10 +563,10 @@ def up_host_network() -> int:
     migrator/owner/root/bootstrap credential. Development profile only.
     """
     _require_development()
+    _require_canonical_issuer()
     _require_canonical_dev_admin()
     _required_env("MTMF_RUNTIME_DATABASE_URL")
     _required_env("MTMF_MIGRATOR_DATABASE_URL")
-    _required_env("MTMF_AUTH_ISSUER")
     ca_file = os.environ.get("MTMF_PR14_KC_CA_FILE", "")
     if not ca_file:
         raise OrchestrationError("MTMF_PR14_KC_CA_FILE is required for the host-network mode")

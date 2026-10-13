@@ -51,7 +51,7 @@ REQUIRED_MASTER_ROLE = "admin"
 EXPECTED_MASTER_ROLES = frozenset({"admin", "default-roles-master"})
 DEFAULT_BASE_URL = "https://keycloak.mtmf.test:28443"
 MASTER_REALM = "master"
-TARGET_REALM = "mtmf-pr14-dev"
+TARGET_REALM = "mtmf-dev"
 MAX_RESPONSE_BYTES = 1024 * 1024
 
 

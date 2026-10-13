@@ -25,7 +25,7 @@ stack = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = stack
 _spec.loader.exec_module(stack)
 
-ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_DEV = _REPO_ROOT / "compose.dev.yaml"
@@ -33,16 +33,18 @@ NSSWITCH = _REPO_ROOT / "dev" / "nsswitch.conf"
 
 #: Canonical issuer variants that must be rejected before any side effect.
 BAD_ISSUERS = [
-    "https://evil-keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
-    "https://keycloak.mtmf.test.evil.example/realms/mtmf-pr14-dev",
-    "https://keycloak.mtmf.test:28444/realms/mtmf-pr14-dev",
-    "http://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+    "https://evil-keycloak.mtmf.test:28443/realms/mtmf-dev",
+    "https://keycloak.mtmf.test.evil.example/realms/mtmf-dev",
+    "https://keycloak.mtmf.test:28444/realms/mtmf-dev",
+    "http://keycloak.mtmf.test:28443/realms/mtmf-dev",
     "https://keycloak.mtmf.test:28443/realms/other",
-    "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev/",
-    "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev?x=1",
-    "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev#frag",
-    "https://user:secret@keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
-    "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+    "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+    "https://keycloak.mtmf.test:28443/realms/mtmf-dev/",
+    "https://keycloak.mtmf.test:28443/realms/mtmf-dev?x=1",
+    "https://keycloak.mtmf.test:28443/realms/mtmf-dev#frag",
+    "https://user:secret@keycloak.mtmf.test:28443/realms/mtmf-dev",
+    "https://127.0.0.1:28443/realms/mtmf-dev",
+    "https://keycloak.mtmf.test:28443/realms/MTMF-DEV",
 ]
 
 
@@ -61,6 +63,8 @@ def _set_development_env(monkeypatch: pytest.MonkeyPatch, issuer: str = ISSUER) 
     monkeypatch.setenv("MTMF_MIGRATOR_DATABASE_URL", "postgresql+psycopg://m:y@127.0.0.1/db")
     monkeypatch.setenv("MTMF_RUNTIME_DATABASE_URL", "postgresql+psycopg://r:y@127.0.0.1/db")
     monkeypatch.setenv("MTMF_AUTH_ISSUER", issuer)
+    monkeypatch.setenv("MTMF_AUTH_JWKS_URI", f"{issuer}/protocol/openid-connect/certs")
+    monkeypatch.setenv("MTMF_AUTH_ADMIN_REALM", "mtmf-dev")
     monkeypatch.setenv("MTMF_AUTH_ADMIN_BASE", "https://keycloak.mtmf.test:28443")
     # Canonical development administrator (PR 17-C Fixup 2).
     monkeypatch.setenv("MTMF_DEV_KC_ADMIN_USERNAME", "mtmf-admin")

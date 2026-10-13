@@ -41,11 +41,11 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-CANONICAL_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+CANONICAL_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
 SNI_HOSTNAME = "keycloak.mtmf.test"
 HOST_HEADER = "keycloak.mtmf.test:28443"
-DISCOVERY_PATH = "/realms/mtmf-pr14-dev/.well-known/openid-configuration"
-EXPECTED_JWKS_PATH = "/realms/mtmf-pr14-dev/protocol/openid-connect/certs"
+DISCOVERY_PATH = "/realms/mtmf-dev/.well-known/openid-configuration"
+EXPECTED_JWKS_PATH = "/realms/mtmf-dev/protocol/openid-connect/certs"
 MAX_BODY_BYTES = 262144
 
 

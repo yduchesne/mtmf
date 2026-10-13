@@ -527,10 +527,10 @@ def test_fw19_canonical_issuer_jwks_constants_unchanged():
     probe = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = probe
     spec.loader.exec_module(probe)
-    assert probe.CANONICAL_ISSUER == "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+    assert probe.CANONICAL_ISSUER == "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
     assert (
         probe.EXPECTED_JWKS_URI
-        == "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev/protocol/openid-connect/certs"
+        == "https://keycloak.mtmf.test:28443/realms/mtmf-dev/protocol/openid-connect/certs"
     )
     # The forwarder must not terminate or inspect TLS: it imports no TLS library.
     source = _SCRIPT.read_text(encoding="utf-8")

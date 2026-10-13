@@ -27,7 +27,7 @@ probe = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = probe
 _spec.loader.exec_module(probe)
 
-ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
 EXPECTED_JWKS = f"{ISSUER}/protocol/openid-connect/certs"
 DISCOVERY_URL = f"{ISSUER}/.well-known/openid-configuration"
 CA_FILE = str(Path(tempfile.gettempdir()) / "ca.crt")
@@ -40,15 +40,16 @@ def test_parse_issuer_exact_canonical():
 @pytest.mark.parametrize(
     "bad",
     [
-        "https://evil-keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
-        "https://keycloak.mtmf.test.evil.example/realms/mtmf-pr14-dev",
-        "https://keycloak.mtmf.test:28444/realms/mtmf-pr14-dev",
-        "http://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+        "https://evil-keycloak.mtmf.test:28443/realms/mtmf-dev",
+        "https://keycloak.mtmf.test.evil.example/realms/mtmf-dev",
+        "https://keycloak.mtmf.test:28444/realms/mtmf-dev",
+        "http://keycloak.mtmf.test:28443/realms/mtmf-dev",
         "https://keycloak.mtmf.test:28443/realms/other",
-        "https://user@keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
-        "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev/",
-        "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev?x=1",
-        "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev#frag",
+        "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev",
+        "https://user@keycloak.mtmf.test:28443/realms/mtmf-dev",
+        "https://keycloak.mtmf.test:28443/realms/mtmf-dev/",
+        "https://keycloak.mtmf.test:28443/realms/mtmf-dev?x=1",
+        "https://keycloak.mtmf.test:28443/realms/mtmf-dev#frag",
     ],
 )
 def test_parse_issuer_rejects_noncanonical_variants(bad: str):

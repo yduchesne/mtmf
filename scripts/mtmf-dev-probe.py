@@ -21,7 +21,7 @@ back to another host.
 
 Usage:
     python scripts/mtmf-dev-probe.py \
-        --issuer https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev \
+        --issuer https://keycloak.mtmf.test:28443/realms/mtmf-dev \
         --ca-file /tmp/mtmf-dev-ca/dev-ca.crt
 """
 
@@ -42,7 +42,7 @@ DEFAULT_TIMEOUT_SECONDS = 5.0
 #: Exact canonical development issuer (PR 17-C). Must agree with
 #: ``CANONICAL_KC_ISSUER`` in ``scripts/mtmf-dev-stack.py``; a unit test asserts
 #: the two literals are identical.
-CANONICAL_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-pr14-dev"
+CANONICAL_ISSUER = "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
 
 #: Exact canonical Keycloak JWKS resource appended to the canonical issuer.
 EXPECTED_JWKS_SUFFIX = "/protocol/openid-connect/certs"
