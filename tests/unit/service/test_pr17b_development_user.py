@@ -20,6 +20,7 @@ from mtmf_service.development_user import (
 )
 
 REALM = "mtmf-pr14-dev"
+ADMIN_BASE = "https://127.0.0.1:28443"
 
 
 # --------------------------------------------------------------------------
@@ -93,7 +94,13 @@ def _http_error(code: int = 401, body: bytes = b'{"error":"admin-password=SUPERS
 
 
 def _provisioner(transport: FakeTransport) -> KeycloakDevUserProvisioner:
-    return KeycloakDevUserProvisioner(transport, REALM, lookup_attempts=1, retry_delay=0)
+    return KeycloakDevUserProvisioner(
+        transport, REALM, admin_base_url=ADMIN_BASE, lookup_attempts=1, retry_delay=0
+    )
+
+
+def _location(subject: str, *, realm: str = REALM, base: str = ADMIN_BASE) -> str:
+    return f"{base}/admin/realms/{realm}/users/{subject}"
 
 
 def _secure_password_file(tmp_path: Path, content: str = "dev-pass-123") -> Path:
@@ -125,6 +132,7 @@ def test_u02_missing_user_create_once_and_reread(tmp_path: Path):
         fake.users.append(_user(body["username"], subject="kc-sub-new", email=body.get("email")))
 
     transport.post_hook = hook
+    transport.create_location = _location("kc-sub-new")
     subject = _provisioner(transport).ensure_user(
         _config(create=True, password_file=_secure_password_file(tmp_path))
     )
@@ -597,6 +605,7 @@ def test_create_includes_email_verification(tmp_path: Path):
         fake.users.append(_user(body["username"], subject="kc-email", email=body.get("email")))
 
     transport.post_hook = hook
+    transport.create_location = _location("kc-email")
     subject = _provisioner(transport).ensure_user(
         _config(
             create=True, email="dev@example.invalid", password_file=_secure_password_file(tmp_path)
@@ -768,7 +777,7 @@ def test_sh06_success_with_mismatched_location_is_rejected(tmp_path: Path):
 
     transport.post_hook = hook
     transport.create_location = "https://127.0.0.1:28443/admin/realms/mtmf-pr14-dev/users/other-id"
-    with pytest.raises(BootstrapError, match="does not match the resource created"):
+    with pytest.raises(BootstrapError, match="creation provenance could not be verified"):
         _provisioner(transport).ensure_user(
             _config(create=True, password_file=_secure_password_file(tmp_path))
         )
@@ -876,3 +885,207 @@ def test_sh13_descriptor_is_closed_on_validation_failure(
     with pytest.raises(DevUserConfigurationError):
         load_dev_user_password(target)
     assert closed
+
+
+# --------------------------------------------------------------------------
+# PV01-PV20 strict created-resource provenance matrix
+# --------------------------------------------------------------------------
+
+
+def _create_transport(row: dict[str, Any] | None, location: str | None) -> FakeTransport:
+    """A fake transport whose create POST exposes ``row`` and ``location``."""
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        if row is not None:
+            fake.users.append(dict(row))
+
+    transport.post_hook = hook
+    transport.create_location = location
+    return transport
+
+
+def test_pv01_valid_location_is_accepted(tmp_path: Path):
+    transport = _create_transport(_user(subject="kc-created"), _location("kc-created"))
+    assert (
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+        == "kc-created"
+    )
+    assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        None,
+        "",
+        "   ",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users",
+        f"{ADMIN_BASE}/admin/realms/other-realm/users/kc-created",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/groups/kc-created",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/kc-created/extra",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/other-id",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/kc-created?x=1",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/kc-created#frag",
+        f"https://evil.example/admin/realms/{REALM}/users/kc-created",
+        f"http://127.0.0.1:28443/admin/realms/{REALM}/users/kc-created",
+        f"//127.0.0.1:28443/admin/realms/{REALM}/users/kc-created",
+        f"https://user:pass@127.0.0.1:28443/admin/realms/{REALM}/users/kc-created",
+        f"https://127.0.0.1:notaport/admin/realms/{REALM}/users/kc-created",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/kc%2Fcreated",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/%2e%2e",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/kc-created;x=1",
+        f"{ADMIN_BASE}/admin/realms/{REALM}/users/kc-created\n",
+    ],
+)
+def test_pv02_pv10_invalid_locations_fail_closed(location: str | None, tmp_path: Path):
+    transport = _create_transport(_user(subject="kc-created"), location)
+    with pytest.raises(BootstrapError, match="creation provenance could not be verified"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+    assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
+
+
+def test_pv11_assertion_does_not_override_invalid_location(tmp_path: Path):
+    transport = _create_transport(_user(subject="kc-created"), None)
+    with pytest.raises(BootstrapError, match="creation provenance could not be verified"):
+        _provisioner(transport).ensure_user(
+            _config(
+                create=True,
+                password_file=_secure_password_file(tmp_path),
+                expected_subject="kc-created",
+            )
+        )
+
+
+def test_pv12_valid_location_but_mismatched_assertion_fails(tmp_path: Path):
+    transport = _create_transport(_user(subject="kc-created"), _location("kc-created"))
+    with pytest.raises(BootstrapError, match="assertion does not match"):
+        _provisioner(transport).ensure_user(
+            _config(
+                create=True,
+                password_file=_secure_password_file(tmp_path),
+                expected_subject="other-sub",
+            )
+        )
+
+
+def test_pv13_preexisting_account_is_reused_read_only(tmp_path: Path):
+    transport = FakeTransport([_user(subject="kc-existing")])
+    missing = tmp_path / "gone"
+    assert (
+        _provisioner(transport).ensure_user(_config(create=True, password_file=missing))
+        == "kc-existing"
+    )
+    assert [call[0] for call in transport.calls] == ["GET"]
+
+
+def test_pv14_conflict_without_assertion_fails_then_reuses(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-raced"))
+        raise _http_error(409, b'{"errorMessage":"User exists"}')
+
+    transport.post_hook = hook
+    with pytest.raises(BootstrapError, match="not verifiably created"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+    before = len(transport.calls)
+    assert (
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+        == "kc-raced"
+    )
+    assert [call[0] for call in transport.calls[before:]] == ["GET"]
+
+
+def test_pv15_timeout_without_assertion_fails_then_reuses(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-timeout"))
+        raise urllib.error.URLError("timed out")
+
+    transport.post_hook = hook
+    with pytest.raises(BootstrapError, match="not verifiably created"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+    assert [call[0] for call in transport.calls] == ["GET", "POST", "GET"]
+    before = len(transport.calls)
+    assert (
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+        == "kc-timeout"
+    )
+    assert [call[0] for call in transport.calls[before:]] == ["GET"]
+
+
+def test_pv16_definite_rejection_with_later_matching_account_fails(tmp_path: Path):
+    transport = _create_transport(_user(subject="kc-other"), _location("kc-other"))
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        raise _http_error(400, b'{"errorMessage":"rejected"}')
+
+    transport.post_hook = hook
+    with pytest.raises(BootstrapError, match="rejected the development user creation"):
+        _provisioner(transport).ensure_user(
+            _config(
+                create=True,
+                password_file=_secure_password_file(tmp_path),
+                expected_subject="kc-other",
+            )
+        )
+    assert [call[0] for call in transport.calls] == ["GET", "POST"]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        _user(subject="kc-created", enabled=False),
+        _user(subject="kc-created", federationLink="ldap://example"),
+        _user(subject="kc-created", serviceAccountClientId="svc"),
+        _user(subject="kc-created", email="drifted@example.invalid"),
+    ],
+)
+def test_pv17_valid_location_but_drifted_lookup_fails(row: dict[str, Any], tmp_path: Path):
+    config = _config(
+        create=True,
+        email="expected@example.invalid",
+        password_file=_secure_password_file(tmp_path),
+    )
+    transport = _create_transport(row, _location("kc-created"))
+    with pytest.raises(BootstrapError):
+        _provisioner(transport).ensure_user(config)
+
+
+def test_pv18_valid_location_but_ambiguous_lookup_fails(tmp_path: Path):
+    transport = FakeTransport([])
+
+    def hook(fake: FakeTransport, body: dict[str, Any]) -> None:
+        fake.users.append(_user(body["username"], subject="kc-created"))
+        fake.users.append(_user(body["username"], subject="kc-other"))
+
+    transport.post_hook = hook
+    transport.create_location = _location("kc-created")
+    with pytest.raises(BootstrapError, match="could not be created or verified"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )
+
+
+def test_pv19_parser_does_not_fabricate_an_id(tmp_path: Path):
+    # A valid-shaped location naming a different id must never be rewritten to
+    # the looked-up account; the mismatch fails closed.
+    transport = _create_transport(_user(subject="kc-created"), _location("kc-other"))
+    with pytest.raises(BootstrapError, match="creation provenance could not be verified"):
+        _provisioner(transport).ensure_user(
+            _config(create=True, password_file=_secure_password_file(tmp_path))
+        )

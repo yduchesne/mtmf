@@ -638,3 +638,141 @@ def test_sh16_created_user_with_unverified_email_can_login(
         assert _oidc_login_sub(username, password) == str(users[0]["id"])
     finally:
         admin.delete_user(username)
+
+
+# --------------------------------------------------------------------------
+# PV live — real-Keycloak created-resource Location provenance
+# --------------------------------------------------------------------------
+
+
+def test_pv_live_real_location_shape(tmp_path: Path) -> None:
+    del tmp_path
+    admin = AdminRest()
+    username = _unique("pvshape")
+    password = _password()
+    ca_file = _required("MTMF_PR14_KC_CA_FILE")
+    try:
+        with httpx.Client(
+            verify=ssl.create_default_context(cafile=ca_file),
+            timeout=20.0,
+            follow_redirects=False,
+        ) as client:
+            token_response = client.post(
+                f"{_kc_base()}/realms/master/protocol/openid-connect/token",
+                data={
+                    "grant_type": "password",
+                    "client_id": "admin-cli",
+                    "username": _required("MTMF_PR14_KC_ADMIN_USERNAME"),
+                    "password": _required("MTMF_PR14_KC_ADMIN_PASSWORD"),
+                },
+            )
+            headers = {"Authorization": f"Bearer {token_response.json()['access_token']}"}
+            response = client.post(
+                f"{_kc_base()}/admin/realms/{REALM}/users",
+                headers=headers,
+                json={
+                    "username": username,
+                    "enabled": True,
+                    "emailVerified": False,
+                    "firstName": "MTMF",
+                    "lastName": "Probe",
+                    "credentials": [{"type": "password", "value": password, "temporary": False}],
+                },
+            )
+        assert response.status_code == 201
+        location = response.headers.get("location")
+        prefix = f"{_kc_base()}/admin/realms/{REALM}/users/"
+        assert location is not None and location.startswith(prefix)
+        created_id = location[len(prefix) :]
+        assert created_id and "/" not in created_id
+        assert [user["id"] for user in admin.find_users(username)] == [created_id]
+    finally:
+        admin.delete_user(username)
+
+
+def test_pv_live_valid_location_via_proxy_succeeds(
+    db: psycopg.Connection[Any], tmp_path: Path
+) -> None:
+    admin = AdminRest()
+    username = _unique("pvproxy")
+    password = _password()
+    password_file = _write_password(tmp_path / "secrets", password)
+    env = _base_env(
+        tmp_path / "secrets-out",
+        MTMF_DEV_USER_USERNAME=username,
+        MTMF_DEV_USER_EMAIL=f"{username}@example.invalid",
+        MTMF_DEV_USER_CREATE="true",
+        MTMF_DEV_USER_PASSWORD_FILE=str(password_file),
+    )
+    ca_file = _required("MTMF_PR14_KC_CA_FILE")
+    try:
+        with FaultProxy(_kc_base(), ca_file, fault="none") as proxy:
+            result = _run_initializer({**env, "MTMF_AUTH_ADMIN_BASE": proxy.base_url})
+        assert result.returncode == 0, result.stderr
+        users = admin.find_users(username)
+        assert len(users) == 1
+        assert _active_binding_identity(db, str(users[0]["id"])) is not None
+        assert _counts(db) == (1, 1, 1, 1, 1)
+    finally:
+        admin.delete_user(username)
+
+
+def test_pv_live_stripped_location_fails_closed_then_reconciles(
+    db: psycopg.Connection[Any], tmp_path: Path
+) -> None:
+    admin = AdminRest()
+    username = _unique("pvstrip")
+    password = _password()
+    password_file = _write_password(tmp_path / "secrets", password)
+    env = _base_env(
+        tmp_path / "secrets-out",
+        MTMF_DEV_USER_USERNAME=username,
+        MTMF_DEV_USER_EMAIL=f"{username}@example.invalid",
+        MTMF_DEV_USER_CREATE="true",
+        MTMF_DEV_USER_PASSWORD_FILE=str(password_file),
+    )
+    ca_file = _required("MTMF_PR14_KC_CA_FILE")
+    try:
+        with FaultProxy(_kc_base(), ca_file, fault="strip_location") as proxy:
+            first = _run_initializer({**env, "MTMF_AUTH_ADMIN_BASE": proxy.base_url})
+        assert first.returncode != 0, first.stderr
+        assert "creation provenance could not be verified" in first.stderr
+        users = admin.find_users(username)
+        assert len(users) == 1  # real Keycloak committed the create
+        assert _active_binding_identity(db, str(users[0]["id"])) is None
+        assert _counts(db) == (0, 0, 0, 0, 0)
+        # Rerun without the fault reuses the now-existing account read-only.
+        second = _run_initializer(env)
+        assert second.returncode == 0, second.stderr
+        assert _active_binding_identity(db, str(users[0]["id"])) is not None
+        assert _counts(db) == (1, 1, 1, 1, 1)
+    finally:
+        admin.delete_user(username)
+
+
+def test_pv_live_wrong_realm_location_fails_closed(
+    db: psycopg.Connection[Any], tmp_path: Path
+) -> None:
+    admin = AdminRest()
+    username = _unique("pvwrongrealm")
+    password = _password()
+    password_file = _write_password(tmp_path / "secrets", password)
+    env = _base_env(
+        tmp_path / "secrets-out",
+        MTMF_DEV_USER_USERNAME=username,
+        MTMF_DEV_USER_EMAIL=f"{username}@example.invalid",
+        MTMF_DEV_USER_CREATE="true",
+        MTMF_DEV_USER_PASSWORD_FILE=str(password_file),
+    )
+    ca_file = _required("MTMF_PR14_KC_CA_FILE")
+    try:
+        with FaultProxy(_kc_base(), ca_file, fault="wrong_realm_location") as proxy:
+            result = _run_initializer({**env, "MTMF_AUTH_ADMIN_BASE": proxy.base_url})
+        assert result.returncode != 0, result.stderr
+        assert "creation provenance could not be verified" in result.stderr
+        users = admin.find_users(username)
+        assert len(users) == 1
+        assert _active_binding_identity(db, str(users[0]["id"])) is None
+        assert _counts(db) == (0, 0, 0, 0, 0)
+    finally:
+        admin.delete_user(username)

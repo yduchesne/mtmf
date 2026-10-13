@@ -314,6 +314,7 @@ class KeycloakDevUserProvisioner:
         transport: KeycloakAdminTransport,
         realm: str,
         *,
+        admin_base_url: str | None = None,
         lookup_attempts: int = 3,
         retry_delay: float = 0.25,
     ) -> None:
@@ -323,6 +324,7 @@ class KeycloakDevUserProvisioner:
             raise DevUserConfigurationError("lookup_attempts must be positive")
         self._transport = transport
         self._realm = realm
+        self._admin_base_url = admin_base_url
         self._lookup_attempts = lookup_attempts
         self._retry_delay = retry_delay
 
@@ -370,11 +372,11 @@ class KeycloakDevUserProvisioner:
         verified = _validate_user(matches[0])
         _verify_attributes(verified, config)
         if outcome is _CreateOutcome.CREATED:
-            created_subject = _created_subject(location)
-            if created_subject is not None and created_subject != verified.subject:
+            created_subject = _created_subject(location, self._realm, self._admin_base_url)
+            if created_subject is None or created_subject != verified.subject:
                 raise BootstrapError(
-                    "the Keycloak account read back does not match the resource created by "
-                    "this invocation; refusing to bind"
+                    "Keycloak creation provenance could not be verified; "
+                    "no MTMF identity binding was created"
                 )
         elif config.expected_subject is None:
             raise BootstrapError(
@@ -539,12 +541,53 @@ def _classify_http_status(code: int) -> _CreateOutcome:
     return _CreateOutcome.INDETERMINATE
 
 
-def _created_subject(location: str | None) -> str | None:
-    """Return the created user id from Keycloak's ``Location`` header."""
-    if not location:
+def _created_subject(location: str | None, realm: str, admin_base_url: str | None) -> str | None:
+    """Return the created immutable user id from a strict Keycloak ``Location``.
+
+    Only an absolute location whose scheme and origin equal the configured
+    trusted Keycloak admin base (HTTPS in production; the documented loopback
+    test fault proxy is the only HTTP exception) and whose path is exactly
+    ``/admin/realms/<configured-realm>/users/<id>`` is accepted. Missing,
+    malformed, foreign-origin, wrong-realm, wrong-resource, encoded, or
+    traversal-bearing locations return ``None`` so the caller fails closed.
+    """
+    if not isinstance(location, str):
         return None
-    candidate = urllib.parse.urlparse(location).path.rstrip("/").rsplit("/", 1)[-1]
-    return candidate or None
+    if _has_control_characters(location):
+        return None
+    value = location.strip()
+    if not value or not realm:
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        trusted = urllib.parse.urlsplit(admin_base_url) if admin_base_url else None
+    except ValueError:
+        return None
+    if parsed.scheme not in ("https", "http") or not parsed.netloc:
+        return None
+    if parsed.username is not None or parsed.password is not None:
+        return None
+    if parsed.query or parsed.fragment or "%" in parsed.path:
+        return None
+    if trusted is None or trusted.scheme not in ("https", "http") or not trusted.netloc:
+        return None
+    if parsed.scheme != trusted.scheme or parsed.netloc != trusted.netloc:
+        return None
+    segments = parsed.path.split("/")
+    if len(segments) != 6:
+        return None
+    if segments[0] != "" or segments[1] != "admin" or segments[2] != "realms":
+        return None
+    if segments[3] != realm or segments[4] != "users":
+        return None
+    candidate = segments[5]
+    if not candidate or candidate in (".", ".."):
+        return None
+    if any(character in candidate for character in ("/", "\\", ";")):
+        return None
+    if _has_control_characters(candidate):
+        return None
+    return candidate
 
 
 def _sleep(seconds: float) -> None:

@@ -42,11 +42,26 @@ _FORWARDED_HEADERS = ("Authorization", "Content-Type", "Accept")
 class FaultProxy:
     """A bounded, loopback-only Admin REST pass-through with deterministic faults."""
 
-    def __init__(self, upstream_base: str, ca_file: str, *, fault: str = "none") -> None:
-        if fault not in {"none", "drop_response", "error_before_forward", "drop_and_fail_reads"}:
+    def __init__(
+        self,
+        upstream_base: str,
+        ca_file: str,
+        *,
+        fault: str = "none",
+        realm: str = "mtmf-pr14-dev",
+    ) -> None:
+        if fault not in {
+            "none",
+            "drop_response",
+            "error_before_forward",
+            "drop_and_fail_reads",
+            "strip_location",
+            "wrong_realm_location",
+        }:
             raise ValueError(f"unknown fault mode {fault!r}")
         self._upstream = upstream_base.rstrip("/")
         self._fault = fault
+        self._realm = realm
         self._client = httpx.Client(
             verify=ssl.create_default_context(cafile=ca_file) if ca_file else True,
             timeout=30.0,
@@ -126,7 +141,13 @@ class FaultProxy:
             self._reply(handler, 503, b'{"error":"forced"}', "application/json")
             return
         drop = is_create and self._fault in {"drop_response", "drop_and_fail_reads"}
-        self._forward(handler, method, body, drop_response=drop)
+        self._forward(
+            handler,
+            method,
+            body,
+            drop_response=drop,
+            location_fault=self._fault if is_create else None,
+        )
 
     def _forward(
         self,
@@ -135,6 +156,7 @@ class FaultProxy:
         body: bytes | None,
         *,
         drop_response: bool,
+        location_fault: str | None = None,
     ) -> None:
         request = httpx.Request(method, self._upstream + handler.path, content=body)
         for name in _FORWARDED_HEADERS:
@@ -146,6 +168,7 @@ class FaultProxy:
             status = response.status_code
             payload = response.content
             content_type = response.headers.get("content-type", "application/json")
+            location = response.headers.get("location")
         except httpx.HTTPError:
             self._reply(handler, 502, b'{"error":"upstream"}', "application/json")
             return
@@ -154,14 +177,33 @@ class FaultProxy:
             # the caller experiences a lost/timeout response, then re-reads.
             handler.close_connection = True
             return
-        self._reply(handler, status, payload, content_type)
+        if location is not None:
+            # Rewrite the real Keycloak origin to this proxy's loopback origin so
+            # the test exercises path/realm provenance validation rather than an
+            # origin mismatch against the test-only HTTP transport.
+            marker = "/admin/"
+            index = location.find(marker)
+            if index != -1:
+                location = f"http://127.0.0.1:{self.port}" + location[index:]
+        if location_fault == "strip_location":
+            location = None
+        elif location_fault == "wrong_realm_location" and location:
+            location = location.replace(f"/realms/{self._realm}/", "/realms/other-realm/")
+        self._reply(handler, status, payload, content_type, location=location)
 
     @staticmethod
     def _reply(
-        handler: BaseHTTPRequestHandler, status: int, payload: bytes, content_type: str | None
+        handler: BaseHTTPRequestHandler,
+        status: int,
+        payload: bytes,
+        content_type: str | None,
+        *,
+        location: str | None = None,
     ) -> None:
         handler.send_response(status)
         handler.send_header("Content-Type", content_type or "application/json")
+        if location is not None:
+            handler.send_header("Location", location)
         handler.send_header("Content-Length", str(len(payload)))
         handler.end_headers()
         if payload:

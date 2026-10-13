@@ -674,7 +674,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = DevUserConfig.from_env()
         credentials.preflight_issuer(os.environ.get("MTMF_AUTH_ISSUER", "").rstrip("/"))
-        subject = KeycloakDevUserProvisioner(credentials, credentials.realm).ensure_user(config)
+        subject = KeycloakDevUserProvisioner(
+            credentials, credentials.realm, admin_base_url=credentials.base_url
+        ).ensure_user(config)
         _reach_test_failpoint("after-user-verify")
         DevelopmentBootstrap(
             mode=settings.deployment_mode,

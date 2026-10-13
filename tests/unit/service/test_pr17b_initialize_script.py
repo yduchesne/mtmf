@@ -166,8 +166,10 @@ class _FakeKeycloak:
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
         self.realm = kwargs["realm"]
+        self.base_url = kwargs["base_url"]
         self.preflight: str | None = None
         self.users = [{"id": "real-kc-sub", "username": "dev-user", "enabled": True}]
+        self.create_location: str | None = None
 
     def preflight_issuer(self, expected_issuer: str) -> None:
         self.preflight = expected_issuer
@@ -176,6 +178,9 @@ class _FakeKeycloak:
         if method == "GET":
             return list(self.users)
         return None
+
+    def create_user(self, path: str, body: Any) -> str | None:
+        return self.create_location
 
 
 class _RecordingBootstrap:
@@ -201,7 +206,10 @@ def _set_development_env(monkeypatch: pytest.MonkeyPatch, **extra: str) -> None:
     base = {
         "MTMF_SERVICE_DEPLOYMENT_MODE": "development",
         "MTMF_AUTH_ISSUER": "https://127.0.0.1:28443/realms/mtmf-pr14-dev",
+        "MTMF_AUTH_ADMIN_BASE": "https://127.0.0.1:28443",
         "MTMF_AUTH_ADMIN_REALM": "mtmf-pr14-dev",
+        "MTMF_AUTH_ADMIN_USERNAME": "admin",
+        "MTMF_AUTH_ADMIN_PASSWORD": "admin-password",
         "MTMF_DEV_USER_USERNAME": "dev-user",
         "MTMF_MIGRATOR_DATABASE_URL": "postgresql://mtmf_migrator:x@127.0.0.1:25432/mtmf",
     }
@@ -263,3 +271,93 @@ def test_entry_point_fails_closed_when_assertion_mismatches(
 
     monkeypatch.setattr(_script, "DevelopmentBootstrap", explode)
     assert _script.main([]) == 1
+
+
+class _FakeHttpResponse:
+    def __init__(self, headers: dict[str, str]) -> None:
+        self.headers = headers
+        self._payload = b""
+
+    def read(self, size: int = -1) -> bytes:
+        del size
+        return self._payload
+
+    def __enter__(self) -> _FakeHttpResponse:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def _transport() -> Any:
+    return _script.KeycloakCredentialProvisioner(
+        base_url="https://127.0.0.1:28443",
+        realm="mtmf-pr14-dev",
+        admin_username="admin",
+        admin_password="admin-password",
+    )
+
+
+def test_pv19_create_user_returns_the_real_location_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provisioner = _transport()
+    monkeypatch.setattr(provisioner, "_admin_token", lambda: "token")
+    expected = "https://127.0.0.1:28443/admin/realms/mtmf-pr14-dev/users/abc"
+    seen: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, timeout: float | None = None) -> _FakeHttpResponse:
+        seen["method"] = request.method
+        return _FakeHttpResponse({"Location": expected})
+
+    monkeypatch.setattr(_script.urllib.request, "urlopen", fake_urlopen)
+    assert (
+        provisioner.create_user("/admin/realms/mtmf-pr14-dev/users", {"username": "dev-user"})
+        == expected
+    )
+    assert seen["method"] == "POST"
+
+
+def test_pv19_create_user_returns_none_without_a_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provisioner = _transport()
+    monkeypatch.setattr(provisioner, "_admin_token", lambda: "token")
+    monkeypatch.setattr(
+        _script.urllib.request,
+        "urlopen",
+        lambda request, timeout=None: _FakeHttpResponse({}),
+    )
+    assert provisioner.create_user("/admin/realms/mtmf-pr14-dev/users", {}) is None
+
+
+def test_pv20_provenance_failure_writes_no_mtmf_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    password_file = tmp_path / "pw"
+    password_file.write_text("pw-value")
+    password_file.chmod(0o600)
+    _set_development_env(
+        monkeypatch,
+        MTMF_DEV_USER_CREATE="true",
+        MTMF_DEV_USER_EMAIL="dev-user@example.invalid",
+        MTMF_DEV_USER_PASSWORD_FILE=str(password_file),
+    )
+    monkeypatch.setattr(_script, "PostgresProvisioner", lambda config: _FakeProvisioner(config))
+
+    class EmptyKeycloak(_FakeKeycloak):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self.users = []
+            self.create_location = None
+
+    monkeypatch.setattr(_script, "KeycloakCredentialProvisioner", EmptyKeycloak)
+    constructed: list[Any] = []
+
+    def explode(**kwargs: Any) -> None:
+        constructed.append(kwargs)
+        raise AssertionError("the MTMF bootstrap must not run after a provenance failure")
+
+    monkeypatch.setattr(_script, "DevelopmentBootstrap", explode)
+    assert _script.main([]) == 1
+    assert constructed == []
