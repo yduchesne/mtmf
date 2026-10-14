@@ -3,7 +3,9 @@
 **PR:** roadmap PR 20A — MTMF Reference Application Foundation
 **Branch:** `dev/pr20a-reference-app`
 **Baseline SHA:** `56695c08e5b71a032877f319aa05193db31a47ec` (`origin/main`)
-**Final SHA:** the commit on `dev/pr20a-reference-app` that contains this report.
+**Final validated implementation SHA:** `aba610c8e2a360de67669b1261422314c4255a67`
+  (the PR 20A implementation commit; this report and the other PR artifacts were
+  validated together with it by the canonical gates and the deployed acceptance).
 **Status:** **DONE** (all required acceptance criteria met).
 
 ## 1. Outcome
