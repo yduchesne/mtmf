@@ -2,6 +2,12 @@
 
 A Python package implementing an Identity and Access Management framework.
 
+<p align="center">
+  <img src="docs/img/MtmfLogo-384x384.png"
+       alt="MTMF"
+       width="384">
+</p>
+
 Current status: WIP.
 
 
