@@ -122,3 +122,12 @@ The guarantee that PR 19A provides is limited to an internal record of a trusted
 - root recovery's separate durable operator audit remains mandatory and outside this scope.
 
 Because no category-A mutation path was proven, the contract's closed registration map is empty and `require_registered_mutation` fails closed for every input: no operation is audited by PR 19A and none may be reported as covered. The blocker and the smallest reviewer decisions are recorded in [docs/pr-artifacts/pr-19a/PR19A_STOP_REPORT.md](pr-artifacts/pr-19a/PR19A_STOP_REPORT.md).
+
+
+### Future management mutations: mandatory provenance and bypass controls
+
+**Normative architectural limitation (PR 19A):** MTMF currently has no production authenticated-and-authorized management mutation entry point. The batch authorization endpoint only evaluates decisions; structural repository/stored-function writes and privileged operator/bootstrap operations do not become verified management operations by virtue of being callable. The PR 19A immutable provenance type and empty registration map do **not** establish durable mutation-audit coverage.
+
+For any future security-state management mutation, the implementation MUST (1) verify the acting Identity at the approved authentication boundary, (2) evaluate the exact Action against the bound target with applicable scope, dominance, and stewardship rules, (3) carry immutable operation-bound provenance into the transaction, (4) atomically commit the state change and an append-only audit row, and (5) revoke or otherwise eliminate all runtime-accessible legacy unaudited bypasses for that operation, with real `mtmf_runtime` privilege tests. Failed/no-op operations MUST NOT be represented as successful changes. Existing membership/stewardship audit semantics MUST remain explicit and must not be relabelled as verified when they are not.
+
+The shared PostgreSQL runtime credential authenticates the application, **not the end user**. Explicit provenance arguments are application-verified rather than cryptographically database-attested; compromise of the runtime credential or trusted service may permit forged attribution. Neither `SET LOCAL`, custom GUCs, nor a caller-supplied UUID is identity proof. The selected future trust model MUST document this residual risk and must not claim database-attested actor identity. Root recovery's independent durable operator audit remains mandatory. PR 19B owns audit-table partitioning only. See [PR 19A STOP report](pr-artifacts/pr-19a/PR19A_STOP_REPORT.md).
