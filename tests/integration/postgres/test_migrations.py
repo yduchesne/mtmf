@@ -181,6 +181,10 @@ EXPECTED_FUNCTION_NAMES = {
     "external_subject_identity_add",
     "external_subject_identity_revoke",
     "external_subject_identity_find_active",
+    "guard_security_mutation_audit",
+    "install_membership_add_policy",
+    "identity_group_membership_add_lock",
+    "identity_group_membership_add_verified",
 }
 
 _FORBIDDEN_TABLES = (
@@ -212,7 +216,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0011"
+    assert revision == "0012"
     assert revision == manager.head_revision
 
 

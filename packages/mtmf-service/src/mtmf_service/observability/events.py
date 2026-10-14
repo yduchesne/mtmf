@@ -59,6 +59,7 @@ class AuditEventName(StrEnum):
     SUBSCRIPTION_REJECTED = "mtmf.security.subscription_rejected"
     REQUEST_REJECTED = "mtmf.security.request_rejected"
     AUTHORIZATION_ERROR = "mtmf.authorization.error"
+    MANAGEMENT_MUTATION = "mtmf.management.mutation"
 
 
 class AuditOutcome(StrEnum):
@@ -69,6 +70,8 @@ class AuditOutcome(StrEnum):
     MIXED = "MIXED"
     REJECTED = "REJECTED"
     ERROR = "ERROR"
+    CREATED = "CREATED"
+    NO_OP = "NO_OP"
 
 
 class AuditReason(StrEnum):
@@ -88,6 +91,7 @@ class AuditReason(StrEnum):
     DATABASE_UNAVAILABLE = "DATABASE_UNAVAILABLE"
     ISSUER_UNAVAILABLE = "ISSUER_UNAVAILABLE"
     EVALUATION_ERROR = "EVALUATION_ERROR"
+    OPERATION_FORBIDDEN = "OPERATION_FORBIDDEN"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -269,6 +273,20 @@ class AuditEvent:
                 raise AuditEventSerializationError("a DENY outcome cannot contain an allowance")
             if self.outcome is AuditOutcome.MIXED and (allow_count == 0 or deny_count == 0):
                 raise AuditEventSerializationError("a MIXED outcome must contain both effects")
+        elif self.name is AuditEventName.MANAGEMENT_MUTATION:
+            if any(
+                count is not None
+                for count in (self.action_count, self.allow_count, self.deny_count)
+            ):
+                raise AuditEventSerializationError("only batch events may carry counts")
+            if self.outcome not in (AuditOutcome.CREATED, AuditOutcome.NO_OP):
+                raise AuditEventSerializationError(
+                    "a management mutation outcome must be CREATED/NO_OP"
+                )
+            if self.reason_code is not None:
+                raise AuditEventSerializationError(
+                    "a management mutation event must not carry a rejection reason"
+                )
         else:
             if any(
                 count is not None

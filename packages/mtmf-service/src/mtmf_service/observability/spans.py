@@ -26,6 +26,7 @@ __all__ = [
 SPAN_NAMES: Final[frozenset[str]] = frozenset(
     {
         "mtmf.http.evaluate",
+        "mtmf.http.management_membership_add",
         "mtmf.actor.verify",
         "mtmf.subscription.check",
         "mtmf.roles.resolve",
@@ -40,6 +41,7 @@ class SpanName(StrEnum):
     """The closed set of instrumented span names."""
 
     HTTP_EVALUATE = "mtmf.http.evaluate"
+    HTTP_MANAGEMENT_MEMBERSHIP_ADD = "mtmf.http.management_membership_add"
     ACTOR_VERIFY = "mtmf.actor.verify"
     SUBSCRIPTION_CHECK = "mtmf.subscription.check"
     ROLES_RESOLVE = "mtmf.roles.resolve"

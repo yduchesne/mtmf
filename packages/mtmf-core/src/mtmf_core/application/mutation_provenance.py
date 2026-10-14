@@ -47,6 +47,7 @@ from mtmf_core.domain.iam_urn import ActionUrn
 from mtmf_core.domain.identity import DomainId
 
 __all__ = [
+    "IDENTITY_GROUP_MEMBERSHIP_ADD_ACTION",
     "MutationProvenanceError",
     "UnregisteredMutationError",
     "VerifiedMutationProvenance",
@@ -57,13 +58,23 @@ __all__ = [
 #: Bounded length for the closed ``target_kind`` discriminator.
 _MAX_TARGET_KIND_LENGTH = 64
 
+#: The single exact Action approved for the Identity-to-Group membership-add
+#: target kind (PR 19C, Amendment 01 §A). Approval is a human policy decision;
+#: this constant is a whitelist entry, never an authorization grant.
+IDENTITY_GROUP_MEMBERSHIP_ADD_ACTION = ActionUrn(
+    "urn:mtmf:iam:actions:system:identity-group-membership:add-object"
+)
+
 #: Closed registration of the operations that may produce provenance. Each
 #: key is a ``target_kind`` and each value is the frozenset of exact Action
-#: URN values approved for that target kind. It is intentionally **empty in
-#: PR 19A**: no category-A mutation operation was proven, so no target kind
-#: or Action pairing is registered and every provenance record fails the
-#: registration guard until a reviewed orchestration path is approved.
-_MIGRATED_MUTATIONS: Mapping[str, frozenset[str]] = MappingProxyType({})
+#: URN values approved for that target kind. Registration is a whitelist, not
+#: proof of authentication or authorization: the reviewed orchestration path
+#: still verifies the actor and obtains an authoritative ALLOW first.
+_MIGRATED_MUTATIONS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "identity_group_membership": frozenset({IDENTITY_GROUP_MEMBERSHIP_ADD_ACTION.value}),
+    }
+)
 
 
 class MutationProvenanceError(ValueError):
@@ -175,8 +186,9 @@ class VerifiedMutationProvenance:
 def registered_mutations() -> Mapping[str, frozenset[str]]:
     """Return the currently approved ``target_kind`` -> Action-URN mapping.
 
-    The returned mapping is read-only and empty in PR 19A (see
-    :data:`_MIGRATED_MUTATIONS`).
+    The returned mapping is read-only. Since PR 19C it registers exactly
+    ``identity_group_membership`` with the single approved membership-add
+    Action.
     """
     return _MIGRATED_MUTATIONS
 

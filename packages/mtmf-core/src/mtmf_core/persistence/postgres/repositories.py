@@ -25,7 +25,9 @@ in-memory provider:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import ClassVar
+from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
@@ -869,6 +871,60 @@ class PostgresIdentityGroupMembershipRepository(_MembershipRepository[IdentityGr
                 "SELECT mtmf.identity_group_membership_find_by_group(%s)", group_id
             )
         )
+
+    def lock_verified_add(
+        self,
+        *,
+        tenant_id: DomainId,
+        actor_identity_id: DomainId,
+        subject_identity_id: DomainId,
+        group_id: DomainId,
+    ) -> None:
+        """Acquire the ordered row locks for a verified Identity-to-Group add."""
+        self._uow._execute(
+            "SELECT mtmf.identity_group_membership_add_lock(%s, %s, %s, %s)",
+            (
+                tenant_id.value,
+                actor_identity_id.value,
+                subject_identity_id.value,
+                group_id.value,
+            ),
+        ).fetchone()
+
+    def add_verified(
+        self,
+        *,
+        identity_id: DomainId,
+        group_id: DomainId,
+        operation_id: UUID,
+        actor_identity_id: DomainId,
+        actor_principal_id: DomainId,
+        tenant_id: DomainId,
+        application_id: DomainId,
+        action_urn: ActionUrn,
+        target_kind: str,
+        target_id: DomainId,
+        authorized_at: datetime,
+    ) -> bool:
+        """Insert the membership and its atomic audit row iff newly inserted."""
+        row = self._uow._execute(
+            "SELECT mtmf.identity_group_membership_add_verified("
+            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                identity_id.value,
+                group_id.value,
+                operation_id,
+                actor_identity_id.value,
+                actor_principal_id.value,
+                tenant_id.value,
+                application_id.value,
+                action_urn.value,
+                target_kind,
+                target_id.value,
+                authorized_at,
+            ),
+        ).fetchone()
+        return bool(row is not None and row[0])
 
 
 class PostgresIdentityOrgMembershipRepository(_MembershipRepository[IdentityOrgMembership]):

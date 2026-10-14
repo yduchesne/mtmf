@@ -496,3 +496,15 @@ envelope; (8) infrastructure failure → none yields `ALLOW`.
 ## PR 14 package ownership clarification (approved 2026-10-11)
 
 The PR 14 decision register section 14H approves the package ownership split: mtmf-service owns HTTP extraction, issuer/JWKS transport, configuration and attestation; mtmf-core owns provider-neutral verification policy, immutable verified claims, Application/Identity resolution and actor composition through SPI/UoW. The ownership matrix in section 2 describes end-to-end service responsibility and must be read with this clarification. This does not approve root or production issuer authentication.
+
+---
+
+## Management mutation route (PR 19C)
+
+`POST /v1/management/identity-group-memberships` adds an existing Identity to an existing Group in one ordinary active Tenant. It is the first authenticated management mutation surface; it is not part of the batch authorization contract and does not return decisions.
+
+Request (exact keys; strict canonical JSON): `{"tenant_id":"<uuid>","identity_id":"<uuid>","group_id":"<uuid>"}`. Both the service bearer token (`Authorization`) and the configured acting-user bearer token header are required; no actor, Action, Role, Permission, operation id or audit field is accepted in the body.
+
+Responses: `201 Created` with `{"tenant_id","identity_id","group_id","created":true}` for a newly committed membership; `200 OK` with `"created":false` for an authorized idempotent no-op; `403 FORBIDDEN` (`Operation is not permitted`) for an authenticated actor whose exact Action or designated-steward guard denies the operation or whose target/prerequisite is invalid (opaque, no existence oracle); the existing static error envelope for validation (400), credentials (401/403), media/size/rate (415/413/429), dependency (503) and internal (500) faults. All responses use `Cache-Control: no-store`.
+
+**Response uncertainty:** a timeout/503 does **not** imply rollback. The synchronous worker may still complete and commit; the admission permit is retained until it actually returns. A fresh authenticated retry resolves the uncertainty: an already-committed membership is observed as `200 created=false` and no second audit row is written.

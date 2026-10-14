@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 
+import helpers
 import psycopg
 import pytest
 
@@ -25,7 +26,6 @@ from mtmf_core import (
     GroupRoleAssignment,
     GroupTenantMembership,
     Identity,
-    IdentityGroupMembership,
     IdentityOrgMembership,
     IdentityOrigin,
     IdentityRoleAssignment,
@@ -370,7 +370,7 @@ def test_rs22_runtime_signature_allowlist_is_exact(db: psycopg.Connection) -> No
         ).fetchall()
     }
     assert executable == set(expected_runtime_signatures())
-    assert len(executable) == 77
+    assert len(executable) == 78
 
 
 def test_rs12_stewardship_audit_is_append_only(db: psycopg.Connection) -> None:
@@ -522,7 +522,7 @@ def _new_provisioning_tenant(spi: MtmfSpi) -> Tenant:
 
 
 def _add_group_steward(
-    spi: MtmfSpi, tenant: Tenant, *, organization_scoped: bool
+    spi: MtmfSpi, db: psycopg.Connection, tenant: Tenant, *, organization_scoped: bool
 ) -> tuple[Principal, Identity]:
     principal = Principal(DomainId.generate(), "Group Steward")
     identity = Identity(DomainId.generate(), principal.id, "Group Steward I", IdentityOrigin.LOCAL)
@@ -545,9 +545,6 @@ def _add_group_steward(
         spi.create_group_tenant_membership_repository(uow).add(
             GroupTenantMembership(group.id, tenant.id)
         )
-        spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(identity.id, group.id)
-        )
         if organization is not None:
             spi.create_organization_repository(uow).add(organization)
             spi.create_identity_org_membership_repository(uow).add(
@@ -566,6 +563,9 @@ def _add_group_steward(
             )
         )
         uow.commit()
+    # The legacy runtime IdentityGroup add grant is revoked by revision 0012;
+    # seed the Group membership through the administrator connection.
+    helpers.add_identity_group_membership(db, identity.id.value, group.id.value)
     return principal, identity
 
 
@@ -573,7 +573,7 @@ def test_rs17_group_derived_tenant_admin_confers_stewardship_eligibility(
     postgres_spi: MtmfSpi, db: psycopg.Connection
 ) -> None:
     tenant = _new_provisioning_tenant(postgres_spi)
-    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    principal, identity = _add_group_steward(postgres_spi, db, tenant, organization_scoped=False)
     # Eligibility is satisfied purely through the Group-derived authority.
     db.execute(
         "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'group', 'operator')",
@@ -592,7 +592,7 @@ def test_rs18_organization_refined_assignment_is_not_stewardship_eligibility(
     postgres_spi: MtmfSpi, db: psycopg.Connection
 ) -> None:
     tenant = _new_provisioning_tenant(postgres_spi)
-    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=True)
+    principal, identity = _add_group_steward(postgres_spi, db, tenant, organization_scoped=True)
     # An Organization-refined grant is Organization-scoped authority, not
     # Tenant-level stewardship eligibility.
     with pytest.raises(psycopg.errors.DatabaseError) as captured:
@@ -702,7 +702,7 @@ def test_rs23_group_derived_steward_membership_removal_is_rejected(
     postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
 ) -> None:
     tenant = _new_provisioning_tenant(postgres_spi)
-    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    principal, identity = _add_group_steward(postgres_spi, db, tenant, organization_scoped=False)
     db.execute(
         "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
         (tenant.id.value, principal.id.value, identity.id.value),
@@ -721,7 +721,7 @@ def test_rs24_group_soft_delete_cannot_orphan_group_derived_steward(
     postgres_spi: MtmfSpi, db: psycopg.Connection
 ) -> None:
     tenant = _new_provisioning_tenant(postgres_spi)
-    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    principal, identity = _add_group_steward(postgres_spi, db, tenant, organization_scoped=False)
     db.execute(
         "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
         (tenant.id.value, principal.id.value, identity.id.value),
@@ -736,7 +736,7 @@ def test_rs25_group_membership_removal_allowed_when_another_source_remains(
     postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
 ) -> None:
     tenant = _new_provisioning_tenant(postgres_spi)
-    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    principal, identity = _add_group_steward(postgres_spi, db, tenant, organization_scoped=False)
     # Add a direct Tenant Administrator source so the Group is not the last one.
     with postgres_spi.create_unit_of_work() as uow:
         postgres_spi.create_identity_role_assignment_repository(uow).add(
@@ -801,7 +801,7 @@ def test_rs27_final_group_tenant_admin_removal_rejected_with_unrelated_group_rol
     postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
 ) -> None:
     tenant = _new_provisioning_tenant(postgres_spi)
-    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    principal, identity = _add_group_steward(postgres_spi, db, tenant, organization_scoped=False)
     db.execute(
         "SELECT mtmf.designate_steward(%s, %s, %s, NULL, 'RECOVERY', 'g', 'op')",
         (tenant.id.value, principal.id.value, identity.id.value),
@@ -882,13 +882,12 @@ def test_rs28_removal_allowed_when_genuine_alternative_tenant_admin_remains(
         postgres_spi.create_group_tenant_membership_repository(uow).add(
             GroupTenantMembership(group.id, tenant.id)
         )
-        postgres_spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(identity.id, group.id)
-        )
         postgres_spi.create_group_role_assignment_repository(uow).add(
             GroupRoleAssignment(DomainId.generate(), tenant.id, group.id, _TENANT_ADMIN_URN)
         )
         uow.commit()
+    # The legacy runtime IdentityGroup add grant is revoked by revision 0012.
+    helpers.add_identity_group_membership(db, identity.id.value, group.id.value)
     runtime_connection.execute("SELECT mtmf.identity_role_assignment_remove(%s)", (first,))
     runtime_connection.commit()
     assert (
@@ -915,7 +914,7 @@ def test_rs28b_group_assignment_removal_allowed_when_direct_source_remains(
     postgres_spi: MtmfSpi, db: psycopg.Connection, runtime_connection: psycopg.Connection
 ) -> None:
     tenant = _new_provisioning_tenant(postgres_spi)
-    principal, identity = _add_group_steward(postgres_spi, tenant, organization_scoped=False)
+    principal, identity = _add_group_steward(postgres_spi, db, tenant, organization_scoped=False)
     with postgres_spi.create_unit_of_work() as uow:
         postgres_spi.create_identity_role_assignment_repository(uow).add(
             IdentityRoleAssignment(DomainId.generate(), tenant.id, identity.id, _TENANT_ADMIN_URN)

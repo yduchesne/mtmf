@@ -450,3 +450,32 @@ The initializer is **development-only**, short-lived, and privileged. The long-r
 - [Roadmap](ROADMAP_V01.md) — PR 17-B status and acceptance expectations.
 - [Keycloak development fixture](../dev/keycloak/README.md) — isolated local issuer used by existing tests and development setup.
 - [Repository README](../README.md) — current build and test commands.
+
+## PR 19C acceptance-only isolated stack
+
+A separate, isolated acceptance topology exists for the PR 19C live management
+acceptance. It never uses, stops, or mutates the default `mtmf` development stack.
+
+- Project: `mtmf-pr19c-acceptance`; Compose model: `compose.pr19c-acceptance.yaml` alone.
+- Issuer: `https://keycloak.mtmf.test:29443/realms/mtmf-dev`; Keycloak published only on
+  `127.0.0.1:29443`; PostgreSQL on `127.0.0.1:29432`; service on `127.0.0.1:29001`.
+- Both data volumes are project-scoped (no global `name:`), so the canonical
+  `mtmf-dev-keycloak-data` realm volume is never reused.
+- Own CA (`/tmp/mtmf-pr19c-acceptance-ca`) and secrets
+  (`/tmp/mtmf-pr19c-acceptance-secrets`); generated secrets are owner-only and redacted
+  from all output.
+
+Commands:
+
+```
+uv run python scripts/mtmf-pr19c-live.py preflight   # read-only validation
+uv run python scripts/mtmf-pr19c-live.py up          # create CA/secrets + isolated stack
+uv run python scripts/mtmf-pr19c-live.py test        # run H01-H05 against it
+uv run python scripts/mtmf-pr19c-live.py down        # stop containers, keep volumes
+uv run python scripts/mtmf-pr19c-live.py reset       # DESTRUCTIVE: remove acceptance volumes + secrets
+uv run python scripts/mtmf-dev-stack.py acceptance-pr19c   # cold -> repeat -> recreate
+```
+
+`reset` is destructive but scoped strictly to the verified acceptance project and its two
+volumes; it refuses any mismatched ownership and never touches the default stack. The
+default host ports (25432/28443/28001) are untouched by acceptance.

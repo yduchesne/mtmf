@@ -44,6 +44,7 @@ class ApiErrorCode(Enum):
     UNAUTHENTICATED = "UNAUTHENTICATED"
     UNTRUSTED_ACTOR = "UNTRUSTED_ACTOR"
     INELIGIBLE_APPLICATION = "INELIGIBLE_APPLICATION"
+    FORBIDDEN = "FORBIDDEN"
     REQUEST_TOO_LARGE = "REQUEST_TOO_LARGE"
     UNSUPPORTED_MEDIA_TYPE = "UNSUPPORTED_MEDIA_TYPE"
     RATE_LIMITED = "RATE_LIMITED"
@@ -59,6 +60,7 @@ ERROR_MESSAGES: Final[Mapping[ApiErrorCode, str]] = MappingProxyType(
         ApiErrorCode.UNAUTHENTICATED: "Service authentication failed",
         ApiErrorCode.UNTRUSTED_ACTOR: "Acting user or tenant verification failed",
         ApiErrorCode.INELIGIBLE_APPLICATION: "Application or subscription is not eligible",
+        ApiErrorCode.FORBIDDEN: "Operation is not permitted",
         ApiErrorCode.REQUEST_TOO_LARGE: "Request body exceeds the permitted size",
         ApiErrorCode.UNSUPPORTED_MEDIA_TYPE: "Unsupported media type",
         ApiErrorCode.RATE_LIMITED: "Request rate limit exceeded",
@@ -75,6 +77,7 @@ ERROR_HTTP_STATUS: Final[Mapping[ApiErrorCode, int]] = MappingProxyType(
         ApiErrorCode.UNAUTHENTICATED: 401,
         ApiErrorCode.UNTRUSTED_ACTOR: 403,
         ApiErrorCode.INELIGIBLE_APPLICATION: 403,
+        ApiErrorCode.FORBIDDEN: 403,
         ApiErrorCode.REQUEST_TOO_LARGE: 413,
         ApiErrorCode.UNSUPPORTED_MEDIA_TYPE: 415,
         ApiErrorCode.RATE_LIMITED: 429,

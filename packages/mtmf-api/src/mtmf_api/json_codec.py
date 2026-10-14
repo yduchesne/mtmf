@@ -39,6 +39,10 @@ from mtmf_api.errors import (
     ApiErrorCode,
     ApiErrorResponse,
 )
+from mtmf_api.management import (
+    IdentityGroupMembershipAddRequest,
+    IdentityGroupMembershipAddResponse,
+)
 
 #: Convenience precheck applied only when raw ``bytes`` are supplied. The
 #: authoritative HTTP body limit belongs to PR 17; already-parsed objects
@@ -69,6 +73,7 @@ _DECISION_REQUIRED = frozenset({"request_id", "effect", "reason"})
 _ERROR_REQUIRED = frozenset({"schema_version", "error"})
 _ERROR_BODY_REQUIRED = frozenset({"code", "message"})
 _ERROR_BODY_OPTIONAL = frozenset({"request_id"})
+_MEMBERSHIP_ADD_REQUIRED = frozenset({"tenant_id", "identity_id", "group_id"})
 
 
 def _reject_non_finite(value: str) -> Any:
@@ -385,4 +390,31 @@ def serialize_error(error: ApiErrorResponse) -> str:
     if error.request_id is not None:
         body["request_id"] = error.request_id
     mapping: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "error": body}
+    return _dumps(mapping)
+
+
+def parse_membership_add_json(payload: bytes | str) -> IdentityGroupMembershipAddRequest:
+    """Parse and strictly validate a management membership-add request body.
+
+    Reuses the strict duplicate-key, non-finite, depth, UTF-8 and canonical
+    lowercase UUID discipline of the v1 codec. Unknown/extra keys are
+    rejected.
+    """
+    data = _expect_object(_loads_strict(_decode_text(payload)), "request")
+    _expect_keys(data, _MEMBERSHIP_ADD_REQUIRED, frozenset(), "request")
+    return IdentityGroupMembershipAddRequest(
+        tenant_id=_parse_uuid(data["tenant_id"], "tenant_id"),
+        identity_id=_parse_uuid(data["identity_id"], "identity_id"),
+        group_id=_parse_uuid(data["group_id"], "group_id"),
+    )
+
+
+def serialize_membership_add_response(response: IdentityGroupMembershipAddResponse) -> str:
+    """Serialize a membership-add response to canonical JSON."""
+    mapping: dict[str, Any] = {
+        "tenant_id": str(response.tenant_id),
+        "identity_id": str(response.identity_id),
+        "group_id": str(response.group_id),
+        "created": response.created,
+    }
     return _dumps(mapping)

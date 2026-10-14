@@ -163,6 +163,7 @@
                 "UNAUTHENTICATED",
                 "UNTRUSTED_ACTOR",
                 "INELIGIBLE_APPLICATION",
+                "FORBIDDEN",
                 "REQUEST_TOO_LARGE",
                 "UNSUPPORTED_MEDIA_TYPE",
                 "RATE_LIMITED",

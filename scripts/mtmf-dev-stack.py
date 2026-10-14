@@ -107,13 +107,14 @@ def _redact(text: str) -> str:
 
 def _run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run a command, capturing and redacting its output before printing."""
-    print(f"+ {' '.join(args)}", flush=True)
+    display = _redact(" ".join(args))
+    print(f"+ {display}", flush=True)
     result = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True)
     combined = _redact((result.stdout or "") + (result.stderr or ""))
     if combined.strip():
         print(combined.rstrip(), flush=True)
     if check and result.returncode != 0:
-        raise OrchestrationError(f"command failed with exit {result.returncode}: {' '.join(args)}")
+        raise OrchestrationError(f"command failed with exit {result.returncode}: {display}")
     return result
 
 
@@ -376,7 +377,7 @@ def _postgres_inspect() -> None:
     """Require the MTMF PostgreSQL healthcheck to report healthy."""
     # Container name is project-scoped and deterministic for project `mtmf`.
     result = _run(
-        ["podman", "inspect", "--format", "{{.State.Health.Status}}", "mtmf_postgres_1"],
+        ["podman", "inspect", "--format", "{{.State.Health.Status}}", f"{PROJECT}_postgres_1"],
         check=False,
     )
     if result.returncode != 0 or (result.stdout or "").strip() != "healthy":
@@ -649,13 +650,35 @@ def down_volumes() -> int:
     return 0
 
 
+def acceptance_pr19c(argv: list[str]) -> int:
+    """Delegate to the dedicated PR 19C live acceptance orchestrator."""
+    script = Path(__file__).resolve().parent / "mtmf-pr19c-live.py"
+    result = subprocess.run([sys.executable, str(script), *argv], cwd=REPO_ROOT, check=False)
+    return result.returncode
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse a subcommand and run the development stack operation."""
+    raw = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description="MTMF development stack orchestrator")
     parser.add_argument(
-        "command", choices=("up", "up-host-network", "status", "preflight", "down", "destroy")
+        "command",
+        choices=(
+            "up",
+            "up-host-network",
+            "status",
+            "preflight",
+            "down",
+            "destroy",
+            "acceptance-pr19c",
+        ),
     )
-    args = parser.parse_args(argv)
+    args, extra = parser.parse_known_args(raw)
+    if args.command == "acceptance-pr19c":
+        return acceptance_pr19c(extra)
+    if extra:
+        print(f"unexpected arguments: {extra}", file=sys.stderr)
+        return 2
     try:
         if args.command == "up":
             return up()

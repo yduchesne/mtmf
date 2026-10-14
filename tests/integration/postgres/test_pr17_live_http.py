@@ -364,6 +364,13 @@ class _LiveServer:
         self._thread.join(timeout=10)
 
 
+class _UnusedManagementMembershipService:
+    """Narrow stub: this PDP suite does not exercise the management route."""
+
+    def add_identity_to_group(self, *, service_token: str, user_token: str, request: Any) -> Any:
+        raise AssertionError("the management route is not exercised by this suite")
+
+
 def _live_app(
     *,
     expected_manifest: str | None = None,
@@ -380,6 +387,7 @@ def _live_app(
     return create_app(
         settings=settings,
         authorization_service=authorization_service,
+        management_membership_service=_UnusedManagementMembershipService(),  # type: ignore[arg-type]
         readiness=StaticReadiness(True),
         rate_limiter=rate_limiter or TokenBucketRateLimiter(per_minute=100000, burst=100000),
     )
@@ -844,6 +852,7 @@ def _live_app_with_db_readiness(port: int) -> Any:
     return create_app(
         settings=settings,
         authorization_service=authorization_service,
+        management_membership_service=_UnusedManagementMembershipService(),  # type: ignore[arg-type]
         readiness=readiness,
         rate_limiter=TokenBucketRateLimiter(per_minute=100000, burst=100000),
     )

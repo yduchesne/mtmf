@@ -309,6 +309,22 @@ def remove_membership(
     return bool(row[0])
 
 
+def add_identity_group_membership(
+    connection: psycopg.Connection, identity: str, group: str
+) -> bool:
+    """Insert exactly one IdentityGroupMembership through the owner connection.
+
+    Revision 0012 (PR 19C) revokes the legacy runtime EXECUTE grant on
+    ``identity_group_membership_add``; integration fixtures seed this
+    relationship through the administrator connection, which bypasses
+    function ACLs. Returns ``True`` when a new row was inserted.
+    """
+    row = connection.execute(
+        "SELECT mtmf.identity_group_membership_add(%s, %s)", (identity, group)
+    ).fetchone()
+    return bool(row[0]) if row is not None else False
+
+
 def remove_identity_group_membership(
     connection: psycopg.Connection, identity: str, group: str, actor: str | None = None
 ) -> bool:

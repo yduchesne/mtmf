@@ -51,11 +51,17 @@ from mtmf_api.errors import (
 from mtmf_api.json_codec import (
     DEFAULT_MAX_REQUEST_BYTES,
     parse_error_json,
+    parse_membership_add_json,
     parse_request_json,
     parse_response_json,
     serialize_error,
+    serialize_membership_add_response,
     serialize_request,
     serialize_response,
+)
+from mtmf_api.management import (
+    IdentityGroupMembershipAddRequest,
+    IdentityGroupMembershipAddResponse,
 )
 
 __all__ = [
@@ -81,14 +87,18 @@ __all__ = [
     "AuthorizationBatchResponse",
     "AuthorizationEffect",
     "DecisionReason",
+    "IdentityGroupMembershipAddRequest",
+    "IdentityGroupMembershipAddResponse",
     "ResourceKind",
     "ResourceTarget",
     "ResponseConformanceError",
     "ensure_utc",
     "parse_error_json",
+    "parse_membership_add_json",
     "parse_request_json",
     "parse_response_json",
     "serialize_error",
+    "serialize_membership_add_response",
     "serialize_request",
     "serialize_response",
     "validate_action_urn",

@@ -1,0 +1,183 @@
+# PR 19C isolated acceptance Compose model (Amendment 04).
+#
+# STANDALONE: applied alone as
+#   podman-compose -p mtmf-pr19c-acceptance -f compose.pr19c-acceptance.yaml ...
+# It never includes compose.yaml or compose.dev.yaml at runtime, and it is
+# never used by the default development launcher.
+#
+# Fixed acceptance topology:
+#   project            mtmf-pr19c-acceptance
+#   issuer             https://keycloak.mtmf.test:29443/realms/mtmf-dev
+#   Keycloak HTTPS     127.0.0.1:29443 -> 8443 (no HTTP publication)
+#   forwarder          listens 29443, forwards to keycloak:8443, no host ports
+#   service            127.0.0.1:29001 -> 28001
+#   PostgreSQL         127.0.0.1:29432 -> 5432
+# Both volumes are project-scoped (no explicit `name:`), so a fresh
+# acceptance project never reuses or mutates the canonical development
+# `mtmf-dev-keycloak-data` realm volume. All host publications bind loopback.
+
+services:
+  postgres:
+    image: docker.io/library/postgres:18
+    environment:
+      POSTGRES_DB: ${MTMF_PR19C_DB_NAME:-mtmf}
+      POSTGRES_USER: ${MTMF_PR19C_DB_USER:-mtmf}
+      POSTGRES_PASSWORD: ${MTMF_PR19C_DB_PASSWORD:?set acceptance database password}
+    ports:
+      - "127.0.0.1:${MTMF_PR19C_POSTGRES_PORT:-29432}:5432"
+    volumes:
+      - mtmf-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0-1
+    command:
+      - start-dev
+      - --http-port=8080
+      - --https-port=8443
+      - --hostname=https://keycloak.mtmf.test:29443
+      - --hostname-strict=true
+      - --hostname-backchannel-dynamic=false
+      - --health-enabled=true
+      - --https-certificate-file=/opt/keycloak/conf/tls/server.crt
+      - --https-certificate-key-file=/opt/keycloak/conf/tls/server.key
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_DEV_KC_ADMIN_USERNAME:-mtmf-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_DEV_KC_ADMIN_PASSWORD:?set acceptance admin password}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "true"
+    ports:
+      - "127.0.0.1:${MTMF_PR19C_KC_HTTPS_PORT:-29443}:8443"
+    volumes:
+      - mtmf-dev-keycloak-data:/opt/keycloak/data
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/server.crt:/opt/keycloak/conf/tls/server.crt:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/server.key:/opt/keycloak/conf/tls/server.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  forwarder:
+    image: docker.io/library/python:3.14-slim
+    command: ["python", "/app/mtmf-dev-forwarder.py"]
+    environment:
+      MTMF_DEV_FORWARDER_LISTEN_HOST: 0.0.0.0
+      MTMF_DEV_FORWARDER_PORT: "29443"
+      MTMF_DEV_FORWARDER_TARGET_HOST: keycloak
+      MTMF_DEV_FORWARDER_TARGET_PORT: "8443"
+      PYTHONDONTWRITEBYTECODE: "1"
+    networks:
+      default:
+        aliases:
+          - keycloak.mtmf.test
+    volumes:
+      - ./scripts/mtmf-dev-forwarder.py:/app/mtmf-dev-forwarder.py:ro
+      - ./scripts/mtmf-dev-probe.py:/app/mtmf-dev-probe.py:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('127.0.0.1', 29443), 2).close()\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  initializer:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["python", "scripts/mtmf-dev-initialize.py"]
+    environment:
+      MTMF_SERVICE_DEPLOYMENT_MODE: development
+      MTMF_SERVICE_ALLOW_CONTAINER_BIND: "1"
+      MTMF_MIGRATOR_DATABASE_URL: ${MTMF_MIGRATOR_DATABASE_URL:?set acceptance migrator URL}
+      MTMF_POSTGRES_DB: ${MTMF_PR19C_DB_NAME:-mtmf}
+      MTMF_AUTH_ISSUER: ${MTMF_AUTH_ISSUER:?set acceptance issuer}
+      MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
+      MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:?set acceptance admin base}
+      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:-mtmf-admin}
+      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set acceptance admin password}
+      MTMF_DEV_APPLICATION_KEYS: ${MTMF_DEV_APPLICATION_KEYS:-sample-app}
+      MTMF_DEV_TENANT_KEY: ${MTMF_DEV_TENANT_KEY:-dev}
+      MTMF_DEV_TENANT_NAME: ${MTMF_DEV_TENANT_NAME:-Development Tenant}
+      SSL_CERT_FILE: /certs/mtmf-ca.crt
+      MTMF_DEV_USER_USERNAME: ${MTMF_DEV_USER_USERNAME:?set development username}
+      MTMF_DEV_USER_EMAIL: ${MTMF_DEV_USER_EMAIL:-}
+      MTMF_DEV_USER_CREATE: ${MTMF_DEV_USER_CREATE:-true}
+      MTMF_DEV_USER_PASSWORD_FILE: ${MTMF_DEV_USER_PASSWORD_FILE:-/run/mtmf-secrets/dev-user-password}
+      MTMF_DEV_USER_SUBJECT: ${MTMF_DEV_USER_SUBJECT:-}
+    volumes:
+      - ${MTMF_DEV_SECRET_DIR:?set acceptance secret directory}:/run/mtmf-secrets:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      forwarder:
+        condition: service_healthy
+    restart: "no"
+
+  service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["python", "-m", "mtmf_service"]
+    environment:
+      MTMF_SERVICE_DEPLOYMENT_MODE: development
+      MTMF_SERVICE_HOST: 0.0.0.0
+      MTMF_SERVICE_PORT: "28001"
+      MTMF_SERVICE_ALLOW_CONTAINER_BIND: "1"
+      MTMF_SERVICE_INITIALIZED: "1"
+      MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS: ${MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS:-40}
+      MTMF_RUNTIME_DATABASE_URL: ${MTMF_RUNTIME_DATABASE_URL:?set acceptance runtime URL}
+      MTMF_RUNTIME_STATEMENT_TIMEOUT_MS: ${MTMF_RUNTIME_STATEMENT_TIMEOUT_MS:-10000}
+      MTMF_RUNTIME_LOCK_TIMEOUT_MS: ${MTMF_RUNTIME_LOCK_TIMEOUT_MS:-3000}
+      MTMF_AUTH_ISSUER: ${MTMF_AUTH_ISSUER:?set acceptance issuer}
+      MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
+      MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
+      MTMF_AUTH_JWKS_URI: ${MTMF_AUTH_JWKS_URI:?set JWKS URI}
+      MTMF_AUTH_EXPECTED_MANIFEST: ${MTMF_AUTH_EXPECTED_MANIFEST:-dev/keycloak/expected-realm-security.json}
+      MTMF_AUTH_EXPECTED_CLIENT_POLICY: ${MTMF_AUTH_EXPECTED_CLIENT_POLICY:-dev/keycloak/expected-client-policy.json}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:?set acceptance admin base}
+      SSL_CERT_FILE: /certs/mtmf-ca.crt
+      MTMF_AUTH_ATTESTATION_CLIENT_ID: ${MTMF_AUTH_ATTESTATION_CLIENT_ID:?set attestation reader client id}
+      MTMF_AUTH_ATTESTATION_CLIENT_SECRET: ${MTMF_AUTH_ATTESTATION_CLIENT_SECRET:?set attestation reader client secret}
+    volumes:
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
+    ports:
+      - "127.0.0.1:${MTMF_PR19C_SERVICE_PORT:-29001}:28001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      initializer:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:28001/health/ready',timeout=2).status==200 else 1)\""
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  mtmf-postgres-data:
+  mtmf-dev-keycloak-data:

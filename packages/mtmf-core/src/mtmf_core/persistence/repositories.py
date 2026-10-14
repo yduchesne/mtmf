@@ -23,7 +23,9 @@ persisted through ``save``).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
 from mtmf_core.domain.action import Action
 from mtmf_core.domain.application import (
@@ -429,6 +431,46 @@ class IdentityGroupMembershipRepository(Protocol):
 
     def find_by_group(self, group_id: DomainId) -> tuple[IdentityGroupMembership, ...]:
         """Return every Identity membership fact of one Group."""
+        ...
+
+    def lock_verified_add(
+        self,
+        *,
+        tenant_id: DomainId,
+        actor_identity_id: DomainId,
+        subject_identity_id: DomainId,
+        group_id: DomainId,
+    ) -> None:
+        """Acquire the bounded row-lock/recheck scope for a verified add.
+
+        Provider-neutral contract. The PostgreSQL provider takes the ordered
+        row locks that make a subsequent authorization decision stable until
+        commit and validates the mutable structural prerequisites; the
+        in-memory provider is a no-op. This method never authorizes.
+        """
+        ...
+
+    def add_verified(
+        self,
+        *,
+        identity_id: DomainId,
+        group_id: DomainId,
+        operation_id: UUID,
+        actor_identity_id: DomainId,
+        actor_principal_id: DomainId,
+        tenant_id: DomainId,
+        application_id: DomainId,
+        action_urn: ActionUrn,
+        target_kind: str,
+        target_id: DomainId,
+        authorized_at: datetime,
+    ) -> bool:
+        """Insert a membership and its atomic audit row iff newly inserted.
+
+        Returns ``True`` when a new membership row (and exactly one audit
+        row) was committed; ``False`` for an idempotent duplicate with no
+        audit row. It never evaluates authorization.
+        """
         ...
 
 

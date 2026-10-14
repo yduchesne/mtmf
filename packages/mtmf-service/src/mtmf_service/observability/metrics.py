@@ -75,6 +75,7 @@ class HttpRoute(StrEnum):
     """The closed set of instrumented HTTP route templates."""
 
     EVALUATE = "/v1/authorization/evaluate"
+    MANAGEMENT_MEMBERSHIP_ADD = "/v1/management/identity-group-memberships"
     LIVE = "/health/live"
     READY = "/health/ready"
     UNKNOWN = "unknown"

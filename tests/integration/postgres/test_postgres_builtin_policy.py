@@ -154,8 +154,19 @@ def test_bp01_exact_approved_seed_is_installed(db: psycopg.Connection) -> None:
         for role, _name, permission, set_id, permission_id in APPROVED_SEED
     }
     installed = set(_installed_rows(db))
-    assert installed == expected
-    assert len(installed) == 13
+    assert expected <= installed
+    assert len(installed) == 14
+    # The only addition beyond the historical Gate M seed is the PR 19C
+    # membership-add Permission on Tenant Administrator.
+    assert installed - expected == {
+        (
+            _role_urn("tenant-administrator"),
+            "187bc3cd-993d-5660-a226-113411121fed",
+            "allow",
+            "5ad78530-2945-4f66-8ce1-ddbd8794d7b2",
+            _permission_urn("identity-group-membership:add-object"),
+        )
+    }
 
     actions = {
         str(row[0])
@@ -165,7 +176,8 @@ def test_bp01_exact_approved_seed_is_installed(db: psycopg.Connection) -> None:
     }
     assert actions == APPROVED_ACTIONS
     assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 13
-    assert db.execute("SELECT count(*) FROM mtmf.action").fetchone()[0] == 3
+    # Three historical Gate M Actions plus the approved PR 19C membership-add Action.
+    assert db.execute("SELECT count(*) FROM mtmf.action").fetchone()[0] == 4
     # No built-in matcher contains a wildcard.
     assert (
         db.execute(

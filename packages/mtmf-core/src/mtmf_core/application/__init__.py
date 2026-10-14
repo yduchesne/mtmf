@@ -26,6 +26,11 @@ from mtmf_core.application.management_authorization import (
     ManagementAuthorizationResolution,
     ManagementAuthorizationResolver,
 )
+from mtmf_core.application.management_memberships import (
+    ManagementAuthorizationDeniedError,
+    ManagementMembershipResult,
+    ManagementMembershipService,
+)
 from mtmf_core.application.management_scope import (
     ManagementScopeCandidate,
     ManagementScopeResolution,
@@ -39,8 +44,11 @@ __all__ = [
     "EffectiveRoleIntegrityError",
     "EffectiveRoleResolutionError",
     "EffectiveRoleResolver",
+    "ManagementAuthorizationDeniedError",
     "ManagementAuthorizationResolution",
     "ManagementAuthorizationResolver",
+    "ManagementMembershipResult",
+    "ManagementMembershipService",
     "ManagementScopeCandidate",
     "ManagementScopeResolution",
     "ResolvedAuthorizationState",
