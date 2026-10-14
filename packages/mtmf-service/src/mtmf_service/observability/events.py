@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Final, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from opentelemetry.sdk._logs import Logger
+    from opentelemetry.sdk.resources import Resource
 
 __all__ = [
     "ATTRIBUTE_ALLOWLIST",
@@ -443,12 +444,18 @@ class OtelAuditEventSink:
     The logger's processor owns batching, queue bounds and export; this
     adapter only converts an already-validated event into one OTel log
     record. It never attaches a request body, token or policy payload.
+
+    The provider :class:`Resource` is attached explicitly: constructing an
+    SDK ``LogRecord`` directly bypasses the SDK logger's automatic resource
+    association, which would otherwise drop the ``service.name`` resource
+    attribute and export ``unknown_service``.
     """
 
-    __slots__ = ("_logger",)
+    __slots__ = ("_logger", "_resource")
 
-    def __init__(self, logger: Logger) -> None:
+    def __init__(self, logger: Logger, resource: Resource | None = None) -> None:
         self._logger = logger
+        self._resource = resource
 
     def emit(self, event: AuditEvent) -> None:
         """Convert ``event`` to one OTel log record and hand it to the SDK."""
@@ -480,6 +487,7 @@ class OtelAuditEventSink:
             severity_number=SeverityNumber.INFO,
             body=event.name.value,
             attributes=event.to_attributes(),
+            resource=self._resource,
             event_name=event.name.value,
         )
         self._logger.emit(record)

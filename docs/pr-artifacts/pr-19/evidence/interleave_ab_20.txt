@@ -1,0 +1,38 @@
+iter 1: disabled p50=564.8 p99=872.9 rps=1.80 | healthy p50=665.0 p99=1231.2 rps=1.40
+iter 2: disabled p50=580.7 p99=661.5 rps=1.80 | healthy p50=577.5 p99=683.5 rps=1.70
+iter 3: disabled p50=637.4 p99=902.3 rps=1.60 | healthy p50=668.8 p99=910.1 rps=1.60
+iter 4: disabled p50=709.4 p99=999.3 rps=1.40 | healthy p50=658.2 p99=797.4 rps=1.50
+iter 5: disabled p50=536.8 p99=843.3 rps=1.80 | healthy p50=546.0 p99=701.6 rps=1.90
+iter 6: disabled p50=527.3 p99=582.7 rps=2.00 | healthy p50=514.9 p99=576.6 rps=2.00
+iter 7: disabled p50=506.8 p99=620.3 rps=2.00 | healthy p50=532.6 p99=657.5 rps=1.80
+iter 8: disabled p50=567.4 p99=671.1 rps=1.80 | healthy p50=766.5 p99=1677.1 rps=1.10
+iter 9: disabled p50=642.0 p99=941.6 rps=1.50 | healthy p50=666.6 p99=737.6 rps=1.60
+iter 10: disabled p50=613.4 p99=684.8 rps=1.70 | healthy p50=644.6 p99=754.4 rps=1.60
+iter 11: disabled p50=654.8 p99=986.2 rps=1.50 | healthy p50=616.0 p99=756.3 rps=1.60
+iter 12: disabled p50=595.6 p99=861.5 rps=1.60 | healthy p50=593.9 p99=782.0 rps=1.70
+iter 13: disabled p50=551.7 p99=607.8 rps=1.90 | healthy p50=560.8 p99=606.2 rps=1.80
+iter 14: disabled p50=648.4 p99=963.3 rps=1.60 | healthy p50=662.6 p99=852.2 rps=1.50
+iter 15: disabled p50=559.7 p99=644.8 rps=1.80 | healthy p50=639.5 p99=1042.5 rps=1.50
+iter 16: disabled p50=675.3 p99=1090.8 rps=1.50 | healthy p50=789.1 p99=1388.5 rps=1.20
+iter 17: disabled p50=921.9 p99=2138.5 rps=0.90 | healthy p50=700.1 p99=1776.7 rps=1.20
+iter 18: disabled p50=625.5 p99=762.9 rps=1.60 | healthy p50=601.7 p99=705.2 rps=1.70
+iter 19: disabled p50=684.7 p99=807.7 rps=1.50 | healthy p50=554.8 p99=605.5 rps=1.80
+iter 20: disabled p50=587.2 p99=1474.4 rps=1.60 | healthy p50=576.5 p99=1566.4 rps=1.30
+{
+  "iterations": 20,
+  "duration_s": 10.0,
+  "disabled": {
+    "samples": 329,
+    "median_run_rps": 1.6,
+    "p50": 584.5974299991212,
+    "p95": 872.9003700027533,
+    "p99": 1474.377660000755
+  },
+  "healthy": {
+    "samples": 315,
+    "median_run_rps": 1.6,
+    "p50": 606.3989400026912,
+    "p95": 945.7606799987843,
+    "p99": 1545.463890000974
+  }
+}

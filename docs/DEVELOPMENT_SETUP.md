@@ -422,6 +422,7 @@ resources owned by another application. There is no broad `down --volumes`.
 | Component | Host publication (loopback only) | Notes |
 |---|---|---|
 | Collector OTLP gRPC | `127.0.0.1:24317` | Optional; the service uses `collector:4317` in-network |
+| Collector health | `127.0.0.1:24318` | Built-in `health_check` extension (`/health/status`); the distroless image cannot run a shell healthcheck |
 | Prometheus | `127.0.0.1:29090` | Scrapes the Collector's Prometheus exporter |
 | Jaeger UI | `127.0.0.1:21686` | OTLP trace receiver is internal |
 | Grafana | `127.0.0.1:23000` | Fixed datasource UIDs `mtmf-prometheus`, `mtmf-jaeger`, `mtmf-loki`; dashboards `mtmf-overview`, `mtmf-authorization`, `mtmf-security`, `mtmf-dependencies` |

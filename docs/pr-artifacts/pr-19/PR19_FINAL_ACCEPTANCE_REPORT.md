@@ -1,48 +1,68 @@
 # PR 19 Final Acceptance Report
 
 **PR:** roadmap PR 19 (Observability and security/audit hardening).
-**Date:** 2026-10-13.
-**Base commit:** `ada8c5e`.
-**Overall status:** **IMPLEMENTED AT CODE LEVEL; NOT DONE (live acceptance and benchmark pending).**
+**Date:** 2026-10-14.
+**Branch:** `dev/observability` (implementation baseline `fff7016` + acceptance fixes).
+**Overall status:** **Gate A PASS, Gate B PASS.** The separate mutation-audit
+provenance STOP remains open and unresolved; PR 19 is **not** marked DONE.
 
 ## Reviewer checklist
 
 | Item | Status |
 |---|---|
-| PR #56 architecture merged; baseline and gap inventory documented | ✅ (see `PR19_BASELINE_REPORT.md`, `PR19_SECURITY_AUDIT_INVENTORY.md`) |
-| Exactly one terminal sanitized audit event per evaluated/rejected/error request in-process; no synchronous decision DB insert | ✅ unit-verified (`test_observability_service.py`) |
-| Correct bounded metrics and trace spans at real existing seams; no secret/high-cardinality labels | ✅ unit-verified; span Phase-2 live exercise pending |
-| Existing v1 wire, trust, PDP, Rust/Python parity, PEP snapshot and failure semantics unchanged | ✅ `--qa`/`--rust`/`--integration` pass; client isolation tests pass |
-| No-op and exporter failure cannot change authorization outcome; queue and shutdown bounded | ✅ unit-verified (`O-U12`, `O-U13`, `O-U14`, `O-U15`) |
-| PostgreSQL mutation-audit inventory approved; existing tables protected; any added audit atomic and least-privilege | ⚠️ inventory complete; broader coverage is **UNRESOLVED TRUST ATTRIBUTION** and deferred to a scoped follow-up (`PR19_STOP_REPORT.md`); existing tables unchanged |
-| Collector, Prometheus, Jaeger, Loki, Grafana are MTMF-owned, isolated and reproducibly provisioned | ⚠️ provisioned in `compose.observability.yaml`; live bring-up not executed |
-| Four functional Grafana dashboards and three datasources verified with real backend queries | ⚠️ provisioned with stable UIDs; live validation **NOT EXECUTED** |
-| Live `O-L01..O-L05` on the real stack in three clean cycles; redaction checked in backends | ❌ **NOT EXECUTED** |
-| Baseline/disabled/healthy/unavailable-Collector benchmark; ≤5% throughput and ≤10% p99 assessed | ❌ **NOT EXECUTED** |
-| `./build.sh --qa`, `--sec`, `--rust`, `--integration` executed and passed; ≥85% coverage preserved | ✅ all four pass; 90.82% unit coverage |
-| All PR-specific evidence committed under `docs/pr-artifacts/pr-19/`; system architecture under `docs/` | ✅ |
-| Roadmap status changed to DONE only after all mandatory acceptance passes | ✅ not marked DONE |
+| PR #56 architecture merged; baseline and gap inventory documented | ✅ |
+| Exactly one terminal sanitized audit event per request; no synchronous decision DB insert | ✅ unit + live (O-L01/O-L02) |
+| Bounded metrics and trace spans at real seams; no secret/high-cardinality labels | ✅ live (O-L01–O-L05) |
+| Existing v1 wire, trust, PDP, Rust/Python parity, PEP snapshot and failure semantics unchanged | ✅ `--qa`/`--rust`/`--integration` + O-L03 outage |
+| No-op and exporter failure cannot change authorization outcome; queue/shutdown bounded | ✅ O-L03 + Gate B unavailable |
+| PostgreSQL mutation-audit inventory; existing tables protected; no unverified attribution | ⚠️ inventory complete; broader coverage is a separate approved follow-up (`PR19_STOP_REPORT.md`) |
+| Collector/Prometheus/Jaeger/Loki/Grafana MTMF-owned, isolated, reproducible | ✅ live stack brought up by `scripts/mtmf-observability.py` |
+| Four Grafana dashboards and three datasources verified with real queries | ✅ O-L04 + dashboard query execution |
+| Live `O-L01..O-L05` in three clean cycles; redaction checked in backends | ✅ PASS |
+| Baseline/disabled/healthy/unavailable benchmark; ≤5% throughput, ≤10% p99 | ✅ drift-controlled A/B within targets; sequential baseline confounded (documented) |
+| `--qa`, `--sec`, `--rust`, `--integration` executed and passed; ≥85% coverage | ✅ 90.80% coverage |
+| All PR-specific evidence under `docs/pr-artifacts/pr-19/` | ✅ |
+| Roadmap marked DONE only after all mandatory acceptance passes | ✅ (see note below) |
 
-## Mandatory open items before DONE
+## Live acceptance (Gate A) — PASS
 
-1. Execute `tests/integration/postgres/test_pr19_live_observability.py` with
-   `MTMF_PR19_LIVE=1` against the real stack for three clean cycles, and
-   record backend redaction/cardinality evidence.
-2. Execute and record the controlled baseline/disabled/healthy/unavailable
-   performance comparison against the ≤5% / ≤10% targets.
-3. Validate the dashboard PromQL names against live-exported series after
-   OTel→Prometheus normalization.
-4. Obtain the approved trust-boundary decision for the mutation-audit gap and
-   scope the follow-up PR.
+`tests/integration/postgres/test_pr19_live_observability.py` executed with
+`MTMF_PR19_LIVE=1` against the real Keycloak → Uvicorn → PostgreSQL path and the
+real MTMF-owned Collector → Prometheus/Jaeger/Loki → Grafana stack. O-L01–O-L05
+passed in three consecutive clean cycles (63 s, 40 s, 56 s). Independent
+verification covered metric-name normalization, Loki→Jaeger trace correlation,
+redaction of credentials/JWTs, dashboard query execution, and a controlled
+PostgreSQL dependency failure. See `PR19_LIVE_ACCEPTANCE_REPORT.md`.
+
+## Performance acceptance (Gate B) — PASS
+
+Four configurations (pre-PR-19 baseline `ada8c5e`, disabled, healthy,
+unavailable) on the same fixed workload. The shared-host sequential run was
+confounded by environment drift (the zero-instrumentation control also
+degraded). A same-process interleaved A/B (20×10 s, 329/315 samples) measured
+**0% throughput loss and +4.8% p99** for enabled OTel versus the
+no-instrumentation control, within the ≤5% / ≤10% targets. Collector
+unavailability preserved authorization semantics and recovered. See
+`PR19_PERFORMANCE_REPORT.md`.
+
+## Gate A defects fixed (within scope)
+
+Provider-resource attachment to log records; idempotent telemetry shutdown;
+bounded gRPC reconnect backoff; Loki datasource/LogQL on the audit dashboard;
+distroless Collector health via the published health endpoint; companion script
+no longer requires application-stack secrets; harness single-seed and
+fresh-backend recovery evidence. See `PR19_LIVE_ACCEPTANCE_REPORT.md` §4.
+
+## Remaining STOP
+
+The security mutation-audit provenance STOP (`PR19_STOP_REPORT.md`) is separate
+and unresolved: uncovered write functions lack verified actor provenance. Gate
+A/B completion does **not** authorize bypassing it. PR 19 remains unmarked DONE.
 
 ## Gate summary
 
-- `./build.sh --qa` — PASS (`2374 passed`, coverage 90.82%).
+- `./build.sh --qa` — PASS (`2374 passed`, 90.80% coverage).
 - `./build.sh --sec` — PASS (Bandit 0 Medium/High; Semgrep 0 findings).
 - `./build.sh --rust` — PASS.
-- `./build.sh --integration` — PASS (`564 passed, 81 skipped` opt-in live).
-
-Full detail in `PR19_TEST_EVIDENCE.md`. Failure classification for this cycle:
-no mandatory gate failed; the live and benchmark items are
-`environment/harness` — required topology was not stood up, and they are
-reported NOT EXECUTED rather than PASS.
+- `./build.sh --integration` — PASS (`564 passed, 86 skipped` opt-in live).
+- `MTMF_PR19_LIVE=1` O-L01–O-L05 — PASS ×3.

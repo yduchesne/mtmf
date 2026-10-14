@@ -60,6 +60,15 @@ if TYPE_CHECKING:
 
 __all__ = ["Telemetry", "build_telemetry"]
 
+#: Bounded gRPC reconnect backoff for the OTLP exporters. The gRPC default
+#: maximum backoff is minutes, which makes recovery after a Collector restart
+#: non-deterministic. Bounding it keeps recovery time bounded and observable
+#: while leaving the asynchronous, best-effort delivery contract unchanged.
+_GRPC_CHANNEL_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("grpc.initial_reconnect_backoff_ms", "500"),
+    ("grpc.max_reconnect_backoff_ms", "5000"),
+)
+
 
 class Telemetry:
     """An instance-scoped, fail-safe telemetry façade.
@@ -75,6 +84,7 @@ class Telemetry:
         "_metrics",
         "_service_name",
         "_service_version",
+        "_shutdown_done",
         "_shutdown_hook",
         "_sink",
         "_tracer",
@@ -101,6 +111,7 @@ class Telemetry:
         self._environment = environment
         self._shutdown_hook = shutdown_hook
         self._failure_count = 0
+        self._shutdown_done = False
 
     @classmethod
     def disabled(
@@ -352,7 +363,14 @@ class Telemetry:
     # -- lifecycle ---------------------------------------------------------
 
     def shutdown(self) -> None:
-        """Flush and shut down exporters within the configured deadline."""
+        """Flush and shut down exporters within the configured deadline.
+
+        Idempotent: an ASGI shutdown hook and an explicit owner shutdown can
+        both request termination without double-shutting the SDK providers.
+        """
+        if self._shutdown_done:
+            return
+        self._shutdown_done = True
         if self._shutdown_hook is not None:
             self._guard(self._shutdown_hook)
 
@@ -417,7 +435,9 @@ def build_telemetry(settings: ServiceSettings) -> Telemetry:
     tracer_provider = TracerProvider(resource=resource, shutdown_on_exit=False)
     tracer_provider.add_span_processor(
         BatchSpanProcessor(
-            OTLPSpanExporter(endpoint=endpoint, insecure=insecure),
+            OTLPSpanExporter(
+                endpoint=endpoint, insecure=insecure, channel_options=_GRPC_CHANNEL_OPTIONS
+            ),
             max_queue_size=settings.otel_queue_size,
             schedule_delay_millis=settings.otel_schedule_delay_ms,
             max_export_batch_size=settings.otel_batch_size,
@@ -429,7 +449,9 @@ def build_telemetry(settings: ServiceSettings) -> Telemetry:
         shutdown_on_exit=False,
         metric_readers=[
             PeriodicExportingMetricReader(
-                OTLPMetricExporter(endpoint=endpoint, insecure=insecure),
+                OTLPMetricExporter(
+                    endpoint=endpoint, insecure=insecure, channel_options=_GRPC_CHANNEL_OPTIONS
+                ),
                 export_interval_millis=settings.otel_metric_export_interval_ms,
                 export_timeout_millis=settings.otel_export_timeout_ms,
             )
@@ -438,7 +460,9 @@ def build_telemetry(settings: ServiceSettings) -> Telemetry:
     logger_provider = LoggerProvider(resource=resource, shutdown_on_exit=False)
     logger_provider.add_log_record_processor(
         BatchLogRecordProcessor(
-            OTLPLogExporter(endpoint=endpoint, insecure=insecure),
+            OTLPLogExporter(
+                endpoint=endpoint, insecure=insecure, channel_options=_GRPC_CHANNEL_OPTIONS
+            ),
             max_queue_size=settings.otel_queue_size,
             schedule_delay_millis=settings.otel_schedule_delay_ms,
             max_export_batch_size=settings.otel_batch_size,
@@ -458,7 +482,7 @@ def build_telemetry(settings: ServiceSettings) -> Telemetry:
 
     return Telemetry(
         enabled=True,
-        sink=OtelAuditEventSink(logger),
+        sink=OtelAuditEventSink(logger, resource),
         metrics=OtelMetricsRecorder(meter),
         tracer=tracer,
         service_name=settings.otel_service_name,

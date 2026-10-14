@@ -81,6 +81,26 @@
   unverified actor attribution: see `PR19_SECURITY_AUDIT_INVENTORY.md` and
   `PR19_STOP_REPORT.md`.
 
+## 1a. Acceptance-run fixes (2026-10-14)
+
+The live/performance acceptance run found and fixed within-scope defects:
+
+- `OtelAuditEventSink` now attaches the provider `Resource` (log records
+  previously exported `unknown_service` to Loki).
+- `Telemetry.shutdown()` is idempotent (ASGI lifespan + owner shutdown).
+- OTLP gRPC exporters use a bounded reconnect backoff (500 ms initial / 5 s max)
+  for deterministic recovery after a Collector restart; delivery semantics
+  unchanged.
+- `scripts/mtmf-observability.py` no longer includes `compose.dev.yaml`
+  (observability no longer requires application-stack secrets).
+- `compose.observability.yaml` publishes the Collector `health_check` endpoint
+  (`127.0.0.1:24318`) because the distroless image cannot run a shell healthcheck
+  under podman-compose 1.0.6.
+- The audit-log Grafana panel uses the `mtmf-loki` datasource and the verified
+  LogQL; telemetry drop/queue panels use the Collector's real self-metrics.
+- The live harness seeds once per test and proves recovery from fresh backend
+  evidence.
+
 ## 2. Deliberate non-changes
 
 No change to `mtmf-api`/v1 schema, authorization semantics, policy

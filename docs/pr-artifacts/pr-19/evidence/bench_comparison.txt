@@ -1,0 +1,12 @@
+Machine: WSL2 x86_64; serial (concurrency=1); warmup 5s; duration 20s; 5 runs; sizes 1/10/100
+
+workload       metric         baseline     disabled      healthy  unavailable   healthy_vs_baseline
+size100_MIXED  throughput        1.850        1.850        1.900        1.950   +2.7%
+size100_MIXED  p99             655.028      643.647      615.949      610.441   -6.0%
+size10_MIXED   throughput        2.000        2.000        1.950        2.100   -2.5%
+size10_MIXED   p99             588.722      601.279      629.944      674.087   +7.0%
+size1_ALLOW    throughput        2.050        2.000        1.900        2.050   -7.3%
+size1_ALLOW    p99             608.773      685.197      861.926      554.603   +41.6%
+
+Per-mode max RSS (kB): {'baseline': 123732, 'disabled': 125720, 'healthy': 146916, 'unavailable': 146424}
+has_observability: {'baseline': False, 'disabled': True, 'healthy': True, 'unavailable': True}

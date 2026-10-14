@@ -193,9 +193,15 @@ def test_otel_sink_emits_one_record() -> None:
         def emit(self, record: object) -> None:
             self.records.append(record)
 
+    from opentelemetry.sdk.resources import Resource
+
     logger = _Logger()
-    OtelAuditEventSink(logger).emit(_batch(trace_id=_TRACE, span_id=_SPAN))
+    resource = Resource.create({"service.name": "mtmf-service"})
+    OtelAuditEventSink(logger, resource).emit(_batch(trace_id=_TRACE, span_id=_SPAN))
     assert len(logger.records) == 1
     record = logger.records[0]
     assert record.body == "mtmf.authorization.batch"
     assert record.attributes["outcome"] == "ALLOW"
+    # The provider resource must travel with the record so Loki sees the
+    # real service.name rather than ``unknown_service``.
+    assert record.resource.attributes["service.name"] == "mtmf-service"

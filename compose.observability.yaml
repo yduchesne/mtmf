@@ -30,12 +30,11 @@ services:
       # Optional host publication for a host-run service; container-to-
       # container traffic uses the private project network at :4317.
       - "127.0.0.1:${MTMF_COLLECTOR_OTLP_PORT:-24317}:4317"
-    healthcheck:
-      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol/config.yaml"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      # The Collector image is distroless (no shell), and podman-compose
+      # 1.0.6 wraps even exec-form healthchecks in `/bin/sh -c`, so a
+      # container-local healthcheck cannot run. The built-in health_check
+      # extension endpoint is published instead and verified from the host.
+      - "127.0.0.1:${MTMF_COLLECTOR_HEALTH_PORT:-24318}:13133"
 
   prometheus:
     image: docker.io/prom/prometheus:v3.1.0

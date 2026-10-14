@@ -22,7 +22,12 @@ import subprocess
 import sys
 
 PROJECT = "mtmf"
-BASE_FILES = ("-f", "compose.yaml", "-f", "compose.dev.yaml", "-f", "compose.observability.yaml")
+# The observability overlay joins the canonical `mtmf` project (and its
+# `mtmf_default` network) via compose.yaml only. It deliberately does not
+# include the development override: the observability services depend on no
+# development-stack service, so this keeps `up` usable without requiring the
+# Keycloak bootstrap/migrator secrets that only the application stack needs.
+BASE_FILES = ("-f", "compose.yaml", "-f", "compose.observability.yaml")
 OBSERVABILITY_SERVICES = ("collector", "prometheus", "jaeger", "loki", "grafana")
 
 

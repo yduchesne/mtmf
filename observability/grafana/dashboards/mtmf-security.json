@@ -145,7 +145,7 @@
     },
     {
       "id": 5,
-      "title": "Telemetry pipeline drops / export failures",
+      "title": "Collector pipeline failures / queue (self-metrics)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -166,8 +166,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(mtmf_telemetry_dropped_events_total[5m])",
-          "legendFormat": "dropped",
+          "expr": "sum(rate(otelcol_exporter_send_failed_spans[5m]))",
+          "legendFormat": "failed spans/s",
           "datasource": {
             "type": "prometheus",
             "uid": "mtmf-prometheus"
@@ -175,8 +175,26 @@
         },
         {
           "refId": "B",
-          "expr": "rate(mtmf_telemetry_export_failures_total[5m])",
-          "legendFormat": "export failures",
+          "expr": "sum(rate(otelcol_exporter_send_failed_log_records[5m]))",
+          "legendFormat": "failed logs/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(otelcol_exporter_send_failed_metric_points[5m]))",
+          "legendFormat": "failed metric points/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "sum(otelcol_exporter_queue_size)",
+          "legendFormat": "exporter queue",
           "datasource": {
             "type": "prometheus",
             "uid": "mtmf-prometheus"
@@ -189,8 +207,8 @@
       "title": "Audit log records visible to Loki (last 5m)",
       "type": "stat",
       "datasource": {
-        "type": "prometheus",
-        "uid": "mtmf-prometheus"
+        "type": "loki",
+        "uid": "mtmf-loki"
       },
       "gridPos": {
         "x": 12,
@@ -207,11 +225,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({job=~\".+\"} | json | event_name=\"mtmf.authorization.batch\" [5m]))",
+          "expr": "sum(count_over_time({service_name=~\".+\"} | event_name=\"mtmf.authorization.batch\" [5m]))",
           "legendFormat": "batch events",
           "datasource": {
-            "type": "prometheus",
-            "uid": "mtmf-prometheus"
+            "type": "loki",
+            "uid": "mtmf-loki"
           }
         }
       ]
