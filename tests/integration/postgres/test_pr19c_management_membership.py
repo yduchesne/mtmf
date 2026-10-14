@@ -8,6 +8,7 @@ legacy runtime bypass.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from datetime import UTC, datetime
 
@@ -16,7 +17,8 @@ import pytest
 
 from mtmf_core import DomainId
 from mtmf_core.domain.iam_urn import ActionUrn
-from mtmf_core.persistence.errors import PersistenceError
+from mtmf_core.persistence.errors import PersistenceError, PersistenceReferenceError
+from mtmf_core.persistence.postgres import PostgresConfig, PostgresMtmfSpi
 from mtmf_core.persistence.spi import MtmfSpi
 
 _TENANT_ADMIN_URN = "urn:mtmf:iam:roles:system:tenant-administrator"
@@ -199,3 +201,205 @@ def test_i08_verified_function_rejects_malformed_target(
                 target_id=DomainId.from_str(ids["subject"]),  # wrong: not the Group
                 authorized_at=datetime.now(UTC),
             )
+
+
+def _add_verified_custom(
+    postgres_spi: MtmfSpi,
+    ids: dict[str, str],
+    *,
+    subject: str,
+    group: str,
+    operation_id: uuid.UUID,
+    commit: bool = True,
+) -> bool:
+    with postgres_spi.create_unit_of_work() as uow:
+        repository = postgres_spi.create_identity_group_membership_repository(uow)
+        repository.lock_verified_add(
+            tenant_id=DomainId.from_str(ids["tenant"]),
+            actor_identity_id=DomainId.from_str(ids["actor"]),
+            subject_identity_id=DomainId.from_str(subject),
+            group_id=DomainId.from_str(group),
+        )
+        created = repository.add_verified(
+            identity_id=DomainId.from_str(subject),
+            group_id=DomainId.from_str(group),
+            operation_id=operation_id,
+            actor_identity_id=DomainId.from_str(ids["actor"]),
+            actor_principal_id=DomainId.from_str(ids["principal"]),
+            tenant_id=DomainId.from_str(ids["tenant"]),
+            application_id=DomainId.from_str(ids["application"]),
+            action_urn=_ACTION_URN,
+            target_kind="identity_group_membership",
+            target_id=DomainId.from_str(group),
+            authorized_at=datetime.now(UTC),
+        )
+        if commit:
+            uow.commit()
+        return created
+
+
+def _add_member_target(
+    db: psycopg.Connection, ids: dict[str, str], *, subject: str, group: str
+) -> None:
+    db.execute(
+        "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+        "VALUES (%s, %s, 'Extra', 2, 2)",
+        (subject, ids["principal"]),
+    )
+    db.execute(
+        "INSERT INTO mtmf.identity_tenant_membership VALUES (%s, %s)",
+        (subject, ids["tenant"]),
+    )
+    db.execute(
+        "INSERT INTO mtmf.group (id, tenant_id, name, deletion_status) VALUES (%s, %s, 'G', 2)",
+        (group, ids["tenant"]),
+    )
+    db.execute("INSERT INTO mtmf.group_tenant_membership VALUES (%s, %s)", (group, ids["tenant"]))
+
+
+def test_db_h03_non_steward_actor_is_rejected(
+    db: psycopg.Connection, postgres_spi: MtmfSpi
+) -> None:
+    ids = _seed(db)
+    other_actor = _sid()
+    db.execute(
+        "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+        "VALUES (%s, %s, 'Other', 2, 2)",
+        (other_actor, ids["principal"]),
+    )
+    db.execute(
+        "INSERT INTO mtmf.identity_tenant_membership VALUES (%s, %s)",
+        (other_actor, ids["tenant"]),
+    )
+    db.execute(
+        "INSERT INTO mtmf.identity_role_assignment (id, tenant_id, identity_id, role_urn) "
+        "VALUES (%s, %s, %s, %s)",
+        (_sid(), ids["tenant"], other_actor, _TENANT_ADMIN_URN),
+    )
+    with postgres_spi.create_unit_of_work() as uow:
+        repository = postgres_spi.create_identity_group_membership_repository(uow)
+        with pytest.raises(PersistenceReferenceError):
+            repository.lock_verified_add(
+                tenant_id=DomainId.from_str(ids["tenant"]),
+                actor_identity_id=DomainId.from_str(other_actor),
+                subject_identity_id=DomainId.from_str(ids["subject"]),
+                group_id=DomainId.from_str(ids["group"]),
+            )
+    assert db.execute("SELECT count(*) FROM mtmf.identity_group_membership").fetchone()[0] == 0
+    assert db.execute("SELECT count(*) FROM mtmf.security_mutation_audit").fetchone()[0] == 0
+
+
+def test_db_h03_cross_tenant_and_inactive_targets_are_rejected(
+    db: psycopg.Connection, postgres_spi: MtmfSpi
+) -> None:
+    ids = _seed(db)
+    # Cross-Tenant subject: an Identity whose only membership is another Tenant.
+    cross_subject = _sid()
+    other_tenant = _sid()
+    db.execute(
+        "INSERT INTO mtmf.identity (id, principal_id, name, origin, deletion_status) "
+        "VALUES (%s, %s, 'Cross', 2, 2)",
+        (cross_subject, ids["principal"]),
+    )
+    db.execute(
+        "INSERT INTO mtmf.tenant (id, name, scope, owner_identity_id, lifecycle, deletion_status) "
+        "VALUES (%s, 'O', 2, %s, 1, 2)",
+        (other_tenant, ids["actor"]),
+    )
+    db.execute(
+        "INSERT INTO mtmf.principal_tenant_membership VALUES (%s, %s)",
+        (ids["principal"], other_tenant),
+    )
+    db.execute(
+        "INSERT INTO mtmf.identity_tenant_membership VALUES (%s, %s)",
+        (cross_subject, other_tenant),
+    )
+    with postgres_spi.create_unit_of_work() as uow:
+        repository = postgres_spi.create_identity_group_membership_repository(uow)
+        with pytest.raises(PersistenceReferenceError):
+            repository.lock_verified_add(
+                tenant_id=DomainId.from_str(ids["tenant"]),
+                actor_identity_id=DomainId.from_str(ids["actor"]),
+                subject_identity_id=DomainId.from_str(cross_subject),
+                group_id=DomainId.from_str(ids["group"]),
+            )
+    # Inactive Tenant.
+    db.execute("UPDATE mtmf.tenant SET lifecycle = 2 WHERE id = %s", (ids["tenant"],))
+    with postgres_spi.create_unit_of_work() as uow:
+        repository = postgres_spi.create_identity_group_membership_repository(uow)
+        with pytest.raises(PersistenceReferenceError):
+            repository.lock_verified_add(
+                tenant_id=DomainId.from_str(ids["tenant"]),
+                actor_identity_id=DomainId.from_str(ids["actor"]),
+                subject_identity_id=DomainId.from_str(ids["subject"]),
+                group_id=DomainId.from_str(ids["group"]),
+            )
+    assert db.execute("SELECT count(*) FROM mtmf.security_mutation_audit").fetchone()[0] == 0
+
+
+def test_db_h04_audit_conflict_rolls_back_the_membership(
+    db: psycopg.Connection, postgres_spi: MtmfSpi
+) -> None:
+    ids = _seed(db)
+    second_subject, second_group = _sid(), _sid()
+    _add_member_target(db, ids, subject=second_subject, group=second_group)
+    operation_id = uuid.uuid4()
+    assert (
+        _add_verified_custom(
+            postgres_spi,
+            ids,
+            subject=ids["subject"],
+            group=ids["group"],
+            operation_id=operation_id,
+        )
+        is True
+    )
+    with pytest.raises(PersistenceError):
+        _add_verified_custom(
+            postgres_spi,
+            ids,
+            subject=second_subject,
+            group=second_group,
+            operation_id=operation_id,
+        )
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.identity_group_membership "
+            "WHERE identity_id = %s AND group_id = %s",
+            (second_subject, second_group),
+        ).fetchone()[0]
+        == 0
+    )
+    assert db.execute("SELECT count(*) FROM mtmf.security_mutation_audit").fetchone()[0] == 1
+
+
+def test_cc_h04_concurrent_duplicate_adds_commit_one_row_and_one_audit(
+    db: psycopg.Connection, runtime_config: PostgresConfig
+) -> None:
+    ids = _seed(db)
+    barrier = threading.Barrier(2)
+    results: dict[str, str] = {}
+
+    def _worker(name: str) -> None:
+        spi = PostgresMtmfSpi(runtime_config)
+        try:
+            barrier.wait(timeout=10)
+            _add_verified_custom(
+                spi,
+                ids,
+                subject=ids["subject"],
+                group=ids["group"],
+                operation_id=uuid.uuid4(),
+            )
+            results[name] = "ok"
+        except Exception as exc:  # pragma: no cover - diagnostic
+            results[name] = type(exc).__name__
+
+    threads = [threading.Thread(target=_worker, args=(name,)) for name in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert results == {"a": "ok", "b": "ok"}, results
+    assert db.execute("SELECT count(*) FROM mtmf.identity_group_membership").fetchone()[0] == 1
+    assert db.execute("SELECT count(*) FROM mtmf.security_mutation_audit").fetchone()[0] == 1

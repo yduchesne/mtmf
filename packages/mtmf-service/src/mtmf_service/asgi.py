@@ -48,6 +48,7 @@ def create_app_from_env() -> FastAPI:
     return create_app(
         settings=settings,
         authorization_service=dependencies.authorization_service,
+        management_membership_service=dependencies.management_membership_service,
         readiness=dependencies.readiness,
         rate_limiter=dependencies.rate_limiter,
         admission=dependencies.admission,

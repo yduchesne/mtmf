@@ -88,3 +88,15 @@ The ordered row-lock/recheck protocol was proven against real PostgreSQL 18 (E1�
 ## 15. Present security gaps
 
 The HTTP/DTO/service composition is not implemented, so the operation is not externally reachable; the core is callable only by trusted application code today. The live dual-token acceptance is not executed. No other mutator is covered. The Security Model and DATABASE docs are not yet updated to claim coverage, which is the correct fail-closed posture for a PARTIAL implementation.
+
+---
+
+# Amendment 02 security review addendum (2026-10-14)
+
+- **Trust boundary:** the HTTP body carries only `tenant_id`/`identity_id`/`group_id`. The route extracts exactly one service bearer token and one configured user bearer token (duplicate/missing/wrong-scheme rejected) and never trusts forwarded headers. The verified `ManagementMembershipService` performs one dual-token resolution and one authorized UoW; the adapter performs no policy decision and opens no UoW.
+- **Authorization:** the exact approved Action, same-Tenant target, steward acting-Identity guard and atomic audit are unchanged from Amendment 01. The adapter maps a guard/target failure to the opaque `FORBIDDEN` (no existence oracle); it does not catch DB outages, which remain `DEPENDENCY_UNAVAILABLE`/503.
+- **Concurrency:** unchanged; the ordered row-lock/recheck proof (E1–E5) still holds, plus the new concurrent-duplicate DB test (CC-H04).
+- **Privilege surface:** unchanged from Amendment 01; `mtmf_runtime` allowlist remains 78, the legacy unaudited function is not runtime-executable, and direct audit DML is denied.
+- **Residual risk:** shared `mtmf_runtime` credential => application-verified (not DB-attested) provenance, unchanged.
+- **Error classification:** `FORBIDDEN` is the explicitly approved additive v1 code; a policy denial is never reported as `UNTRUSTED_ACTOR`/`INELIGIBLE_APPLICATION`. Existing evaluate-route error mappings are unchanged.
+- **Open gap:** live H01–H05 not executed (BLOCKED), so the end-to-end live trust chain is not yet independently demonstrated.

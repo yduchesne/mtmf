@@ -236,6 +236,22 @@ class Telemetry:
             )
         )
 
+    def record_management_event(
+        self,
+        *,
+        outcome: AuditOutcome,
+        correlation_id: str,
+        duration_ms: float,
+    ) -> None:
+        """Emit exactly one terminal management-mutation audit event."""
+        self._guard(
+            lambda: self._emit_management(
+                outcome=outcome,
+                correlation_id=correlation_id,
+                duration_ms=duration_ms,
+            )
+        )
+
     def _emit_batch(
         self,
         *,
@@ -283,6 +299,28 @@ class Telemetry:
             service_version=self._service_version,
             environment=self._environment,
             reason_code=reason_code,
+            duration_ms=duration_ms,
+            trace_id=trace_id,
+            span_id=span_id,
+        )
+        self._sink.emit(event)
+
+    def _emit_management(
+        self,
+        *,
+        outcome: AuditOutcome,
+        correlation_id: str,
+        duration_ms: float,
+    ) -> None:
+        trace_id, span_id = self.current_trace_ids()
+        event = AuditEvent(
+            name=AuditEventName.MANAGEMENT_MUTATION,
+            outcome=outcome,
+            timestamp=datetime.now(UTC),
+            request_correlation_id=correlation_id,
+            service_name=self._service_name,
+            service_version=self._service_version,
+            environment=self._environment,
             duration_ms=duration_ms,
             trace_id=trace_id,
             span_id=span_id,

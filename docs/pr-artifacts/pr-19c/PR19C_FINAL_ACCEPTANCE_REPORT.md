@@ -43,3 +43,23 @@
 To reach DONE, a follow-up must implement the HTTP endpoint + public DTO/codec + service composition, execute the live Keycloak dual-token acceptance, and complete the deterministic U/CC/DB case matrix — then re-run all canonical gates. No architectural decision is blocked; the remaining work is implementation and live acceptance.
 
 PR 19, PR 19B and PR 19D remain **not DONE**.
+
+---
+
+# Amendment 02 final acceptance addendum (2026-10-14)
+
+**Disposition: PARTIAL — NOT DONE (live acceptance BLOCKED).** The HTTP management entry point is implemented and all non-live gates pass; live Keycloak H01–H05 are not executed.
+
+| Gate | Status |
+| --- | --- |
+| Strict DTO/codec, additive `FORBIDDEN`, schema/fixture parity | PASS |
+| Narrow HTTP adapter reusing the existing trusted use case | PASS |
+| Production composition (one shared actor service, restricted SPI) | PASS |
+| Route/worker/status/telemetry/error tests (U-H01–U-H12) | PASS |
+| Restricted-runtime DB and concurrency tests (DB-H01–H05, CC-H04) | PASS |
+| Legacy runtime bypass closed; privilege manifest exact | PASS |
+| `--qa` / `--sec` / `--rust` / `--integration` | PASS |
+| Live Keycloak H01–H05 | **BLOCKED — NOT EXECUTED** |
+| PR 19B / PR 19D untouched | PASS |
+
+PR 19C is **not DONE**: the definition of done requires executed live dual-token acceptance. The smallest remaining human decision is to supply the development Keycloak credentials/issuer configuration so the supported live harness can run (see `PR19C_AMENDMENT02_LIVE_ACCEPTANCE.md` and `PR19C_AMENDMENT02_STOP_REPORT.md`).

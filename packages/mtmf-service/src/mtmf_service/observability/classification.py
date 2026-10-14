@@ -71,6 +71,7 @@ _PUBLIC_CODE_CLASSIFICATION: dict[ApiErrorCode, tuple[AuditEventName, AuditReaso
         _SUBSCRIPTION_FAILURE,
         AuditReason.SUBSCRIPTION_INELIGIBLE,
     ),
+    ApiErrorCode.FORBIDDEN: (_REQUEST_FAILURE, AuditReason.OPERATION_FORBIDDEN),
     ApiErrorCode.DEPENDENCY_UNAVAILABLE: (_ERROR, AuditReason.DATABASE_UNAVAILABLE),
     ApiErrorCode.INTERNAL_ERROR: (_ERROR, AuditReason.INTERNAL_ERROR),
 }

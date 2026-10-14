@@ -78,10 +78,18 @@ class BlockingEvaluationService:
         )
 
 
+class _UnusedManagementMembershipService:
+    """Stub dependency for the PR 17 admission suite (management route unused)."""
+
+    def add_identity_to_group(self, *, service_token, user_token, request):  # type: ignore[no-untyped-def]
+        raise AssertionError("the management route is not exercised by this suite")
+
+
 def _app(harness, blocking, admission, settings):  # type: ignore[no-untyped-def]
     return create_app(
         settings=settings,
         authorization_service=blocking,  # type: ignore[arg-type]
+        management_membership_service=_UnusedManagementMembershipService(),  # type: ignore[arg-type]
         readiness=StaticReadiness(True),
         rate_limiter=TokenBucketRateLimiter(per_minute=100000, burst=100000),
         admission=admission,

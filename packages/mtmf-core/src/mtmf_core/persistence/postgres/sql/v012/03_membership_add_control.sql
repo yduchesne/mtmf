@@ -41,7 +41,7 @@ BEGIN
     IF tenant_id_value IS NULL OR actor_identity_id_value IS NULL
        OR subject_identity_id_value IS NULL OR group_id_value IS NULL THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT040',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add lock requires complete identifiers';
     END IF;
 
@@ -52,11 +52,11 @@ BEGIN
      WHERE id = tenant_id_value
      FOR SHARE;
     IF NOT FOUND THEN
-        RAISE EXCEPTION USING ERRCODE = 'MT040', MESSAGE = 'membership-add target Tenant is unknown';
+        RAISE EXCEPTION USING ERRCODE = 'MT002', MESSAGE = 'membership-add target Tenant is unknown';
     END IF;
     IF tenant_scope <> 2 OR tenant_lifecycle <> 1 OR tenant_deletion <> 2 THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT040',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add requires an active ordinary Tenant';
     END IF;
 
@@ -68,12 +68,12 @@ BEGIN
      FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT041',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add requires an explicit stewardship designation';
     END IF;
     IF designation_identity IS DISTINCT FROM actor_identity_id_value THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT041',
+            ERRCODE = 'MT002',
             MESSAGE = 'acting Identity is not the designated steward acting Identity';
     END IF;
 
@@ -87,7 +87,7 @@ BEGIN
      FOR SHARE OF i, p;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT043',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add acting Identity is unknown, deleted, or deactivated';
     END IF;
 
@@ -99,7 +99,7 @@ BEGIN
      FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT043',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add acting Identity lacks same-Tenant membership';
     END IF;
 
@@ -111,7 +111,7 @@ BEGIN
      FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT044',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add subject Identity is unknown or deleted';
     END IF;
     PERFORM 1
@@ -121,7 +121,7 @@ BEGIN
      FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT044',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add subject Identity lacks same-Tenant membership';
     END IF;
 
@@ -132,11 +132,11 @@ BEGIN
        AND g.deletion_status = 2
      FOR SHARE;
     IF NOT FOUND THEN
-        RAISE EXCEPTION USING ERRCODE = 'MT045', MESSAGE = 'membership-add target Group is unknown';
+        RAISE EXCEPTION USING ERRCODE = 'MT002', MESSAGE = 'membership-add target Group is unknown';
     END IF;
     IF group_tenant <> tenant_id_value THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT045',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add target Group belongs to another Tenant';
     END IF;
     PERFORM 1
@@ -146,7 +146,7 @@ BEGIN
      FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT045',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add target Group lacks same-Tenant membership';
     END IF;
 
@@ -230,18 +230,18 @@ BEGIN
        OR action_urn_value IS NULL OR target_kind_value IS NULL
        OR target_id_value IS NULL OR authorized_at_value IS NULL THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT042',
+            ERRCODE = 'MT003',
             MESSAGE = 'membership-add provenance is incomplete';
     END IF;
     IF target_kind_value <> 'identity_group_membership' THEN
-        RAISE EXCEPTION USING ERRCODE = 'MT042', MESSAGE = 'membership-add target kind is invalid';
+        RAISE EXCEPTION USING ERRCODE = 'MT003', MESSAGE = 'membership-add target kind is invalid';
     END IF;
     IF target_id_value <> group_id_value THEN
-        RAISE EXCEPTION USING ERRCODE = 'MT042', MESSAGE = 'membership-add target id is not the Group';
+        RAISE EXCEPTION USING ERRCODE = 'MT003', MESSAGE = 'membership-add target id is not the Group';
     END IF;
     IF action_urn_value <>
        'urn:mtmf:iam:actions:system:identity-group-membership:add-object' THEN
-        RAISE EXCEPTION USING ERRCODE = 'MT042', MESSAGE = 'membership-add Action is not approved';
+        RAISE EXCEPTION USING ERRCODE = 'MT003', MESSAGE = 'membership-add Action is not approved';
     END IF;
 
     IF NOT EXISTS (
@@ -252,7 +252,7 @@ BEGIN
            AND d.steward_principal_id = actor_principal_id_value
     ) THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT043',
+            ERRCODE = 'MT002',
             MESSAGE = 'acting Identity is not the current designated steward';
     END IF;
 
@@ -265,7 +265,7 @@ BEGIN
            AND i.deletion_status = 2
     ) THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT044',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add subject Identity is not eligible';
     END IF;
 
@@ -279,7 +279,7 @@ BEGIN
            AND g.deletion_status = 2
     ) THEN
         RAISE EXCEPTION USING
-            ERRCODE = 'MT045',
+            ERRCODE = 'MT002',
             MESSAGE = 'membership-add target Group is not eligible';
     END IF;
 

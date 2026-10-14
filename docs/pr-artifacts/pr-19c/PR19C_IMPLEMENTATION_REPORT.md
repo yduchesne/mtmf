@@ -54,3 +54,21 @@
 ## 4. Uncovered mutators
 
 No new mutators are covered. Only the identity-group membership add is migrated; every other PR 19 inventory gap remains **UNRESOLVED**. No false audit-coverage claim is made.
+
+---
+
+# Amendment 02 addendum (2026-10-14)
+
+Implemented the HTTP/DTO/service layer on top of the Amendment 01 core:
+
+- `mtmf_api/management.py` detached request/response DTOs; `json_codec` strict parser/serializer; additive `ApiErrorCode.FORBIDDEN` (403, `Operation is not permitted`) and JSON-schema enum update.
+- `mtmf_service/management.py` narrow adapter that invokes the existing `ManagementMembershipService` once (no double authentication, no second UoW) and maps guard/target denials to opaque `FORBIDDEN`.
+- `composition.build_dependencies` now builds **one** shared `AuthenticatedActorContextService` for both the evaluate and management paths and wraps a `ManagementMembershipService`; `ServiceDependencies` carries the new adapter; `asgi.create_app_from_env` forwards it.
+- `app.create_app` registers `POST /v1/management/identity-group-memberships` with the shared rate limit, strict media/body guards, dual-token extraction, bounded admission, shared timeout, `201/200` selection, `no-store`, and one terminal management telemetry event (never a batch event).
+- Telemetry closed additions: `AuditEventName.MANAGEMENT_MUTATION`, `AuditOutcome.CREATED/NO_OP`, `AuditReason.OPERATION_FORBIDDEN`, `HttpRoute.MANAGEMENT_MEMBERSHIP_ADD`, `SpanName.HTTP_MANAGEMENT_MEMBERSHIP_ADD`.
+
+Defect fix: v012 lock/verify functions reused PR 13 SQLSTATEs `MT040`–`MT043` and left `MT044`/`MT045` unmapped. They now use the established `MT002` (prerequisite/guard) and `MT003` (malformed provenance) codes so the adapter can map target/steward failures to opaque `FORBIDDEN` without confusing them with Application-registry integrity faults.
+
+Deviation: the existing `ManagementMembershipService` resolves the actor from tokens itself, so the HTTP adapter injects only that service (not a second actor service); this is the Amendment 02 Step B "do not authenticate twice" case.
+
+Not implemented: live H01–H05 (BLOCKED — see `PR19C_AMENDMENT02_LIVE_ACCEPTANCE.md`); `mtmf-client` connector parity (Amendment 02 Step E forbids inventing it).

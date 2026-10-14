@@ -15,6 +15,8 @@ from dataclasses import dataclass
 
 from mtmf_core.application.authentication import AuthenticatedActorContextService
 from mtmf_core.application.effective_roles import EffectiveRoleResolver
+from mtmf_core.application.management_memberships import ManagementMembershipService
+from mtmf_core.authorization.authorizer import Authorizer
 from mtmf_core.authorization.batch import BatchAuthorizer
 from mtmf_core.persistence.spi import MtmfSpi
 from mtmf_service.authentication.composition import build_actor_context_service
@@ -22,6 +24,7 @@ from mtmf_service.authentication.config import IssuerConfig
 from mtmf_service.clock import Clock, SystemClock
 from mtmf_service.concurrency import EvaluationAdmission
 from mtmf_service.evaluation import AuthorizationService
+from mtmf_service.management import ManagementMembershipHttpService
 from mtmf_service.observability import Telemetry, build_telemetry
 from mtmf_service.rate_limit import RateLimiter, TokenBucketRateLimiter
 from mtmf_service.readiness import ReadinessProbe, ReadinessState
@@ -44,6 +47,7 @@ class ServiceDependencies:
     """The immutable, already-built dependencies of one service instance."""
 
     authorization_service: AuthorizationService
+    management_membership_service: ManagementMembershipHttpService
     readiness: ReadinessState
     rate_limiter: RateLimiter
     admission: EvaluationAdmission
@@ -113,20 +117,34 @@ def build_dependencies(
     sensitivity: SensitiveActionClassifier | None = None,
     rate_limiter: RateLimiter | None = None,
     telemetry: Telemetry | None = None,
+    management_membership_service: ManagementMembershipHttpService | None = None,
 ) -> ServiceDependencies:
     """Build the complete dependency set for :func:`create_app`."""
     resolved_telemetry = telemetry or build_telemetry(settings)
+    # One trusted actor service instance is shared by the evaluation path
+    # and the management mutation path; token verification is never
+    # reconstructed differently for the mutation route.
+    resolved_actor_service = actor_service or build_actor_context_service(spi, issuer_config)
+    resolved_management_service = management_membership_service or ManagementMembershipHttpService(
+        membership_service=ManagementMembershipService(
+            spi=spi,
+            actor_service=resolved_actor_service,
+            role_resolver=EffectiveRoleResolver(spi),
+            authorizer=Authorizer(),
+        )
+    )
     return ServiceDependencies(
         authorization_service=build_authorization_service(
             spi=spi,
             issuer_config=issuer_config,
             settings=settings,
-            actor_service=actor_service,
+            actor_service=resolved_actor_service,
             batch_authorizer=batch_authorizer,
             clock=clock,
             sensitivity=sensitivity,
             telemetry=resolved_telemetry,
         ),
+        management_membership_service=resolved_management_service,
         readiness=build_readiness(
             spi=spi,
             initialization_complete=initialization_complete,

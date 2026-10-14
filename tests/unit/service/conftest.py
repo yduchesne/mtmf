@@ -32,6 +32,8 @@ from mtmf_core import (
     PermissionSet,
 )
 from mtmf_core.application.authentication import AuthenticatedActorContextService
+from mtmf_core.application.effective_roles import EffectiveRoleResolver
+from mtmf_core.application.management_memberships import ManagementMembershipService
 from mtmf_core.authentication.contracts import (
     AuthenticationError,
     AuthenticationFailure,
@@ -41,6 +43,7 @@ from mtmf_core.authentication.contracts import (
     VerifiedAccessToken,
     VerifiedActorContext,
 )
+from mtmf_core.authorization.authorizer import Authorizer
 from mtmf_core.authorization.batch import AuthorizationBatch, BatchAuthorizer
 from mtmf_core.domain.application import (
     Application,
@@ -69,6 +72,7 @@ from mtmf_service.app import create_app
 from mtmf_service.clock import FrozenClock
 from mtmf_service.composition import build_authorization_service
 from mtmf_service.concurrency import EvaluationAdmission
+from mtmf_service.management import ManagementMembershipHttpService
 from mtmf_service.rate_limit import TokenBucketRateLimiter
 from mtmf_service.readiness import StaticReadiness
 from mtmf_service.sensitivity import (
@@ -430,6 +434,14 @@ def build_harness(
     app = create_app(
         settings=resolved_settings,
         authorization_service=authorization_service,
+        management_membership_service=ManagementMembershipHttpService(
+            membership_service=ManagementMembershipService(
+                spi=spi,
+                actor_service=actor_service,
+                role_resolver=EffectiveRoleResolver(spi),
+                authorizer=Authorizer(),
+            )
+        ),
         readiness=readiness or StaticReadiness(True),
         rate_limiter=rate_limiter or TokenBucketRateLimiter(per_minute=100000, burst=100000),
         admission=resolved_admission,

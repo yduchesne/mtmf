@@ -33,10 +33,18 @@ from mtmf_api.authorization import (
     AuthorizationEffect,
 )
 from mtmf_api.errors import ApiErrorCode, ApiErrorResponse
-from mtmf_api.json_codec import parse_request_json, serialize_error, serialize_response
+from mtmf_api.json_codec import (
+    parse_membership_add_json,
+    parse_request_json,
+    serialize_error,
+    serialize_membership_add_response,
+    serialize_response,
+)
+from mtmf_api.management import IdentityGroupMembershipAddResponse
 from mtmf_service.concurrency import EvaluationAdmission, run_admitted
 from mtmf_service.errors import PublicError, map_exception
 from mtmf_service.evaluation import AuthorizationService
+from mtmf_service.management import ManagementMembershipHttpService
 from mtmf_service.observability import (
     AuditEventName,
     AuditOutcome,
@@ -68,6 +76,7 @@ __all__ = ["create_app"]
 
 _NO_STORE = {"Cache-Control": "no-store"}
 _EVALUATE_ROUTE = "/v1/authorization/evaluate"
+_MANAGEMENT_MEMBERSHIP_ROUTE = "/v1/management/identity-group-memberships"
 
 
 def _error_response(code: ApiErrorCode, trace_id: str) -> Response:
@@ -106,6 +115,7 @@ def create_app(
     *,
     settings: ServiceSettings,
     authorization_service: AuthorizationService,
+    management_membership_service: ManagementMembershipHttpService,
     readiness: ReadinessState,
     rate_limiter: RateLimiter,
     admission: EvaluationAdmission | None = None,
@@ -222,6 +232,21 @@ def create_app(
             deny_count=deny_count,
         )
 
+    def _emit_management(
+        request: Request,
+        correlation_id: str,
+        response: IdentityGroupMembershipAddResponse,
+        duration_ms: float,
+    ) -> None:
+        """Emit the one terminal management-mutation event (never a batch event)."""
+        if not _claim_terminal(request):
+            return
+        telemetry.record_management_event(
+            outcome=AuditOutcome.CREATED if response.created else AuditOutcome.NO_OP,
+            correlation_id=correlation_id,
+            duration_ms=duration_ms,
+        )
+
     @app.exception_handler(PublicError)
     async def _handle_public_error(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, PublicError)
@@ -317,6 +342,85 @@ def create_app(
                 )
         telemetry.record_http_request(
             route=HttpRoute.EVALUATE,
+            method=HttpMethod.POST,
+            status_class=_status_class(response.status_code),
+            duration_ms=(time.perf_counter() - started) * 1000.0,
+        )
+        return response
+
+    async def _run_management(request: Request) -> IdentityGroupMembershipAddResponse:
+        if not rate_limiter.acquire(peer_key(request)):
+            raise PublicError(ApiErrorCode.RATE_LIMITED)
+        enforce_json_content_type(request)
+        body = await read_bounded_body(request, max_bytes=settings.max_request_bytes)
+        parsed = parse_membership_add_json(body)
+        service_token = extract_service_token(request)
+        user_token = extract_user_token(request, header_name=settings.user_authorization_header)
+        permit = admission.try_acquire()
+        if permit is None:
+            raise PublicError(
+                ApiErrorCode.DEPENDENCY_UNAVAILABLE,
+                audit_reason=AuditReason.ADMISSION_REJECTED.value,
+            )
+
+        def _admitted_worker() -> IdentityGroupMembershipAddResponse:
+            return run_admitted(
+                permit,
+                lambda: management_membership_service.add_identity_to_group(
+                    service_token=service_token,
+                    user_token=user_token,
+                    request=parsed,
+                ),
+            )
+
+        try:
+            return await asyncio.wait_for(
+                run_in_threadpool(_admitted_worker),
+                timeout=settings.evaluation_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            # Outcome unknown: the worker may still finish and commit. The
+            # permit is retained until it actually completes. A fresh
+            # authenticated retry observes the committed state as a no-op.
+            permit.release_if_not_started()
+            raise PublicError(ApiErrorCode.DEPENDENCY_UNAVAILABLE) from exc
+        except BaseException:
+            permit.release_if_not_started()
+            raise
+
+    @app.post(_MANAGEMENT_MEMBERSHIP_ROUTE)
+    async def management_membership_add(request: Request) -> Response:
+        correlation_id = _correlation_id(request)
+        started = time.perf_counter()
+        with telemetry.span(
+            SpanName.HTTP_MANAGEMENT_MEMBERSHIP_ADD,
+            kind=SpanKind.SERVER,
+            attributes={
+                "http.request.method": "POST",
+                "http.route": _MANAGEMENT_MEMBERSHIP_ROUTE,
+            },
+        ):
+            try:
+                result = await _run_management(request)
+            except PublicError as exc:
+                duration_ms = (time.perf_counter() - started) * 1000.0
+                _emit_failure(request, correlation_id, exc, duration_ms)
+                response: Response = _error_response(exc.code, correlation_id)
+            except Exception as exc:
+                duration_ms = (time.perf_counter() - started) * 1000.0
+                _emit_failure(request, correlation_id, exc, duration_ms)
+                response = _error_response(map_exception(exc), correlation_id)
+            else:
+                duration_ms = (time.perf_counter() - started) * 1000.0
+                _emit_management(request, correlation_id, result, duration_ms)
+                response = Response(
+                    content=serialize_membership_add_response(result),
+                    status_code=201 if result.created else 200,
+                    media_type="application/json",
+                    headers=dict(_NO_STORE),
+                )
+        telemetry.record_http_request(
+            route=HttpRoute.MANAGEMENT_MEMBERSHIP_ADD,
             method=HttpMethod.POST,
             status_class=_status_class(response.status_code),
             duration_ms=(time.perf_counter() - started) * 1000.0,

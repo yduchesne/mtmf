@@ -82,6 +82,8 @@ def _settings() -> ServiceSettings:
 
 def _live_app() -> tuple[Any, Any]:
     """Build a real service app with a real OTel runtime. Returns (app, telemetry)."""
+    import test_pr17_live_http as pr17
+
     if os.environ.get("SSL_CERT_FILE", "").strip() == "":
         os.environ["SSL_CERT_FILE"] = _env("MTMF_PR14_KC_CA_FILE")
     settings = _settings()
@@ -101,6 +103,7 @@ def _live_app() -> tuple[Any, Any]:
     app = create_app(
         settings=settings,
         authorization_service=authorization_service,
+        management_membership_service=pr17._UnusedManagementMembershipService(),  # type: ignore[arg-type]
         readiness=StaticReadiness(True),
         rate_limiter=TokenBucketRateLimiter(per_minute=100000, burst=100000),
         telemetry=telemetry,
