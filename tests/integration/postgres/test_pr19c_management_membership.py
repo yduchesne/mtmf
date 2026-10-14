@@ -343,6 +343,14 @@ def test_db_h04_audit_conflict_rolls_back_the_membership(
     ids = _seed(db)
     second_subject, second_group = _sid(), _sid()
     _add_member_target(db, ids, subject=second_subject, group=second_group)
+    # Revision 0013 partitions on ``occurred_at`` and the primary key is
+    # ``(occurred_at, id)``, so a deterministic audit conflict must also pin
+    # the server-assigned timestamp to the covered current UTC month.
+    pinned = datetime.now(UTC).replace(day=15, hour=0, minute=0, second=0, microsecond=0)
+    db.execute(
+        "ALTER TABLE mtmf.security_mutation_audit "
+        f"ALTER COLUMN occurred_at SET DEFAULT TIMESTAMPTZ '{pinned.isoformat()}'"
+    )
     operation_id = uuid.uuid4()
     assert (
         _add_verified_custom(

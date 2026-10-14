@@ -178,6 +178,7 @@ Diagnostics name objects, privileges, and role paths but never credentials. The 
 - Revision `0009` is an additive PR 11 revision. It creates `tenant_management_group`, `tenant_management_group_membership`, and `tenant_management_group_actor_eligibility` with database guards (ROOT singleton, canonical-root manager, SYSTEM-only eligibility, no ROOT rows, immutable structural fields); installs the two approved SYSTEM management Roles (`root-tenant-management`, `tenant-management`) each with one exact `tenant:get-object` Permission; creates the ROOT management group atomically via an `AFTER INSERT` trigger on `root_registry` and an idempotent installation backfill; adds installation-only `SECURITY INVOKER` mutation primitives (never granted to `mtmf_runtime`); and grants runtime EXECUTE on exactly nine narrow `SECURITY DEFINER` TenantManagementGroup/root-registry read functions. The mandatory post-upgrade verifier enforces the exact 67-signature runtime allowlist, no PUBLIC EXECUTE, and no direct table privilege.
 - Revision `0010` is an additive PR 13 revision. It creates `application`, `application_tenant_registration`, and `tenant_application_subscription` with partial-unique current-row indexes and database immutability/lifecycle guards; adds six installation/operator-only `SECURITY INVOKER` mutation functions (never granted to `mtmf_runtime`); and grants runtime EXECUTE on exactly eight narrow `SECURITY DEFINER` Application-registry read functions. The mandatory post-upgrade verifier enforces the exact 75-signature runtime allowlist, no PUBLIC EXECUTE, and no direct table privilege.
 - Revision `0010` was hardened in place by the PR 13-1 amendment while it remained unmerged and was the only consumer of the guard bodies: `guard_tenant_application_subscription`, `guard_application_registry_application`, and `guard_application_tenant_registration` now reject terminal same-state updates and enforce the `A1` restrictive `ends_at` policy against the locked row, so a direct owner `UPDATE` cannot bypass the stored-function restrictions. No shipped revision or packaged SQL `v001`–`v009` was modified, and the runtime function signatures and 75-signature allowlist are unchanged.
+- Revision `0013` is an additive PR 19B revision. It converts `security_mutation_audit` in place to native PostgreSQL 18 monthly `RANGE (occurred_at)` partitioning with a composite `(occurred_at, id)` primary key, preserving every historical row and the v012 CHECK constraints, indexes, append-only guard function, owner, and privilege posture. It adds owner-only, `SECURITY INVOKER`, fixed-`search_path` `mtmf.ensure_security_mutation_audit_month(date)` for bounded monthly provisioning (never granted to `mtmf_runtime` or `PUBLIC`). The mandatory post-upgrade verifier is unchanged because the 78-signature runtime allowlist and the no-direct-table-DML posture are preserved. No shipped revision or packaged SQL `v001`–`v012` is modified, and no downgrade is supported.
 - The PR 10 privileged mutation paths share one lock order: **Tenant row → subject Principal/Identity rows → designation row**, with `bootstrap_root` additionally serializing on the fixed `mtmf.bootroot` advisory lock. `designate_steward` and `activate_tenant` acquire `FOR UPDATE` locks on the affected Principal/Identity before the eligibility read, so a concurrent deactivation cannot commit after eligibility is read (no read-then-write write skew). The authority-revocation guards (`identity_role_assignment`, `group_role_assignment`, `identity_group_membership`, and Group deactivation) likewise lock the affected subject Identity row(s) `FOR UPDATE` in deterministic `id` order before checking eligibility, so a designation and a concurrent authority revocation serialize instead of both committing. Group-derived eligibility requires a non-deleted authorizing Group (matching the effective-Role resolver). The root/stewardship trigger guards cover the pre-existing runtime-granted update/delete paths; the full multi-connection concurrency matrix is exercised by `tests/integration/postgres/test_postgres_stewardship_concurrency.py`.
 - Every migration creates objects under the owner role (via `SET ROLE`), revokes PUBLIC privileges, and applies explicit runtime grants.
 - `ALTER DEFAULT PRIVILEGES` is scoped to the object-creating role; because all DDL runs as `mtmf_owner`, owner-scoped defaults cover every future MTMF object. Future grant changes are explicit migration responsibilities.
@@ -306,3 +307,94 @@ Do not let a coding agent silently resolve these security architecture choices b
 Before claiming coverage for any future security-state mutation, its implementing PR MUST demonstrate: an independently authenticated acting Identity; exact Action ALLOW and target binding under the existing scope/stewardship rules; immutable transaction-bound provenance; a narrowly scoped versioned stored function that atomically changes state and writes append-only audit; accurate no-op/rollback semantics; and removal of every runtime-callable unaudited legacy bypass for that operation. Verify both positive authorized execution and negative legacy `EXECUTE` denial using the **actual** `mtmf_runtime` login, and update the effective-function-grant allowlist. Do not introduce direct runtime table writes, a generic audit-insert privilege, or use `SET LOCAL`/custom GUCs as authentication evidence. Database `EXECUTE` permission alone does not prove application authorization; merely revoking a legacy function does not prevent forged provenance passed to a replacement function. Privileged operator/bootstrap flows require separate explicit classification and must not be mislabeled as user-verified. Root recovery keeps its independent operator-controlled durable audit channel.
 
 This is a future enforcement requirement, not an assertion that PR 19A implemented database audit coverage. Date partitioning belongs to PR 19B. See [PR 19A STOP report](pr-artifacts/pr-19a/PR19A_STOP_REPORT.md).
+
+## 13. Security-state mutation audit partitioning and operator maintenance (PR 19B)
+
+Revision `0013` converts the PR 19C `security_mutation_audit` table to native
+PostgreSQL 18 declarative `RANGE (occurred_at)` partitioning. This section is
+normative for operators of a migrated MTMF database.
+
+### 13.1 Storage layout and uniqueness
+
+- `occurred_at` is the server `clock_timestamp()` value, partitioned into UTC
+  half-open monthly intervals `[YYYY-MM-01 00:00:00+00, next-month
+  00:00:00+00)`. Partition names are deterministic:
+  `security_mutation_audit_yYYYYmMM` (for example
+  `security_mutation_audit_y2026m10`).
+- The primary key is `(occurred_at, id)`. PostgreSQL cannot enforce a
+  partitioned `UNIQUE`/`PRIMARY KEY` on `id` alone. `id` remains the
+  per-attempt operation UUID and is **not** a database-global uniqueness key:
+  the same `id` at two different UTC months is accepted at the database level.
+  No global `id` registry exists in this revision; a proven caller requiring
+  global `id` uniqueness needs a separately approved design.
+- The v012 columns, types, `clock_timestamp()` default, three CHECK
+  constraints, and the `(tenant_id, occurred_at DESC)` and
+  `(target_kind, target_id, occurred_at DESC)` indexes are preserved and
+  recreated on the partitioned parent so PostgreSQL clones them to every
+  partition. No DEFAULT partition exists: an out-of-range write fails closed
+  with a check-violation and rolls back the whole calling transaction.
+- Append-only enforcement is preserved. `BEFORE UPDATE`/`BEFORE DELETE`
+  row-level triggers are cloned from the parent to every partition.
+  `BEFORE TRUNCATE` is statement-level and is **not** cloned by PostgreSQL, so
+  each partition also carries its own `security_mutation_audit_truncate_guard`.
+  `UPDATE`, `DELETE`, and `TRUNCATE` against the parent or any direct child
+  raise SQLSTATE `MT033`. No runtime, PUBLIC, or non-owner role holds direct
+  table DML.
+
+### 13.2 Fixed depth and fail-closed horizon
+
+`0013` attaches every month represented by pre-migration audit rows plus the
+current UTC month and the following **12** months. A future month beyond that
+horizon is deliberately not created on a write: the audit insert fails, the
+verified membership-add writer propagates the failure, and the membership is
+rolled back. There is **no** runtime auto-DDL, scheduled job, `pg_cron`
+integration, or DEFAULT partition. The horizon is an operator buffer, not a
+guarantee of unattended operation.
+
+### 13.3 Privileged monthly provisioning
+
+`mtmf.ensure_security_mutation_audit_month(p_month date)` creates exactly one
+validated UTC monthly partition if it is missing. It is owner-owned,
+`SECURITY INVOKER`, and fixed `search_path = ''`; it is revoked from `PUBLIC`
+and `mtmf_runtime` and therefore only runs for a login that has explicitly
+assumed the MTMF owner role. It validates that `p_month` is the first day of a
+calendar month and inside the supported range, acquires a transaction-scoped
+advisory lock keyed by the fixed MTMF namespace and the calendar-month ordinal,
+returns without DDL when the correctly bounded partition already exists, and
+raises rather than accepting or replacing a same-named non-partition or
+wrongly bounded object. It never creates overlapping bounds and never touches
+another relation.
+
+Operator invocation (run as an owner-authorized deployment session; never from
+application runtime credentials):
+
+```sql
+SET ROLE mtmf_owner;
+SELECT mtmf.ensure_security_mutation_audit_month(DATE '2026-11-01');
+SELECT mtmf.ensure_security_mutation_audit_month(DATE '2026-12-01');
+RESET ROLE;
+```
+
+### 13.4 Monthly operator checklist
+
+Run **monthly**, in **UTC**, with a privileged (owner) connection:
+
+1. Determine the next 12 UTC months after the current month.
+2. For each missing month, call
+   `SELECT mtmf.ensure_security_mutation_audit_month(DATE 'YYYY-MM-01')`.
+3. Inspect attached partitions and bounds:
+   `SELECT c.relname, pg_get_expr(c.relpartbound, c.oid) FROM pg_catalog.pg_inherits i JOIN pg_catalog.pg_class c ON c.oid = i.inhrelid WHERE i.inhparent = 'mtmf.security_mutation_audit'::regclass ORDER BY c.relname;`
+4. Confirm the parent is `relkind = 'p'`, the parent and every child are owned
+   by `mtmf_owner`, and every child carries the three append-only guard
+   triggers.
+5. Confirm `mtmf_runtime` still holds no audit table privilege and the runtime
+   EXECUTE allowlist is unchanged (`scripts/mtmf-provision-roles.py --verify`).
+6. Record the outcome and the covered horizon.
+
+### 13.5 Retention
+
+There is **no** automatic retention policy in this revision. Audit partitions
+are immutable evidence. Do not `DROP`, `DETACH`, or otherwise remove a
+partition absent a separately approved retention/legal policy and an explicit
+operator change. Partitioning makes a future retention design feasible; it does
+not decide one.
