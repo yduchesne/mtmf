@@ -3,6 +3,8 @@
 > **Status: APPROVED SYSTEM ARCHITECTURE; PR 19 IMPLEMENTATION NOT COMPLETE.** This document defines MTMF's system-wide audit and observability architecture; roadmap PR 19 is its initial implementation milestone. It does not claim the collectors, dashboards, new audit coverage, or benchmarks are already deployed. Existing database audit mechanisms remain authoritative.
 >
 > **Implementation progress (2026-10-14, factual clarification only).** The service-side event/metric/span taxonomy, strict allowlist serializer, bounded instance-scoped OTel runtime, provider-neutral `mtmf-core` persistence telemetry seam, optional `mtmf-client` instrumentation extra, and the opt-in MTMF-owned Collector/Prometheus/Jaeger/Loki/Grafana overlay with four dashboards-as-code and three datasource UIDs are implemented. Canonical `--qa`, `--sec`, `--rust` and `--integration` gates pass. The **live** real-stack acceptance (O-L01–O-L05) passed three consecutive clean cycles, and the controlled disabled/healthy/unavailable-Collector performance comparison measured enabled telemetry within the ≤5% throughput / ≤10% p99 targets in a drift-controlled A/B. PR 19 remains **not DONE** only because the separate database mutation-audit provenance STOP is open; no compliance-grade or tamper-evident guarantee is claimed and the default Loki/OTel pipeline remains best-effort. The mutation-audit inventory is recorded under `docs/pr-artifacts/pr-19/`; no generic audit table or unverified actor attribution was added.
+>
+> **PR 19A status (2026-10-14).** The scoped follow-up "PR 19A — verified-provenance mutation audit" was opened. Its Phase 0 trust-boundary reconciliation found **no existing authenticated-and-authorized (category-A) management mutation entry point** in the current codebase — the runtime exposes only the batch decision endpoint and health probes, and all writes are privileged operator/bootstrap or structural repository/test paths. Per the PR 19A plan's mandatory early STOP, no management API, schema, stored function, grant, or route was manufactured. Only an internal immutable `VerifiedMutationProvenance` contract with an **empty** closed registration map and fail-closed validation was added (`packages/mtmf-core/src/mtmf_core/application/mutation_provenance.py`). No database audit coverage was added or claimed; PR 19A is **PARTIAL/BLOCKED** and the PR 19 database mutation-audit STOP remains open. See `docs/pr-artifacts/pr-19a/`.
 
 ## 1. Architectural decision
 
@@ -95,3 +97,28 @@ Preserve `./build.sh --qa`, `./build.sh --sec`, `./build.sh --rust`, and `./buil
 ## 9. Relationship to existing database audit
 
 Existing `mtmf.membership_removal_audit` and `mtmf.stewardship_audit` are implemented database audit foundations; they must not be replaced by OTel logs. PR 19 must inventory other security-sensitive mutation paths, distinguish verified from caller-asserted actor attribution, and extend atomic audit only where justified by the current stored-function security model. If that inventory reveals a separate migration or policy redesign larger than PR 19's dominant observability concern, STOP and obtain approval for a scoped follow-on PR rather than improvising a generic audit framework.
+
+### 9.1 PR 19A verified-provenance contract (contract only; no coverage)
+
+PR 19A defines the intended trust boundary for a future durable security-state mutation audit, but it does **not** implement database audit coverage:
+
+```text
+trusted application use case
+  (independently verified actor + exact authoritative Action ALLOW for the bound target)
+    -> immutable VerifiedMutationProvenance (internal; not a transport DTO)
+    -> [future] UnitOfWork / repository operation
+    -> [future] restricted mtmf_runtime connection
+    -> [future] reviewed, narrowly scoped SECURITY DEFINER stored function
+    -> [future] authoritative mutation + append-only audit row (same transaction)
+```
+
+The guarantee that PR 19A provides is limited to an internal record of a trusted application decision. It is **not** a database guarantee and must not be described as one:
+
+- provenance is **application-verified**, not cryptographically attested by PostgreSQL;
+- the PostgreSQL role is an application credential, not an end-user identity;
+- a compromised application/runtime credential can forge provenance parameters;
+- `SET LOCAL`/`current_setting`/ordinary custom GUCs are not identity proof and must never be used as an authentication boundary;
+- no existing `membership_removal_audit`/`stewardship_audit` semantics are changed, relabelled, or duplicated;
+- root recovery's separate durable operator audit remains mandatory and outside this scope.
+
+Because no category-A mutation path was proven, the contract's closed registration map is empty and `require_registered_mutation` fails closed for every input: no operation is audited by PR 19A and none may be reported as covered. The blocker and the smallest reviewer decisions are recorded in [docs/pr-artifacts/pr-19a/PR19A_STOP_REPORT.md](pr-artifacts/pr-19a/PR19A_STOP_REPORT.md).

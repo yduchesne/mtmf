@@ -133,6 +133,18 @@ unverified actor attribution. Full classification and the proposed
 follow-up are recorded in
 [docs/pr-artifacts/pr-19/PR19_SECURITY_AUDIT_INVENTORY.md](pr-artifacts/pr-19/PR19_SECURITY_AUDIT_INVENTORY.md).
 
+The scoped follow-up PR 19A (2026-10-14) added **no** table, stored
+function, grant, or revocation. Its Phase 0 reconciliation found no
+existing authenticated-and-authorized (category-A) management mutation
+entry point, so per its mandatory early STOP it implemented only an
+internal provenance contract and did not create speculative audit plumbing.
+The runtime allowlist is unchanged (29 mutating functions remain
+runtime-`EXECUTE`-granted, 6 of them with the pre-existing unverified
+membership-removal audit), `0011` remains the Alembic head, and every
+uncovered mutation above remains a `STRUCTURAL/UNVERIFIED`,
+`PRIVILEGED-OPERATOR`, or `BLOCKED` gap. See
+[docs/pr-artifacts/pr-19a/](pr-artifacts/pr-19a/).
+
 ### 6.4 Effective privilege verification
 
 `mtmf_core.persistence.postgres.roles.verify_runtime_privileges` is a read-only, administrator-invoked check (also exposed as `scripts/mtmf-provision-roles.py --verify`) that runs after migration to head, for both fresh and legacy-handoff databases. It fails closed unless:
