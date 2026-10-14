@@ -1,16 +1,16 @@
-"""PR 19C live acceptance: real Keycloak -> real Uvicorn -> real PostgreSQL.
+"""PR 19C live acceptance: real Keycloak -> deployed MTMF service -> PostgreSQL.
 
-Opt-in and authoritative only when ``MTMF_PR19C_LIVE=1`` and the canonical
-``mtmf-dev`` Keycloak issuer, the real PostgreSQL role topology and the
-v012-audited schema are available. A real Uvicorn server is bound to
-loopback and driven with genuine issuer-signed service and acting-user
-access tokens. Without the flag the module is skipped.
+Opt-in and authoritative only when ``MTMF_PR19C_LIVE=1`` and the isolated
+acceptance topology is running. The authoritative path is **black-box HTTP**:
+this module sends requests to the Compose-managed MTMF ``service`` on the fixed
+loopback URL ``http://127.0.0.1:29001`` (``MTMF_PR19C_SERVICE_URL``). It never
+constructs or starts an MTMF application/server. Real Keycloak issues both
+tokens; the deployed service (restricted ``mtmf_runtime``) authorizes and
+mutates; this process only seeds the fixture (privileged, committed) and reads
+back committed membership/audit state.
 
-Environment (same shape as the PR 14/17 live suites):
-``MTMF_PR19C_KC_BASE``/``MTMF_PR14_KC_BASE``,
-``MTMF_PR19C_CA_FILE``/``MTMF_PR14_KC_CA_FILE``, and the acceptance admin/user
-passwords (``MTMF_PR19C_*`` or ``MTMF_PR14_KC_*``), plus the ``MTMF_RUNTIME_*``
-configuration.
+Without the flag the module is skipped (ordinary ``--integration``). The
+acceptance launcher sets the flag and requires four passes / zero skips.
 
 Tokens, secrets and admin credentials are never printed or persisted.
 """
@@ -20,27 +20,12 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
-import threading
-import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 import psycopg
 import pytest
-import uvicorn
-
-from mtmf_core.persistence.postgres import (
-    PostgresConfig,
-    PostgresMtmfSpi,
-    PostgresRole,
-)
-from mtmf_service.app import create_app
-from mtmf_service.authentication.config import IssuerConfig
-from mtmf_service.composition import build_dependencies
-from mtmf_service.rate_limit import TokenBucketRateLimiter
-from mtmf_service.readiness import StaticReadiness
-from mtmf_service.settings import ServiceSettings
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MTMF_PR19C_LIVE") != "1",
@@ -53,10 +38,14 @@ SAME_SECRET = "mtmf-evidence-same-client-dev-secret"
 SHARED_AUDIENCE = "mtmf-same-client-api"
 STEWARD_USER = "mtmf-user-bob"
 NON_STEWARD_USER = "mtmf-user-carol"
-PORT = 28012
-BASE_URL = f"http://127.0.0.1:{PORT}"
 ROUTE = "/v1/management/identity-group-memberships"
 TENANT_ADMIN_URN = "urn:mtmf:iam:roles:system:tenant-administrator"
+ACTION_URN = "urn:mtmf:iam:actions:system:identity-group-membership:add-object"
+
+#: The fixed acceptance service URL env var. The authoritative acceptance
+#: topology publishes the deployed service on exactly this loopback address.
+SERVICE_URL_ENV = "MTMF_PR19C_SERVICE_URL"
+REQUIRED_SERVICE_URL = "http://127.0.0.1:29001"
 
 _EVIDENCE = Path(__file__).resolve().parents[3] / "scripts" / "pr14-keycloak-evidence.py"
 _spec = importlib.util.spec_from_file_location("pr14_keycloak_evidence", _EVIDENCE)
@@ -73,24 +62,29 @@ def _env(name: str) -> str:
     return value
 
 
+def _service_base_url() -> str:
+    """Return the fixed deployed-service base URL or fail closed.
+
+    The authoritative acceptance service is exactly ``http://127.0.0.1:29001``.
+    A missing or different value is a hard failure; this never starts a local
+    server and never accepts an arbitrary remote address.
+    """
+    value = os.environ.get(SERVICE_URL_ENV, "").strip().rstrip("/")
+    if not value:
+        raise RuntimeError(f"live acceptance requires {SERVICE_URL_ENV}")
+    if value != REQUIRED_SERVICE_URL:
+        raise RuntimeError(
+            f"{SERVICE_URL_ENV} must be exactly {REQUIRED_SERVICE_URL!r} for PR 19C acceptance"
+        )
+    return value
+
+
 def _kc_base() -> str:
     return os.environ.get("MTMF_PR19C_KC_BASE", "").strip() or _env("MTMF_PR14_KC_BASE")
 
 
 def _ca_file() -> str:
     return os.environ.get("MTMF_PR19C_CA_FILE", "").strip() or _env("MTMF_PR14_KC_CA_FILE")
-
-
-def _admin_user() -> str:
-    return os.environ.get("MTMF_PR19C_ADMIN_USERNAME", "").strip() or _env(
-        "MTMF_PR14_KC_ADMIN_USERNAME"
-    )
-
-
-def _admin_password() -> str:
-    return os.environ.get("MTMF_PR19C_ADMIN_PASSWORD", "").strip() or _env(
-        "MTMF_PR14_KC_ADMIN_PASSWORD"
-    )
 
 
 def _user_password() -> str:
@@ -109,29 +103,8 @@ def _issuer_str() -> str:
     return f"{_kc_base()}/realms/{REALM}"
 
 
-def _issuer_config() -> IssuerConfig:
-    base = _kc_base()
-    issuer = f"{base}/realms/{REALM}"
-    return IssuerConfig(
-        issuer=issuer,
-        service_audience=SHARED_AUDIENCE,
-        user_audience=SHARED_AUDIENCE,
-        jwks_uri=f"{issuer}/protocol/openid-connect/certs",
-        expected_manifest_path="dev/keycloak/expected-realm-security.json",
-        admin_base_url=base,
-        admin_realm=REALM,
-        attestation_client_id="mtmf-attestation-reader",
-        attestation_client_secret="mtmf-attestation-reader-dev-secret",
-        allow_shared_audience=True,
-    )
-
-
 def _keycloak_issuer() -> Any:
-    return ev.Issuer(
-        base=_kc_base(),
-        realm=REALM,
-        ca_file=_ca_file(),
-    )
+    return ev.Issuer(base=_kc_base(), realm=REALM, ca_file=_ca_file())
 
 
 def _service_token() -> str:
@@ -160,7 +133,11 @@ def _subject(token: str) -> str:
 def _seed(
     db: psycopg.Connection, *, steward_subject: str, non_steward_subject: str
 ) -> dict[str, str]:
-    """Provision the PR 19C live fixture through the authorized primitives."""
+    """Provision the PR 19C live fixture through the authorized primitives.
+
+    The ``db`` fixture is autocommit, so every statement here is committed
+    before the separate deployed service is called.
+    """
     principal, steward, non_steward, target = (_uuid() for _ in range(4))
     tenant, other_tenant, group = (_uuid() for _ in range(3))
     application = _uuid()
@@ -208,14 +185,7 @@ def _seed(
 
     db.execute(
         "SELECT mtmf.tenant_application_subscription_add(%s,%s,%s,%s,1::smallint,%s,%s,now())",
-        (
-            _uuid(),
-            application,
-            tenant,
-            steward,
-            datetime.now(UTC) - timedelta(days=1),
-            None,
-        ),
+        (_uuid(), application, tenant, steward, datetime.now(UTC) - timedelta(days=1), None),
     )
     db.execute(
         "SELECT mtmf.service_credential_application_add(%s,%s,%s,%s,1::smallint,now())",
@@ -240,53 +210,17 @@ def _seed(
     }
 
 
-class _LiveServer:
-    def __init__(self, app: Any, *, port: int) -> None:
-        self._config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-        self._server = uvicorn.Server(self._config)
-        self._thread = threading.Thread(target=self._server.run, daemon=True)
+@pytest.fixture(scope="module", autouse=True)
+def deployed_service_ready() -> None:
+    """Require the deployed acceptance service to be reachable and ready.
 
-    def __enter__(self) -> _LiveServer:
-        self._thread.start()
-        deadline = time.monotonic() + 30
-        while not self._server.started and time.monotonic() < deadline:
-            time.sleep(0.05)
-        if not self._server.started:
-            raise RuntimeError("uvicorn did not start")
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self._server.should_exit = True
-        self._thread.join(timeout=10)
-
-
-def _live_app() -> Any:
-    if os.environ.get("SSL_CERT_FILE", "").strip() == "":
-        os.environ["SSL_CERT_FILE"] = _ca_file()
-    spi = PostgresMtmfSpi(PostgresConfig.from_env(PostgresRole.RUNTIME))
-    settings = ServiceSettings(evaluation_timeout_seconds=30)
-    dependencies = build_dependencies(
-        spi=spi,
-        issuer_config=_issuer_config(),
-        settings=settings,
-        initialization_complete=lambda: True,
-        require_initialization=False,
-    )
-    return create_app(
-        settings=settings,
-        authorization_service=dependencies.authorization_service,
-        management_membership_service=dependencies.management_membership_service,
-        readiness=StaticReadiness(True),
-        rate_limiter=TokenBucketRateLimiter(per_minute=100000, burst=100000),
-        admission=dependencies.admission,
-        telemetry=dependencies.telemetry,
-    )
-
-
-@pytest.fixture(scope="module")
-def live_server() -> Any:
-    with _LiveServer(_live_app(), port=PORT):
-        yield
+    A connection refusal, timeout, or non-200 is a hard failure. This never
+    starts a replacement application.
+    """
+    base = _service_base_url()
+    response = httpx.get(f"{base}/health/ready", timeout=10)
+    if response.status_code != 200:
+        raise RuntimeError(f"deployed acceptance service is not ready: HTTP {response.status_code}")
 
 
 def _post(
@@ -298,7 +232,7 @@ def _post(
         "group_id": group or ids["group"],
     }
     return httpx.post(
-        f"{BASE_URL}{ROUTE}",
+        f"{_service_base_url()}{ROUTE}",
         json=body,
         headers={
             "Authorization": f"Bearer {service}",
@@ -318,13 +252,22 @@ def _membership_count(db: psycopg.Connection, ids: dict[str, str]) -> int:
     )
 
 
-def _audit_count(db: psycopg.Connection) -> int:
-    return int(db.execute("SELECT count(*) FROM mtmf.security_mutation_audit").fetchone()[0])
+def _matching_audit_rows(
+    db: psycopg.Connection, group_id: str, target_id: str
+) -> list[tuple[object, ...]]:
+    """Return committed audit rows for this test's exact target and Action."""
+    return list(
+        db.execute(
+            "SELECT actor_identity_id, action_urn, target_kind, target_id, "
+            "subject_identity_id, outcome FROM mtmf.security_mutation_audit "
+            "WHERE target_kind = 'identity_group_membership' AND target_id = %s "
+            "AND subject_identity_id = %s AND action_urn = %s",
+            (group_id, target_id, ACTION_URN),
+        ).fetchall()
+    )
 
 
-def test_h01_h02_live_created_then_authorized_no_op(
-    db: psycopg.Connection, live_server: Any
-) -> None:
+def test_h01_h02_live_created_then_authorized_no_op(db: psycopg.Connection) -> None:
     ids = _seed(
         db,
         steward_subject=_subject(_user_token(STEWARD_USER)),
@@ -340,28 +283,24 @@ def test_h01_h02_live_created_then_authorized_no_op(
         "created": True,
     }
     assert _membership_count(db, ids) == 1
-    assert _audit_count(db) == 1
-    audit = db.execute(
-        "SELECT actor_identity_id, action_urn, target_kind, target_id, "
-        "subject_identity_id, outcome FROM mtmf.security_mutation_audit"
-    ).fetchone()
-    assert str(audit[0]) == ids["steward"]
-    assert audit[1] == "urn:mtmf:iam:actions:system:identity-group-membership:add-object"
-    assert audit[2] == "identity_group_membership"
-    assert str(audit[3]) == ids["group"]
-    assert str(audit[4]) == ids["target"]
-    assert audit[5] == "CREATED"
+    rows = _matching_audit_rows(db, ids["group"], ids["target"])
+    assert len(rows) == 1
+    actor, action_urn, target_kind, target_id, subject_identity_id, outcome = rows[0]
+    assert str(actor) == ids["steward"]
+    assert action_urn == ACTION_URN
+    assert target_kind == "identity_group_membership"
+    assert str(target_id) == ids["group"]
+    assert str(subject_identity_id) == ids["target"]
+    assert outcome == "CREATED"
 
     repeated = _post(service=_service_token(), user=_user_token(STEWARD_USER), ids=ids)
     assert repeated.status_code == 200, repeated.text
     assert repeated.json()["created"] is False
     assert _membership_count(db, ids) == 1
-    assert _audit_count(db) == 1
+    assert len(_matching_audit_rows(db, ids["group"], ids["target"])) == 1
 
 
-def test_h03_non_steward_actor_is_opaque_forbidden(
-    db: psycopg.Connection, live_server: Any
-) -> None:
+def test_h03_non_steward_actor_is_opaque_forbidden(db: psycopg.Connection) -> None:
     ids = _seed(
         db,
         steward_subject=_subject(_user_token(STEWARD_USER)),
@@ -371,11 +310,11 @@ def test_h03_non_steward_actor_is_opaque_forbidden(
     assert response.status_code == 403, response.text
     assert response.json()["error"]["code"] == "FORBIDDEN"
     assert _membership_count(db, ids) == 0
-    assert _audit_count(db) == 0
+    assert _matching_audit_rows(db, ids["group"], ids["target"]) == []
 
 
 def test_h04_cross_tenant_target_is_denied_without_disclosure(
-    db: psycopg.Connection, live_server: Any
+    db: psycopg.Connection,
 ) -> None:
     ids = _seed(
         db,
@@ -397,27 +336,28 @@ def test_h04_cross_tenant_target_is_denied_without_disclosure(
     )
     assert response.status_code == 403, response.text
     assert response.json()["error"]["code"] == "FORBIDDEN"
-    assert _audit_count(db) == 0
+    assert _membership_count(db, ids) == 0
+    assert _matching_audit_rows(db, ids["group"], ids["target"]) == []
+    assert _matching_audit_rows(db, other_group, ids["target"]) == []
 
 
-def test_h05_invalid_or_wrong_slot_tokens_never_succeed(
-    db: psycopg.Connection, live_server: Any
-) -> None:
+def test_h05_invalid_or_wrong_slot_tokens_never_succeed(db: psycopg.Connection) -> None:
     ids = _seed(
         db,
         steward_subject=_subject(_user_token(STEWARD_USER)),
         non_steward_subject=_subject(_user_token(NON_STEWARD_USER)),
     )
     body = {"tenant_id": ids["tenant"], "identity_id": ids["target"], "group_id": ids["group"]}
+    base = _service_base_url()
     missing_user = httpx.post(
-        f"{BASE_URL}{ROUTE}",
+        f"{base}{ROUTE}",
         json=body,
         headers={"Authorization": f"Bearer {_service_token()}"},
         timeout=30,
     )
     assert missing_user.status_code in (401, 403), missing_user.text
     service_as_user = httpx.post(
-        f"{BASE_URL}{ROUTE}",
+        f"{base}{ROUTE}",
         json=body,
         headers={
             "Authorization": f"Bearer {_service_token()}",
@@ -427,4 +367,4 @@ def test_h05_invalid_or_wrong_slot_tokens_never_succeed(
     )
     assert service_as_user.status_code in (401, 403), service_as_user.text
     assert _membership_count(db, ids) == 0
-    assert _audit_count(db) == 0
+    assert _matching_audit_rows(db, ids["group"], ids["target"]) == []

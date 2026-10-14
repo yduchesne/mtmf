@@ -24,6 +24,7 @@ scrubs every captured line and error message.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import secrets
@@ -183,8 +184,9 @@ def _build_env(secrets_: dict[str, str], dotenv: dict[str, str]) -> dict[str, st
     env["MTMF_AUTH_JWKS_URI"] = ACCEPTANCE_JWKS
     env["MTMF_AUTH_ADMIN_BASE"] = ACCEPTANCE_ADMIN_BASE
     env["MTMF_AUTH_ADMIN_REALM"] = ACCEPTANCE_REALM
-    env["MTMF_AUTH_SERVICE_AUDIENCE"] = "mtmf-service-api"
-    env["MTMF_AUTH_USER_AUDIENCE"] = "mtmf-user-api"
+    env["MTMF_AUTH_SERVICE_AUDIENCE"] = "mtmf-same-client-api"
+    env["MTMF_AUTH_USER_AUDIENCE"] = "mtmf-same-client-api"
+    env["MTMF_AUTH_ALLOW_SHARED_AUDIENCE"] = "1"
     env["MTMF_AUTH_EXPECTED_MANIFEST"] = "dev/keycloak/expected-realm-security.json"
     env["MTMF_AUTH_EXPECTED_CLIENT_POLICY"] = "dev/keycloak/expected-client-policy.json"
     env["MTMF_AUTH_ATTESTATION_CLIENT_ID"] = "mtmf-attestation-reader"
@@ -457,6 +459,7 @@ def _test_env() -> dict[str, str]:
     _SECRET_VALUES.extend(staged.values())
     env = _build_env(staged, _read_dotenv())
     env["MTMF_PR19C_LIVE"] = "1"
+    env["MTMF_PR19C_SERVICE_URL"] = ACCEPTANCE_HTTP_BASE
     env["SSL_CERT_FILE"] = _ca_file()
     env.pop("MTMF_MIGRATOR_DATABASE_URL", None)
     env.pop("MTMF_RUNTIME_DATABASE_URL", None)
@@ -466,16 +469,43 @@ def _test_env() -> dict[str, str]:
     return env
 
 
+def _verify_deployed_service() -> str:
+    """Read-only proof that the acceptance Compose ``service`` is the target."""
+    name = f"{ACCEPTANCE_PROJECT}_service_1"
+    inspect = _run(["podman", "inspect", name])
+    payload = json.loads(inspect.stdout)[0]
+    labels = (payload.get("Config") or {}).get("Labels") or {}
+    if labels.get("io.podman.compose.project") != ACCEPTANCE_PROJECT:
+        raise AcceptanceError("acceptance service container project label mismatch")
+    if (payload.get("State") or {}).get("Status") != "running":
+        raise AcceptanceError("acceptance service container is not running")
+    published = _run(["podman", "port", name, "28001/tcp"], check=False)
+    if "127.0.0.1:29001" not in published.stdout:
+        raise AcceptanceError("acceptance service is not published on 127.0.0.1:29001")
+    _wait_http(f"{ACCEPTANCE_HTTP_BASE}/health/ready", timeout=30)
+    return str(payload.get("Id", ""))[:12]
+
+
 def test() -> int:
+    _assert_owned()
+    container_id = _verify_deployed_service()
     env = _test_env()
     result = subprocess.run(
         ["uv", "run", "--no-sync", "pytest", LIVE_TEST, "-q", "--no-cov"],
         cwd=REPO_ROOT,
         env=env,
-        check=False,
+        capture_output=True,
+        text=True,
     )
+    output = _redact((result.stdout or "") + (result.stderr or ""))
+    print(output.rstrip()[-2000:], flush=True)
     if result.returncode != 0:
         raise AcceptanceError("live H01-H05 acceptance failed")
+    if re.search(r"(?<![0-9])4 passed", output) is None:
+        raise AcceptanceError("live acceptance did not report exactly four passed tests")
+    if re.search(r"\bskipped|\bxfailed|\bxpassed|\bfailed|\berror", output):
+        raise AcceptanceError("live acceptance reported skips, xfails or failures")
+    print(f"acceptance service container {container_id}: 4 passed, 0 skipped", flush=True)
     return 0
 
 
