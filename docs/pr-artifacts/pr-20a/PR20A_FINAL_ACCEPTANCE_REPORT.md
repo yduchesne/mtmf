@@ -125,3 +125,14 @@ malformed responses and timeouts; concurrency/request isolation; and Rust/Python
 parity and contract/migration regressions. PR 20A deliberately does **not**
 claim production root recovery conformance, generic management CRUD, ATI
 integration, durable cross-boundary IdP workflows, or production TLS termination.
+
+## Addendum — PR 20A review fixup 01
+
+A subsequent review identified two narrow defects (bounded-worker capacity
+lifetime across caller timeout/cancellation, and exact fixture Role aggregate
+reconciliation). Both were corrected and every mandatory gate plus the deployed
+COLD/REPEAT/RECREATE acceptance were re-executed. The prior historical results in
+this report remain valid for their stated revision; see
+[PR20A_FIXUP01_ACCEPTANCE_REPORT.md](PR20A_FIXUP01_ACCEPTANCE_REPORT.md) for the
+fixup evidence, test IDs (W01–W08, R01–R10), and the re-run gate/acceptance
+results.

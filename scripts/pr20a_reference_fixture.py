@@ -102,9 +102,15 @@ def ensure_document_read_action(provisioner: Any) -> None:
 def ensure_document_role(provisioner: Any, tenant_id: UUID) -> None:
     """Create or validate the fixture TENANT-defined Role aggregate.
 
-    An existing Role must belong to the same Tenant and define exactly the
-    approved permission set; any drift fails closed rather than being
-    silently overwritten.
+    When the Role is absent, it is created with exactly
+    :func:`reference_role_payload`. When it exists, its **security-relevant**
+    aggregate (permission-set identity/ownership/effect and permission
+    identity/parent/URN, including multiplicity) must match the canonical
+    payload exactly. Any drift -- extra sets, extra/duplicate permissions,
+    missing rows, changed ids, DENY effects, or foreign ownership -- fails
+    closed and is never repaired or overwritten. Mutable display-only fields
+    (``name``, ``description``) and the generic ``extension`` are not part of
+    this security-relevant comparison.
     """
     role_urn = reference_role_urn(tenant_id)
     existing_tenant = provisioner._scalar(
@@ -115,18 +121,59 @@ def ensure_document_role(provisioner: Any, tenant_id: UUID) -> None:
             "SELECT mtmf.role_add(%s::jsonb)",
             (json.dumps(reference_role_payload(tenant_id)),),
         )
-    elif str(existing_tenant) != str(tenant_id):
+        return
+    if str(existing_tenant) != str(tenant_id):
         raise ReferenceFixtureError("the reference Role exists in another definition namespace")
-    else:
-        stored = provisioner._execute(
-            "SELECT p.urn FROM mtmf.permission p "
-            "JOIN mtmf.permission_set ps ON ps.id = p.permission_set_id "
-            "WHERE ps.role_urn = %s AND ps.effect = 'allow'",
-            (role_urn,),
-        ).fetchall()
-        urns = {row[0] for row in stored}
-        if urns != {DOCUMENT_READ_PERMISSION}:
-            raise ReferenceFixtureError("the reference Role does not map to the approved grant")
+    if _read_role_aggregate(provisioner, role_urn) != _expected_role_aggregate(tenant_id):
+        raise ReferenceFixtureError(
+            "the reference Role aggregate differs from the approved fixture"
+        )
+
+
+def _expected_role_aggregate(tenant_id: UUID) -> list[tuple[Any, ...]]:
+    """Return the exact ordered ``(set, role, effect, permission...)`` rows.
+
+    The canonical payload has exactly one ALLOW permission set with exactly one
+    Permission, so the expected aggregate is a single row. It is derived from
+    the payload rather than restated so the two can never drift apart.
+    """
+    payload = reference_role_payload(tenant_id)
+    rows: list[tuple[Any, ...]] = []
+    for permission_set in payload["permission_sets"]:
+        for permission in permission_set["permissions"]:
+            rows.append(
+                (
+                    permission_set["id"],
+                    permission_set["role_urn"],
+                    permission_set["effect"],
+                    permission["id"],
+                    permission["permission_set_id"],
+                    permission["urn"],
+                )
+            )
+    return rows
+
+
+def _read_role_aggregate(provisioner: Any, role_urn: str) -> list[tuple[Any, ...]]:
+    """Read the persisted Role aggregate as deterministic, multiplicity-preserving rows.
+
+    A ``LEFT JOIN`` from permission sets to permissions preserves an empty set as
+    a row of ``NULL`` permission columns, so a missing Permission can never be
+    mistaken for a matching aggregate. Rows are ordered by set and permission
+    id; UUIDs are canonicalized to ``str`` for comparison with the payload.
+    """
+    result = provisioner._execute(
+        "SELECT ps.id, ps.role_urn, ps.effect, p.id, p.permission_set_id, p.urn "
+        "FROM mtmf.permission_set AS ps "
+        "LEFT JOIN mtmf.permission AS p ON p.permission_set_id = ps.id "
+        "WHERE ps.role_urn = %s "
+        "ORDER BY ps.id, p.id",
+        (role_urn,),
+    ).fetchall()
+    return [
+        tuple(str(value) if isinstance(value, uuid.UUID) else value for value in row)
+        for row in result
+    ]
 
 
 def ensure_document_role_assignment(provisioner: Any, tenant_id: UUID, identity_id: UUID) -> None:

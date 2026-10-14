@@ -21,6 +21,7 @@ policy, and a missing resource is never evidence of a policy DENY.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -164,14 +165,64 @@ class BoundedWorker:
     async def run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Run ``func`` in a thread, bounded by the semaphore and a deadline.
 
-        A timeout or cancellation discards the result; the caller must never
-        write a response body from a cancelled worker.
+        A worker slot represents one submitted blocking operation **until its
+        thread actually terminates**, not until the awaiting request stops
+        waiting. A timeout or cancellation releases the caller, but the slot
+        stays occupied until the underlying executor future completes, so
+        repeated slow operations cannot exceed the configured outstanding-work
+        bound. Neither a timeout nor a cancellation ever produces a response
+        body.
         """
-        async with self._semaphore:
-            return await asyncio.wait_for(
-                asyncio.to_thread(func, *args, **kwargs),
-                timeout=self._timeout,
-            )
+        # The acquire is cancellable: a cancellation before acquisition must
+        # not release a slot that was never taken.
+        await self._semaphore.acquire()
+        loop = asyncio.get_running_loop()
+        try:
+            future = loop.run_in_executor(None, functools.partial(self._invoke, func, args, kwargs))
+        except BaseException:
+            self._semaphore.release()
+            raise
+
+        def on_done(done: asyncio.Future[Any]) -> None:
+            # Retrieve a late exception so a timed-out caller cannot leave an
+            # unhandled-future-exception warning behind. The text is never
+            # logged and calling ``exception()`` does not consume it for a
+            # caller still awaiting the future.
+            try:
+                if not done.cancelled():
+                    done.exception()
+            finally:
+                self._semaphore.release()
+
+        future.add_done_callback(on_done)
+        # Shield the executor future: wait_for cancels only the shield on
+        # timeout/cancellation, never the submitted operation, so the callback
+        # above remains the single release owner when the thread finishes.
+        outcome = await asyncio.wait_for(asyncio.shield(future), timeout=self._timeout)
+        succeeded, payload = outcome
+        if succeeded:
+            return payload
+        raise payload
+
+    @staticmethod
+    def _invoke(
+        func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[bool, Any]:
+        """Run ``func`` and capture an ordinary failure as a value.
+
+        An abandoned (timed-out/cancelled) operation must not leave an
+        unretrieved executor-future exception: Python 3.14's ``asyncio.shield``
+        logs such a late exception as ``... exception in shielded future`` even
+        after a completion callback retrieves it. Returning ``(False, exc)``
+        keeps the caller-visible behavior (the same exception is re-raised while
+        the caller still awaits) without a late-exception log. Only ordinary
+        ``Exception`` failures are captured; system-exiting ``BaseException``
+        values still propagate through the executor future unchanged.
+        """
+        try:
+            return True, func(*args, **kwargs)
+        except Exception as exc:
+            return False, exc
 
 
 @dataclass(frozen=True, slots=True)

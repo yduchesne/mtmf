@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from helpers import (
@@ -13,6 +14,7 @@ from helpers import (
     OTHER_DOCUMENT_ID,
     OTHER_TENANT_ID,
     TENANT_ID,
+    BlockingEvaluateClient,
     FakeClient,
     FakeVerifier,
     dependency_error,
@@ -20,7 +22,11 @@ from helpers import (
     make_reader,
     make_test_client,
 )
-from mtmf_reference_app.app import DOCUMENT_READ_ACTION, READ_REQUEST_ID
+from mtmf_reference_app.app import (
+    DOCUMENT_READ_ACTION,
+    READ_REQUEST_ID,
+    BoundedWorker,
+)
 from mtmf_reference_app.models import Document
 from mtmf_reference_app.store import DocumentStore
 
@@ -214,3 +220,29 @@ def test_not_ready_when_schema_absent(tmp_path: Path) -> None:
     reader = make_reader(config, verifier=verifier, client=client)
     with make_test_client(reader, client) as http:
         assert http.get("/health/ready").status_code == 503
+
+
+def test_evaluate_worker_timeout_maps_to_503_without_late_body(tmp_path: Path) -> None:
+    """A timed-out MTMF evaluation fails closed and never discloses the body."""
+    config = make_config(tmp_path)
+    _seed(config)
+    verifier = FakeVerifier({ALLOWED_TOKEN: ALLOWED_SUBJECT})
+    release = threading.Event()
+    client = BlockingEvaluateClient(release)
+    reader = make_reader(
+        config,
+        verifier=verifier,
+        client=client,
+        evaluate_worker=BoundedWorker(limit=1, timeout=0.05),
+    )
+    try:
+        with make_test_client(reader, client) as http:
+            response = http.get(
+                f"/v1/documents/{DOCUMENT_ID}",
+                headers={"Authorization": f"Bearer {ALLOWED_TOKEN}"},
+            )
+        assert response.status_code == 503
+        assert "Seeded" not in response.text
+    finally:
+        # Let the abandoned blocking evaluation terminate before teardown.
+        release.set()

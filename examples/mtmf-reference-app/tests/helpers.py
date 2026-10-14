@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,7 +21,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
-from mtmf_reference_app.app import CreateDependencies, DocumentReader, create_app
+from mtmf_reference_app.app import (
+    BoundedWorker,
+    CreateDependencies,
+    DocumentReader,
+    create_app,
+)
 from mtmf_reference_app.auth import AuthenticationError, SessionKeyDeriver, VerifiedUser
 from mtmf_reference_app.config import ReferenceAppConfig
 from mtmf_reference_app.store import DocumentStore
@@ -175,6 +181,40 @@ class FakeClient:
         self.closed = True
 
 
+class BlockingEvaluateClient:
+    """A client whose ``evaluate`` blocks until explicitly released."""
+
+    def __init__(self, release: threading.Event) -> None:
+        self._release = release
+        self.calls = 0
+        self.closed = False
+
+    def evaluate(
+        self,
+        request: AuthorizationBatchRequest,
+        *,
+        user_access_token: str,
+        context: Any,
+    ) -> Any:
+        self.calls += 1
+        self._release.wait(10.0)
+        return _FakeSnapshot(allowed=True)
+
+    def require(
+        self,
+        snapshot: Any,
+        *,
+        context: Any,
+        action: str,
+        resource: ResourceTarget,
+        request_id: str | None = None,
+    ) -> None:
+        return None
+
+    def close(self) -> None:
+        self.closed = True
+
+
 @dataclass
 class _FakeSnapshot:
     allowed: bool
@@ -185,6 +225,7 @@ def make_reader(
     *,
     verifier: FakeVerifier,
     client: FakeClient,
+    evaluate_worker: BoundedWorker | None = None,
 ) -> DocumentReader:
     return DocumentReader(
         config=config,
@@ -192,6 +233,7 @@ def make_reader(
         token_verifier=verifier,
         session_keys=SessionKeyDeriver(),
         client=client,
+        evaluate_worker=evaluate_worker,
     )
 
 
