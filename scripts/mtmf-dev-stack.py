@@ -40,8 +40,18 @@ from collections.abc import Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PROJECT = "mtmf"
-COMPOSE_FILES = ("-f", "compose.yaml", "-f", "compose.dev.yaml")
+PROJECT = os.environ.get("MTMF_DEV_STACK_PROJECT", "mtmf")
+COMPOSE_FILES = (
+    "-f",
+    "compose.yaml",
+    "-f",
+    "compose.dev.yaml",
+    *(
+        ("-f", os.environ["MTMF_DEV_STACK_EXTRA_COMPOSE"])
+        if os.environ.get("MTMF_DEV_STACK_EXTRA_COMPOSE", "").strip()
+        else ()
+    ),
+)
 SERVICE_READY_URL = "http://127.0.0.1:28001/health/ready"
 SERVICE_LIVE_URL = "http://127.0.0.1:28001/health/live"
 
@@ -107,13 +117,14 @@ def _redact(text: str) -> str:
 
 def _run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run a command, capturing and redacting its output before printing."""
-    print(f"+ {' '.join(args)}", flush=True)
+    display = _redact(" ".join(args))
+    print(f"+ {display}", flush=True)
     result = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True)
     combined = _redact((result.stdout or "") + (result.stderr or ""))
     if combined.strip():
         print(combined.rstrip(), flush=True)
     if check and result.returncode != 0:
-        raise OrchestrationError(f"command failed with exit {result.returncode}: {' '.join(args)}")
+        raise OrchestrationError(f"command failed with exit {result.returncode}: {display}")
     return result
 
 
@@ -376,11 +387,41 @@ def _postgres_inspect() -> None:
     """Require the MTMF PostgreSQL healthcheck to report healthy."""
     # Container name is project-scoped and deterministic for project `mtmf`.
     result = _run(
-        ["podman", "inspect", "--format", "{{.State.Health.Status}}", "mtmf_postgres_1"],
+        ["podman", "inspect", "--format", "{{.State.Health.Status}}", f"{PROJECT}_postgres_1"],
         check=False,
     )
     if result.returncode != 0 or (result.stdout or "").strip() != "healthy":
         raise OrchestrationError("the MTMF PostgreSQL container is not healthy")
+
+
+def _setup_realm() -> None:
+    """Provision the canonical realm/clients/users before the initializer.
+
+    A fresh disposable fixture volume has only the Keycloak master realm, so
+    the canonical ``mtmf-dev`` realm and its evidence clients/users must be
+    reconciled before the initializer resolves the development user. Runs only
+    when explicitly requested (``MTMF_DEV_REALM_SETUP=1``); the default
+    persistent development stack keeps its existing realm.
+    """
+    _run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "dev" / "keycloak" / "setup-realm.py"),
+            "--base",
+            _required_env("MTMF_AUTH_ADMIN_BASE"),
+            "--realm",
+            _required_env("MTMF_AUTH_ADMIN_REALM"),
+            "--admin-username",
+            _required_env("MTMF_AUTH_ADMIN_USERNAME"),
+            "--admin-password",
+            _required_env("MTMF_AUTH_ADMIN_PASSWORD"),
+            "--user-password",
+            _required_env("MTMF_PR14_KC_USER_PASSWORD"),
+            "--ca-file",
+            str(_ca_cert_file()),
+            "--allow-nonlocal",
+        ]
+    )
 
 
 def up() -> int:
@@ -421,6 +462,9 @@ def up() -> int:
     # forwarder IP is written to the Compose environment or the launcher state.
     _probe_until_stable(_probe_host, issuer)
     _probe_until_stable(_probe_container, issuer)
+
+    if os.environ.get("MTMF_DEV_REALM_SETUP", "").strip() == "1":
+        _setup_realm()
 
     # Privileged one-shot: migrations + postflight + fixture reconciliation.
     _run(_compose("run", "--rm", "--no-deps", "initializer"))
@@ -649,13 +693,35 @@ def down_volumes() -> int:
     return 0
 
 
+def acceptance_pr19c(argv: list[str]) -> int:
+    """Delegate to the dedicated PR 19C live acceptance orchestrator."""
+    script = Path(__file__).resolve().parent / "mtmf-pr19c-live.py"
+    result = subprocess.run([sys.executable, str(script), *argv], cwd=REPO_ROOT, check=False)
+    return result.returncode
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse a subcommand and run the development stack operation."""
+    raw = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description="MTMF development stack orchestrator")
     parser.add_argument(
-        "command", choices=("up", "up-host-network", "status", "preflight", "down", "destroy")
+        "command",
+        choices=(
+            "up",
+            "up-host-network",
+            "status",
+            "preflight",
+            "down",
+            "destroy",
+            "acceptance-pr19c",
+        ),
     )
-    args = parser.parse_args(argv)
+    args, extra = parser.parse_known_args(raw)
+    if args.command == "acceptance-pr19c":
+        return acceptance_pr19c(extra)
+    if extra:
+        print(f"unexpected arguments: {extra}", file=sys.stderr)
+        return 2
     try:
         if args.command == "up":
             return up()

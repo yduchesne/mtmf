@@ -63,3 +63,9 @@ PR 19, PR 19B and PR 19D remain **not DONE**.
 | PR 19B / PR 19D untouched | PASS |
 
 PR 19C is **not DONE**: the definition of done requires executed live dual-token acceptance. The smallest remaining human decision is to supply the development Keycloak credentials/issuer configuration so the supported live harness can run (see `PR19C_AMENDMENT02_LIVE_ACCEPTANCE.md` and `PR19C_AMENDMENT02_STOP_REPORT.md`).
+
+---
+
+## Amendment 03 update (2026-10-14)
+
+Live H01–H05 are now **executed and passed** against the canonical development Keycloak + PostgreSQL 18 + real service (`PR19C_AMENDMENT03_LIVE_ACCEPTANCE.md`). The disposable cold-start/repeat/recreate reproducibility remains **BLOCKED** by the canonical Compose Keycloak-volume naming (`PR19C_AMENDMENT03_STOP_REPORT.md`). PR 19C remains **PARTIAL / not DONE** pending a human decision on volume isolation.

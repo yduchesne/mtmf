@@ -1,0 +1,13 @@
+# PR 19C live-acceptance override (disposable isolation only).
+#
+# `compose.dev.yaml` declares the Keycloak data volume with an explicit global
+# name, so every Compose project would otherwise share the canonical
+# `mtmf-dev-keycloak-data` realm volume. Applying this override with
+# `MTMF_DEV_STACK_EXTRA_COMPOSE` gives the disposable acceptance project its own
+# project-scoped Keycloak volume, so a cold start never reuses or mutates the
+# operator's persistent development realm. Production/default Compose
+# definitions are never changed.
+
+volumes:
+  mtmf-dev-keycloak-data:
+    name: ${COMPOSE_PROJECT_NAME}_mtmf-dev-keycloak-data

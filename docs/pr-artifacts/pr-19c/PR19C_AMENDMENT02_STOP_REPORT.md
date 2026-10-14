@@ -39,3 +39,9 @@ Amendment 02 §10 STOP condition (8): *"the live Keycloak acceptance harness can
 Provide the development Keycloak administrator and user credentials (or authorize their retrieval) plus confirmation that the canonical issuer/forwarder setup may be started, so the supported live harness can execute H01–H05. No architectural or policy decision is required and no code change is blocked.
 
 PR 19C remains **not DONE**; PR 19B and PR 19D are untouched.
+
+---
+
+## Amendment 03 resolution (2026-10-14)
+
+The live-credential STOP above is **resolved** for the live acceptance: Amendment 03 automatically staged development credentials and executed H01–H05 successfully against the canonical issuer (`PR19C_AMENDMENT03_LIVE_ACCEPTANCE.md`). A narrower, distinct STOP remains for disposable cold-start isolation (`PR19C_AMENDMENT03_STOP_REPORT.md`). This historical STOP is preserved, not erased.

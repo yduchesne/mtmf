@@ -37,3 +37,9 @@ Smallest human decision required: provide (or authorize retrieval of) the develo
 - Lock-conflict proof: `PR19C_CONCURRENCY_PROOF.md`.
 
 These are necessary but are explicitly **not** accepted as H01–H05 live feature acceptance.
+
+---
+
+## Amendment 03 supersession (2026-10-14)
+
+The H01–H05 BLOCKED status above is **superseded**. Amendment 03 executed the live management acceptance against the real canonical `mtmf-dev` Keycloak, real PostgreSQL 18 and real Uvicorn service: **4 passed, 0 skipped** (`tests/integration/postgres/test_pr19c_live_management.py`). See `PR19C_AMENDMENT03_LIVE_ACCEPTANCE.md`. The history above is preserved; only the disposable cold-start reproducibility remains blocked (`PR19C_AMENDMENT03_STOP_REPORT.md`).
