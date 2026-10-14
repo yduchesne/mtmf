@@ -1,0 +1,4 @@
+panels/targets checked: 35
+Prometheus metric names referenced: 15
+referenced names with no exported series: NONE
+query execution errors: NONE

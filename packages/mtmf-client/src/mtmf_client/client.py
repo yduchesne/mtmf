@@ -40,12 +40,19 @@ from mtmf_client.errors import (
     RemoteEligibilityError,
     RemoteProtocolError,
 )
+from mtmf_client.observability import (
+    ClientInstrumentation,
+    NoopClientInstrumentation,
+    SnapshotRejectionReason,
+)
 from mtmf_client.snapshot import (
     AuthorizationSnapshot,
     TrustedActorContext,
+    _context_matches,
     _issue_snapshot,
     _owned_by,
     _Provenance,
+    _snapshot_is_live,
 )
 from mtmf_client.snapshot import (
     is_allowed as _is_allowed,
@@ -71,6 +78,7 @@ class HttpMtmfClient:
     __slots__ = (
         "_closed",
         "_config",
+        "_instrumentation",
         "_monotonic_clock",
         "_provenance",
         "_tokens",
@@ -85,15 +93,20 @@ class HttpMtmfClient:
         transport: httpx.BaseTransport | None = None,
         monotonic_clock: Callable[[], float] = time.monotonic,
         utc_clock: Callable[[], datetime] = _utc_now,
+        instrumentation: ClientInstrumentation | None = None,
     ) -> None:
         if not isinstance(config, ClientConfig):
             raise ActorContextError("HttpMtmfClient requires a ClientConfig")
         self._config = config
-        self._transport = HttpTransport(config, transport=transport)
+        self._instrumentation = instrumentation or NoopClientInstrumentation()
+        self._transport = HttpTransport(
+            config, transport=transport, instrumentation=self._instrumentation
+        )
         self._tokens = ServiceTokenManager(
             config,
             self._transport,
             monotonic_clock=monotonic_clock,
+            instrumentation=self._instrumentation,
         )
         self._monotonic_clock = monotonic_clock
         self._utc_clock = utc_clock
@@ -149,13 +162,14 @@ class HttpMtmfClient:
         self._validate_context(context, request)
         if not isinstance(user_access_token, str) or not user_access_token.strip():
             raise ActorContextError("a verified end-user access token is required")
-        service_token = self._tokens.get_token()
-        body = serialize_request(request)
-        response = self._post(service_token, user_access_token, body)
-        if response.status_code != 200:
-            raise self._map_error(response)
-        parsed = self._parse_success(response, request)
-        return self._build_snapshot(request, parsed, context)
+        with self._instrumentation.span_evaluate():
+            service_token = self._tokens.get_token()
+            body = serialize_request(request)
+            response = self._post(service_token, user_access_token, body)
+            if response.status_code != 200:
+                raise self._map_error(response)
+            parsed = self._parse_success(response, request)
+            return self._build_snapshot(request, parsed, context)
 
     def is_allowed(
         self,
@@ -173,15 +187,20 @@ class HttpMtmfClient:
         client instance. Never performs network I/O.
         """
         self._ensure_open()
-        if not _owned_by(snapshot, self._provenance):
+        reason = self._snapshot_rejection_reason(snapshot, context)
+        if reason is not None:
+            self._record_snapshot_rejection(reason)
             return False
-        return _is_allowed(
+        allowed = _is_allowed(
             snapshot,
             context=context,
             action=action,
             resource=resource,
             request_id=request_id,
         )
+        if not allowed:
+            self._record_snapshot_rejection(SnapshotRejectionReason.DENIED)
+        return allowed
 
     def require(
         self,
@@ -194,17 +213,46 @@ class HttpMtmfClient:
     ) -> None:
         """Strictly client-bound variant of the module-level :func:`require`."""
         self._ensure_open()
-        if not _owned_by(snapshot, self._provenance):
+        reason = self._snapshot_rejection_reason(snapshot, context)
+        if reason is not None:
+            self._record_snapshot_rejection(reason)
             raise AuthorizationDenied("the requested Action occurrence is not allowed")
-        _require(
-            snapshot,
-            context=context,
-            action=action,
-            resource=resource,
-            request_id=request_id,
-        )
+        try:
+            _require(
+                snapshot,
+                context=context,
+                action=action,
+                resource=resource,
+                request_id=request_id,
+            )
+        except AuthorizationDenied:
+            self._record_snapshot_rejection(SnapshotRejectionReason.DENIED)
+            raise
 
     # -- internals ---------------------------------------------------------
+
+    def _snapshot_rejection_reason(
+        self,
+        snapshot: AuthorizationSnapshot | None,
+        context: TrustedActorContext,
+    ) -> SnapshotRejectionReason | None:
+        """Return the local rejection reason, or ``None`` when locally usable."""
+        if not _owned_by(snapshot, self._provenance):
+            return SnapshotRejectionReason.NOT_OWNED
+        if not isinstance(snapshot, AuthorizationSnapshot):
+            return SnapshotRejectionReason.NOT_OWNED
+        if not _context_matches(snapshot, context):
+            return SnapshotRejectionReason.CONTEXT_MISMATCH
+        if not _snapshot_is_live(snapshot):
+            return SnapshotRejectionReason.EXPIRED
+        return None
+
+    def _record_snapshot_rejection(self, reason: SnapshotRejectionReason) -> None:
+        """Record a local PEP rejection; never let telemetry raise."""
+        try:
+            self._instrumentation.record_snapshot_rejection(reason=reason)
+        except Exception:
+            return
 
     def _ensure_open(self) -> None:
         if self._closed:

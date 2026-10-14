@@ -1,0 +1,16 @@
+Loki MTMF streams scanned: 62
+  keycloak_admin_password present in Loki: False
+  user_password present in Loki: False
+  grafana_password present in Loki: False
+  client_secret present in Loki: False
+  JWT-like 'eyJ' present in Loki: False
+  'Authorization' header text present: True
+  'X-MTMF-User-Authorization' present: False
+Jaeger mtmp-service trace blob scanned: True
+  keycloak_admin_password present in Jaeger: False
+  user_password present in Jaeger: False
+  grafana_password present in Jaeger: False
+  client_secret present in Jaeger: False
+  'eyJ' present in Jaeger: False
+Unique dashboard PromQL expressions: 31
+PromQL execution errors: [('sum(count_over_time({job=~".+"} | json | event_name="mtmf.authorization.batch" [5m]))', 'HTTP Error 400: Bad Request')]

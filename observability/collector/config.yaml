@@ -1,0 +1,83 @@
+# MTMF OpenTelemetry Collector configuration (PR 19).
+#
+# Bounded, asynchronous transport from the MTMF service to Prometheus,
+# Jaeger and Loki. Memory and queues are explicitly bounded; retries are
+# bounded and there is no unbounded buffering. Exporter failure never
+# blocks the source; in-flight events may be dropped and are surfaced by
+# Collector self-metrics rather than fabricated as delivered.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 20
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+
+exporters:
+  # Collector self-observability for Prometheus scrape.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: false
+  # Trace export to the MTMF-owned Jaeger OTLP receiver.
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+      max_elapsed_time: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 2048
+  # Structured log export to Loki's OTLP endpoint.
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+      max_elapsed_time: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 2048
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki]

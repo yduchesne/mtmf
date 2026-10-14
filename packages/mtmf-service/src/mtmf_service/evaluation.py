@@ -27,6 +27,7 @@ completed inside step 1 before the actor service opens its transaction).
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 
 from mtmf_api.authorization import (
@@ -51,6 +52,8 @@ from mtmf_core.domain.identity import DomainId
 from mtmf_core.domain.session import SessionContext
 from mtmf_core.persistence.spi import MtmfSpi
 from mtmf_service.clock import Clock
+from mtmf_service.observability import BatchOutcomeLabel, Telemetry
+from mtmf_service.observability.spans import SpanName
 from mtmf_service.sensitivity import SensitiveActionClassifier
 from mtmf_service.settings import ServiceSettings
 
@@ -105,6 +108,7 @@ class AuthorizationService:
         "_sensitivity",
         "_settings",
         "_spi",
+        "_telemetry",
     )
 
     def __init__(
@@ -117,6 +121,7 @@ class AuthorizationService:
         clock: Clock,
         sensitivity: SensitiveActionClassifier,
         settings: ServiceSettings,
+        telemetry: Telemetry | None = None,
     ) -> None:
         self._actor_service = actor_service
         self._spi = spi
@@ -125,6 +130,7 @@ class AuthorizationService:
         self._clock = clock
         self._sensitivity = sensitivity
         self._settings = settings
+        self._telemetry = telemetry or Telemetry.disabled()
 
     def evaluate(
         self,
@@ -144,14 +150,17 @@ class AuthorizationService:
         :raises mtmf_api.conformance.ResponseConformanceError: if the
             assembled response does not conform to the request.
         """
+        started = time.perf_counter()
         instant = self._clock.now()
-        actor = self._actor_service.resolve(
-            service_token=service_token,
-            user_token=user_token,
-            tenant_id=DomainId(request.tenant_id),
-            at=instant,
-        )
-        context, known_actions = self._resolve_context(actor, request)
+        with self._telemetry.span(SpanName.ACTOR_VERIFY):
+            actor = self._actor_service.resolve(
+                service_token=service_token,
+                user_token=user_token,
+                tenant_id=DomainId(request.tenant_id),
+                at=instant,
+            )
+        with self._telemetry.span(SpanName.ROLES_RESOLVE):
+            context, known_actions = self._resolve_context(actor, request)
         requests = tuple(
             AuthorizationRequest(
                 context=context,
@@ -161,7 +170,8 @@ class AuthorizationService:
             for item in request.actions
         )
         batch = AuthorizationBatch(requests=requests)
-        result = self._batch_authorizer.authorize(batch)
+        with self._telemetry.span(SpanName.AUTHORIZATION_BATCH):
+            result = self._batch_authorizer.authorize(batch)
         decisions = tuple(
             self._map_item(request, index, decision, known_actions)
             for index, decision in enumerate(result.decisions)
@@ -174,9 +184,37 @@ class AuthorizationService:
             decisions=decisions,
         )
         # A conformance fault is an internal error, never a partially
-        # useful result.
+        # useful result. Batch metrics are recorded only after the
+        # validated response is final, so a later conformance rejection can
+        # never contribute an ALLOW count.
         validate_response_for_request(request, response)
+        self._record_batch_metrics(decisions, duration_ms=(time.perf_counter() - started) * 1000.0)
         return response
+
+    def _record_batch_metrics(
+        self,
+        decisions: tuple[ActionDecision, ...],
+        *,
+        duration_ms: float,
+    ) -> None:
+        """Record the finalized, validated batch decision distribution."""
+        allow_count = sum(
+            1 for decision in decisions if decision.effect is AuthorizationEffect.ALLOW
+        )
+        deny_count = len(decisions) - allow_count
+        if allow_count == 0:
+            outcome = BatchOutcomeLabel.DENY
+        elif deny_count == 0:
+            outcome = BatchOutcomeLabel.ALLOW
+        else:
+            outcome = BatchOutcomeLabel.MIXED
+        self._telemetry.record_batch_metrics(
+            outcome=outcome,
+            duration_ms=duration_ms,
+            action_count=len(decisions),
+            allow_count=allow_count,
+            deny_count=deny_count,
+        )
 
     def _resolve_context(
         self,

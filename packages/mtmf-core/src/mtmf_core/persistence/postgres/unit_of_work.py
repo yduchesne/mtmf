@@ -27,6 +27,7 @@ possible. No savepoints and no automatic retries are introduced.
 
 from __future__ import annotations
 
+import time
 from contextlib import suppress
 from enum import Enum
 from types import TracebackType
@@ -38,6 +39,10 @@ from mtmf_core.persistence.errors import (
     PersistenceTransactionError,
     UnitOfWorkStateError,
 )
+from mtmf_core.persistence.instrumentation import (
+    NoopPersistenceTelemetry,
+    PersistenceTelemetry,
+)
 from mtmf_core.persistence.postgres.config import PostgresConfig
 from mtmf_core.persistence.postgres.error_translation import (
     translate_connection_error,
@@ -47,6 +52,41 @@ from mtmf_core.persistence.postgres.roles import RUNTIME_ROLE
 
 if TYPE_CHECKING:
     from mtmf_core.persistence.postgres.spi import PostgresMtmfSpi
+
+
+#: Stored-function name fragments that identify a state-mutating call.
+#: This is a bounded internal classification only: the full query text,
+#: table/column names and every argument remain private to the provider.
+_WRITE_MARKERS = (
+    "_add(",
+    "_save(",
+    "_remove(",
+    "_revoke(",
+    "_activate(",
+    "_suspend(",
+    "_designate(",
+    "_initialize(",
+    "_install(",
+    "_create(",
+    "_ensure(",
+    "_set(",
+    "bootstrap_root(",
+    "recover_root_identity(",
+    "designate_steward(",
+    "activate_tenant(",
+    "suspend_tenant(",
+    "create_root_management_group(",
+    "initialize_root_tenant_management_group(",
+    "create_tenant_management_group(",
+    "install_builtin_policy(",
+    "install_management_roles(",
+)
+
+
+def _classify_operation(query: str) -> str:
+    """Classify a reviewed stored-function call as a read or a write."""
+    lowered = query.lower()
+    return "write" if any(marker in lowered for marker in _WRITE_MARKERS) else "read"
 
 
 class _UnitOfWorkState(Enum):
@@ -61,13 +101,30 @@ class _UnitOfWorkState(Enum):
 class PostgresUnitOfWork:
     """One real PostgreSQL transaction bound to a runtime-only configuration."""
 
-    def __init__(self, config: PostgresConfig, spi: PostgresMtmfSpi) -> None:
+    def __init__(
+        self,
+        config: PostgresConfig,
+        spi: PostgresMtmfSpi,
+        telemetry: PersistenceTelemetry | None = None,
+    ) -> None:
         self._config = config
         self._spi = spi
+        self._telemetry = telemetry or NoopPersistenceTelemetry()
         self._state = _UnitOfWorkState.PENDING
         self._connection: psycopg.Connection | None = None
 
     # -- lifecycle -----------------------------------------------------------
+
+    def _record(self, operation: str, outcome: str, started: float) -> None:
+        """Record one bounded observation; telemetry never masks a DB fault."""
+        try:
+            self._telemetry.record_operation(
+                operation=operation,
+                outcome=outcome,
+                duration_ms=(time.perf_counter() - started) * 1000.0,
+            )
+        except Exception:
+            return
 
     def __enter__(self) -> Self:
         """Open the single transaction and verify the runtime identity."""
@@ -102,8 +159,10 @@ class PostgresUnitOfWork:
     ) -> None:
         """Roll back any open transaction, close, and never suppress an exception."""
         if self._state in (_UnitOfWorkState.ACTIVE, _UnitOfWorkState.FAILED):
+            started = time.perf_counter()
             self._safe_rollback()
             self._state = _UnitOfWorkState.COMPLETED
+            self._record("transaction", "rollback", started)
         self._close()
         return None
 
@@ -120,12 +179,15 @@ class PostgresUnitOfWork:
                 f"{self._state.value}"
             )
         connection = self._require_connection()
+        started = time.perf_counter()
         try:
             connection.commit()
         except psycopg.Error as exc:
             self._state = _UnitOfWorkState.FAILED
+            self._record("transaction", "failure", started)
             raise translate_operation_error(exc) from exc
         self._state = _UnitOfWorkState.COMPLETED
+        self._record("transaction", "success", started)
 
     def rollback(self) -> None:
         """Discard every staged change and complete the UnitOfWork."""
@@ -134,8 +196,10 @@ class PostgresUnitOfWork:
                 f"rollback requires an active UnitOfWork; current UnitOfWork state is "
                 f"{self._state.value}"
             )
+        started = time.perf_counter()
         self._safe_rollback()
         self._state = _UnitOfWorkState.COMPLETED
+        self._record("transaction", "rollback", started)
 
     # -- private operation surface (never a public contract) -----------------
 
@@ -155,11 +219,16 @@ class PostgresUnitOfWork:
     def _execute(self, query: str, params: tuple[object, ...]) -> psycopg.Cursor:
         """Run one reviewed stored-function call within this transaction."""
         self._require_active("repository operation")
+        operation = _classify_operation(query)
+        started = time.perf_counter()
         try:
-            return self._require_connection().execute(query, params)
+            cursor = self._require_connection().execute(query, params)
         except psycopg.Error as exc:
             self._state = _UnitOfWorkState.FAILED
+            self._record(operation, "failure", started)
             raise translate_operation_error(exc) from exc
+        self._record(operation, "success", started)
+        return cursor
 
     # -- helpers -------------------------------------------------------------
 

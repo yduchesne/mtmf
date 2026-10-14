@@ -1,0 +1,3 @@
+baseline status: 200
+during postgres outage: 503 {"schema_version":"1","error":{"code":"DEPENDENCY_UNAVAILABLE","message":"A required dependency is unavailable","request
+dependency failure metric: [{'metric': {}, 'value': [1791938857.974, '1']}]

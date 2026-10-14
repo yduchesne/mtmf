@@ -112,6 +112,27 @@ The transaction-local marker remains as **defense in depth**. The enforced bound
 
 The migration/owner/admin roles are outside that adversarial guarantee; they require separate operational controls and audit.
 
+### 6.3.1 PR 19 mutation-audit coverage inventory
+
+Roadmap PR 19 inventoried every state-mutating stored function and
+distinguished the two already-atomic audit foundations from the remaining
+mutation paths. `membership_removal_audit` (six membership-removal entry
+points) and `stewardship_audit` (`bootstrap_root`, `designate_steward`,
+`recover_root_identity`) are unchanged and remain the only database audit
+tables. Entity add/save, membership add, Role/PermissionSet add/save, Role
+assignment add/remove, Tenant activate/suspend, TenantManagementGroup,
+Application-registry and authentication-binding mutations have **no**
+atomic audit row.
+
+Those uncovered write functions do not receive verified actor provenance
+in their stored-function signatures. Adding audit for them therefore
+requires an approved trust-boundary decision and a separately scoped
+migration, not a generic audit framework. PR 19 does not add a generic
+`security_event_audit` table, an unrestricted audit-write function, or an
+unverified actor attribution. Full classification and the proposed
+follow-up are recorded in
+[docs/pr-artifacts/pr-19/PR19_SECURITY_AUDIT_INVENTORY.md](pr-artifacts/pr-19/PR19_SECURITY_AUDIT_INVENTORY.md).
+
 ### 6.4 Effective privilege verification
 
 `mtmf_core.persistence.postgres.roles.verify_runtime_privileges` is a read-only, administrator-invoked check (also exposed as `scripts/mtmf-provision-roles.py --verify`) that runs after migration to head, for both fresh and legacy-handoff databases. It fails closed unless:

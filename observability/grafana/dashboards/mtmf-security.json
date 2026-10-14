@@ -1,0 +1,238 @@
+{
+  "uid": "mtmf-security",
+  "title": "Authentication & Security",
+  "description": "Rejected authentication, subscription and context requests and telemetry drops.",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "tags": [
+    "mtmf",
+    "pr19"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Security rejections by category",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_security_rejections_total[5m])) by (category)",
+          "legendFormat": "{{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Authentication rejections",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_security_rejections_total{category=~\"SERVICE_AUTHENTICATION_FAILED|USER_AUTHENTICATION_FAILED\"}[5m])) by (category)",
+          "legendFormat": "{{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Subscription / context rejections",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_security_rejections_total{category=~\"SUBSCRIPTION_INELIGIBLE|ACTOR_CONTEXT_INVALID\"}[5m])) by (category)",
+          "legendFormat": "{{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Dependency errors",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_dependencies_failures_total[5m])) by (dependency, category)",
+          "legendFormat": "{{dependency}}/{{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Collector pipeline failures / queue (self-metrics)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(otelcol_exporter_send_failed_spans[5m]))",
+          "legendFormat": "failed spans/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(otelcol_exporter_send_failed_log_records[5m]))",
+          "legendFormat": "failed logs/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(otelcol_exporter_send_failed_metric_points[5m]))",
+          "legendFormat": "failed metric points/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "sum(otelcol_exporter_queue_size)",
+          "legendFormat": "exporter queue",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Audit log records visible to Loki (last 5m)",
+      "type": "stat",
+      "datasource": {
+        "type": "loki",
+        "uid": "mtmf-loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=~\".+\"} | event_name=\"mtmf.authorization.batch\" [5m]))",
+          "legendFormat": "batch events",
+          "datasource": {
+            "type": "loki",
+            "uid": "mtmf-loki"
+          }
+        }
+      ]
+    }
+  ]
+}

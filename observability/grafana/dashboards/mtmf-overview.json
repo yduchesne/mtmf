@@ -1,0 +1,279 @@
+{
+  "uid": "mtmf-overview",
+  "title": "MTMF Overview",
+  "description": "Traffic, latency, error rate, service availability and Collector health.",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "tags": [
+    "mtmf",
+    "pr19"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP request rate (req/s)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_http_requests_total[5m]))",
+          "legendFormat": "requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP 4xx rate",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_http_requests_total{status_class=\"4xx\"}[5m]))",
+          "legendFormat": "4xx",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "HTTP 5xx rate",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_http_requests_total{status_class=\"5xx\"}[5m]))",
+          "legendFormat": "5xx",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Service up",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"mtmf-collector\"}",
+          "legendFormat": "collector",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "HTTP p50/p95/p99 latency",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(mtmf_http_duration_milliseconds_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum(rate(mtmf_http_duration_milliseconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum(rate(mtmf_http_duration_milliseconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "HTTP requests by status class",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_http_requests_total[5m])) by (status_class)",
+          "legendFormat": "{{status_class}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Collector exporter queue / failures",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "otelcol_exporter_queue_size",
+          "legendFormat": "queue",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "rate(otelcol_exporter_send_failed_spans[5m])",
+          "legendFormat": "failed spans/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "rate(otelcol_exporter_send_failed_log_records[5m])",
+          "legendFormat": "failed logs/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    }
+  ]
+}

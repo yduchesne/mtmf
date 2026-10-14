@@ -1,0 +1,174 @@
+{
+  "uid": "mtmf-dependencies",
+  "title": "Persistence & Dependencies",
+  "description": "Database UoW latency/errors, issuer/JWKS failures and telemetry backlog.",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "tags": [
+    "mtmf",
+    "pr19"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Persistence operation latency p50/p95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(mtmf_persistence_duration_milliseconds_bucket[5m])) by (le, operation))",
+          "legendFormat": "p50 {{operation}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum(rate(mtmf_persistence_duration_milliseconds_bucket[5m])) by (le, operation))",
+          "legendFormat": "p95 {{operation}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Persistence operations / errors / rollbacks",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_persistence_operations_total[5m])) by (operation, outcome)",
+          "legendFormat": "{{operation}}/{{outcome}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Dependency failures",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_dependencies_failures_total[5m])) by (dependency, category)",
+          "legendFormat": "{{dependency}}/{{category}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Collector self-metrics: queue and send failures",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "otelcol_exporter_queue_size",
+          "legendFormat": "queue",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "rate(otelcol_exporter_send_failed_spans[5m])",
+          "legendFormat": "failed spans/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "rate(otelcol_receiver_refused_spans[5m])",
+          "legendFormat": "refused spans/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    }
+  ]
+}

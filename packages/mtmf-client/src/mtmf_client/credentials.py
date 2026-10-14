@@ -23,6 +23,11 @@ from typing import Any
 
 from mtmf_client.config import ClientConfig
 from mtmf_client.errors import ClientAuthenticationError, MtmfClientError
+from mtmf_client.observability import (
+    ClientInstrumentation,
+    NoopClientInstrumentation,
+    TokenFailureCategory,
+)
 from mtmf_client.transport import HttpTransport
 
 __all__ = ["ServiceTokenManager"]
@@ -70,6 +75,7 @@ class ServiceTokenManager:
     __slots__ = (
         "_config",
         "_expires_at",
+        "_instrumentation",
         "_lock",
         "_monotonic_clock",
         "_token",
@@ -82,10 +88,12 @@ class ServiceTokenManager:
         transport: HttpTransport,
         *,
         monotonic_clock: Callable[[], float] = time.monotonic,
+        instrumentation: ClientInstrumentation | None = None,
     ) -> None:
         self._config = config
         self._transport = transport
         self._monotonic_clock = monotonic_clock
+        self._instrumentation = instrumentation or NoopClientInstrumentation()
         self._lock = threading.Lock()
         self._token: str | None = None
         self._expires_at = 0.0
@@ -99,7 +107,15 @@ class ServiceTokenManager:
             now = float(self._monotonic_clock())
             if self._token is not None and now < self._expires_at:
                 return self._token
-            return self._acquire_locked(now)
+            with self._instrumentation.span_token_acquire():
+                return self._acquire_locked(now)
+
+    def _record_failure(self, category: TokenFailureCategory) -> None:
+        """Record a token-acquisition failure; never let telemetry raise."""
+        try:
+            self._instrumentation.record_token_failure(category=category)
+        except Exception:
+            return
 
     def _acquire_locked(self, now: float) -> str:
         """Perform one client-credentials grant. Caller holds the lock."""
@@ -116,21 +132,31 @@ class ServiceTokenManager:
         try:
             response = self._transport.post_form(self._config.token_endpoint, data=form)
         except MtmfClientError as exc:
+            self._record_failure(TokenFailureCategory.TRANSPORT)
             raise ClientAuthenticationError("the token endpoint request failed") from exc
         if response.is_redirect:
+            self._record_failure(TokenFailureCategory.PROTOCOL)
             raise ClientAuthenticationError("the token endpoint attempted a redirect")
         if response.status_code != 200:
+            self._record_failure(TokenFailureCategory.REJECTED)
             raise ClientAuthenticationError("the token endpoint rejected the client credential")
         if response.content_type not in ("application/json", None):
+            self._record_failure(TokenFailureCategory.PROTOCOL)
             raise ClientAuthenticationError(
                 "the token endpoint returned an unexpected content type"
             )
-        payload = _load_json_object(response.body.decode("utf-8", errors="replace"))
+        try:
+            payload = _load_json_object(response.body.decode("utf-8", errors="replace"))
+        except ClientAuthenticationError:
+            self._record_failure(TokenFailureCategory.PROTOCOL)
+            raise
         token = payload.get("access_token")
         if not isinstance(token, str) or not token or len(token) > _MAX_ACCESS_TOKEN_LENGTH:
+            self._record_failure(TokenFailureCategory.PROTOCOL)
             raise ClientAuthenticationError("the token endpoint returned an invalid access token")
         token_type = payload.get("token_type")
         if not isinstance(token_type, str) or token_type.strip().lower() != "bearer":
+            self._record_failure(TokenFailureCategory.PROTOCOL)
             raise ClientAuthenticationError("the token endpoint returned an unsupported token type")
         expires_in = payload.get("expires_in")
         if (
@@ -139,6 +165,7 @@ class ServiceTokenManager:
             or not math.isfinite(expires_in)
             or expires_in <= 0
         ):
+            self._record_failure(TokenFailureCategory.PROTOCOL)
             raise ClientAuthenticationError("the token endpoint returned an invalid lifetime")
         lifetime = max(0.0, float(expires_in) - float(self._config.renewal_leeway_seconds))
         self._token = token

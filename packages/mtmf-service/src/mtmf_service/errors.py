@@ -32,12 +32,18 @@ class PublicError(Exception):
     limiting) and for the deliberately coarse internal/dependency faults.
     """
 
-    __slots__ = ("code",)
+    __slots__ = ("audit_reason", "code")
 
-    def __init__(self, code: ApiErrorCode) -> None:
+    def __init__(self, code: ApiErrorCode, *, audit_reason: str | None = None) -> None:
         if not isinstance(code, ApiErrorCode):
             raise TypeError("code must be an ApiErrorCode")
         self.code = code
+        #: Optional bounded audit reason override for a condition whose
+        #: public error code is coarser than its operational category
+        #: (for example admission saturation vs. a database outage). It is
+        #: a plain string so this module keeps no telemetry dependency; the
+        #: telemetry boundary validates it against the closed enum.
+        self.audit_reason = audit_reason
         super().__init__(code.value)
 
     @property

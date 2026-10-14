@@ -1,0 +1,3 @@
+batch events found: 5
+correlation trace_id: 644c5d89da67a173b6a9cb8f9c451972
+Jaeger trace found: spans= 4

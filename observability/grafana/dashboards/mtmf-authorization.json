@@ -1,0 +1,206 @@
+{
+  "uid": "mtmf-authorization",
+  "title": "Authorization Decisions",
+  "description": "Batch/action throughput, ALLOW/DENY/MIXED distribution, batch size and PDP latency.",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "tags": [
+    "mtmf",
+    "pr19"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Batch rate by outcome",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_authorization_batches_total[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Action rate by effect",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_authorization_actions_total[5m])) by (effect)",
+          "legendFormat": "{{effect}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Batch size distribution",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(mtmf_authorization_batch_size_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.50, sum(rate(mtmf_authorization_batch_size_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "PDP batch p50/p95/p99",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(mtmf_authorization_batch_duration_milliseconds_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum(rate(mtmf_authorization_batch_duration_milliseconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum(rate(mtmf_authorization_batch_duration_milliseconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Batch outcome share",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mtmf-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(mtmf_authorization_batches_total[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mtmf-prometheus"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -15,10 +15,27 @@ import httpx
 
 from mtmf_client.config import ClientConfig
 from mtmf_client.errors import DependencyUnavailableError, RemoteProtocolError
+from mtmf_client.observability import (
+    ClientInstrumentation,
+    ClientStatusClass,
+    NoopClientInstrumentation,
+)
 
 __all__ = ["HttpTransport", "RawResponse"]
 
 _CLIENT_VERSION = "0.1.0"
+
+
+def _status_class(status_code: int) -> ClientStatusClass:
+    if 200 <= status_code < 300:
+        return ClientStatusClass.SUCCESS
+    if 300 <= status_code < 400:
+        return ClientStatusClass.REDIRECT
+    if 400 <= status_code < 500:
+        return ClientStatusClass.CLIENT_ERROR
+    if 500 <= status_code < 600:
+        return ClientStatusClass.SERVER_ERROR
+    return ClientStatusClass.UNKNOWN
 
 
 class RawResponse:
@@ -52,13 +69,14 @@ class RawResponse:
 class HttpTransport:
     """Owns one bounded ``httpx.Client`` shared by token and PDP calls."""
 
-    __slots__ = ("_client", "_max_bytes")
+    __slots__ = ("_client", "_instrumentation", "_max_bytes")
 
     def __init__(
         self,
         config: ClientConfig,
         *,
         transport: httpx.BaseTransport | None = None,
+        instrumentation: ClientInstrumentation | None = None,
     ) -> None:
         timeout = httpx.Timeout(
             connect=config.connect_timeout,
@@ -70,6 +88,7 @@ class HttpTransport:
             ssl.create_default_context(cafile=config.ca_bundle) if config.ca_bundle else True
         )
         self._max_bytes = config.max_response_bytes
+        self._instrumentation = instrumentation or NoopClientInstrumentation()
         self._client = httpx.Client(
             verify=verify,
             timeout=timeout,
@@ -133,6 +152,7 @@ class HttpTransport:
                 content=content,
                 data=data,
             ) as response:
+                self._record_response(response.status_code)
                 if response.is_redirect:
                     # The body of a redirect is never read or forwarded.
                     return RawResponse(
@@ -148,6 +168,13 @@ class HttpTransport:
                 )
         except httpx.HTTPError as exc:
             raise DependencyUnavailableError("the MTMF transport call failed") from exc
+
+    def _record_response(self, status_code: int) -> None:
+        """Record the outbound response class; never let telemetry raise."""
+        try:
+            self._instrumentation.record_http_response(status_class=_status_class(status_code))
+        except Exception:
+            return
 
     def _read_bounded(self, response: httpx.Response) -> bytes:
         """Read at most ``max_response_bytes`` from ``response``.
