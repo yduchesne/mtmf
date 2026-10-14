@@ -1,0 +1,247 @@
+# PR 20A isolated reference-consumer acceptance Compose model.
+#
+# STANDALONE: applied alone as
+#   podman-compose -p mtmf-pr20a-acceptance -f compose.pr20a-acceptance.yaml ...
+# It never includes compose.yaml or compose.dev.yaml at runtime and is never
+# used by the default development launcher.
+#
+# Fixed acceptance topology:
+#   project            mtmf-pr20a-acceptance
+#   issuer             https://keycloak.mtmf.test:29543/realms/mtmf-dev
+#   Keycloak HTTPS     127.0.0.1:29543 -> 8443
+#   forwarder          listens 29543, forwards to keycloak:8443 (alias keycloak.mtmf.test)
+#   service            127.0.0.1:29501 -> 28001 (plaintext, loopback only)
+#   TLS terminator     mtmf.mtmf.test:29501 -> service:28001 (internal only)
+#   reference app      127.0.0.1:29511 -> 8080
+#   PostgreSQL         127.0.0.1:29532 -> 5432
+# All app volumes are project-scoped (no explicit `name:`), so a fresh
+# acceptance project never reuses the canonical development realm volume. All
+# host publications bind loopback.
+
+services:
+  postgres:
+    image: docker.io/library/postgres:18
+    environment:
+      POSTGRES_DB: ${MTMF_PR20A_DB_NAME:-mtmf}
+      POSTGRES_USER: ${MTMF_PR20A_DB_USER:-mtmf}
+      POSTGRES_PASSWORD: ${MTMF_PR20A_DB_PASSWORD:?set acceptance database password}
+    ports:
+      - "127.0.0.1:${MTMF_PR20A_POSTGRES_PORT:-29532}:5432"
+    volumes:
+      - mtmf-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0-1
+    command:
+      - start-dev
+      - --http-port=8080
+      - --https-port=8443
+      - --hostname=https://keycloak.mtmf.test:29543
+      - --hostname-strict=true
+      - --hostname-backchannel-dynamic=false
+      - --health-enabled=true
+      - --https-certificate-file=/opt/keycloak/conf/tls/server.crt
+      - --https-certificate-key-file=/opt/keycloak/conf/tls/server.key
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${MTMF_DEV_KC_ADMIN_USERNAME:-mtmf-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${MTMF_DEV_KC_ADMIN_PASSWORD:?set acceptance admin password}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "true"
+    ports:
+      - "127.0.0.1:${MTMF_PR20A_KC_HTTPS_PORT:-29543}:8443"
+    volumes:
+      - mtmf-dev-keycloak-data:/opt/keycloak/data
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/server.crt:/opt/keycloak/conf/tls/server.crt:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/server.key:/opt/keycloak/conf/tls/server.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  forwarder:
+    image: docker.io/library/python:3.14-slim
+    command: ["python", "/app/mtmf-dev-forwarder.py"]
+    environment:
+      MTMF_DEV_FORWARDER_LISTEN_HOST: 0.0.0.0
+      MTMF_DEV_FORWARDER_PORT: "29543"
+      MTMF_DEV_FORWARDER_TARGET_HOST: keycloak
+      MTMF_DEV_FORWARDER_TARGET_PORT: "8443"
+      PYTHONDONTWRITEBYTECODE: "1"
+    networks:
+      default:
+        aliases:
+          - keycloak.mtmf.test
+    volumes:
+      - ./scripts/mtmf-dev-forwarder.py:/app/mtmf-dev-forwarder.py:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import socket; socket.create_connection(('127.0.0.1', 29543), 2).close()"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  service-tls-proxy:
+    image: docker.io/library/python:3.14-slim
+    command: ["python", "/app/pr20a-service-tls-proxy.py"]
+    environment:
+      MTMF_PR20A_PROXY_LISTEN_HOST: 0.0.0.0
+      MTMF_PR20A_PROXY_LISTEN_PORT: "29501"
+      MTMF_PR20A_PROXY_TARGET_HOST: service
+      MTMF_PR20A_PROXY_TARGET_PORT: "28001"
+      MTMF_PR20A_PROXY_TLS_CERT: /certs/mtmf-service.crt
+      MTMF_PR20A_PROXY_TLS_KEY: /certs/mtmf-service.key
+      PYTHONDONTWRITEBYTECODE: "1"
+    networks:
+      default:
+        aliases:
+          - mtmf.mtmf.test
+    volumes:
+      - ./scripts/pr20a-service-tls-proxy.py:/app/pr20a-service-tls-proxy.py:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/mtmf-service.crt:/certs/mtmf-service.crt:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/mtmf-service.key:/certs/mtmf-service.key:ro
+    depends_on:
+      service:
+        condition: service_healthy
+
+  initializer:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["python", "scripts/pr20a-initialize.py"]
+    environment:
+      MTMF_SERVICE_DEPLOYMENT_MODE: development
+      MTMF_SERVICE_ALLOW_CONTAINER_BIND: "1"
+      MTMF_MIGRATOR_DATABASE_URL: ${MTMF_MIGRATOR_DATABASE_URL:?set acceptance migrator URL}
+      MTMF_POSTGRES_DB: ${MTMF_PR20A_DB_NAME:-mtmf}
+      MTMF_AUTH_ISSUER: ${MTMF_AUTH_ISSUER:?set acceptance issuer}
+      MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
+      MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
+      MTMF_AUTH_ALLOW_SHARED_AUDIENCE: ${MTMF_AUTH_ALLOW_SHARED_AUDIENCE:-1}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:?set acceptance admin base}
+      MTMF_AUTH_ADMIN_USERNAME: ${MTMF_AUTH_ADMIN_USERNAME:-mtmf-admin}
+      MTMF_AUTH_ADMIN_PASSWORD: ${MTMF_AUTH_ADMIN_PASSWORD:?set acceptance admin password}
+      MTMF_AUTH_EXPECTED_MANIFEST: ${MTMF_AUTH_EXPECTED_MANIFEST:-dev/keycloak/expected-realm-security.json}
+      MTMF_AUTH_EXPECTED_CLIENT_POLICY: ${MTMF_AUTH_EXPECTED_CLIENT_POLICY:-dev/keycloak/expected-client-policy.json}
+      MTMF_DEV_TENANT_KEY: ${MTMF_DEV_TENANT_KEY:-dev}
+      MTMF_DEV_TENANT_NAME: ${MTMF_DEV_TENANT_NAME:-Development Tenant}
+      MTMF_PR20A_APPLICATION_KEY: ${MTMF_PR20A_APPLICATION_KEY:-evidence-same-client}
+      MTMF_PR20A_ALLOWED_USERNAME: ${MTMF_PR20A_ALLOWED_USERNAME:-mtmf-user-alice}
+      MTMF_PR20A_DENIED_USERNAME: ${MTMF_PR20A_DENIED_USERNAME:-mtmf-user-bob}
+      MTMF_PR20A_FIXTURE_DIR: /run/fixtures
+      MTMF_DEV_SECRET_DIR: /run/mtmf-secrets
+      SSL_CERT_FILE: /certs/mtmf-ca.crt
+    volumes:
+      - ${MTMF_DEV_SECRET_DIR:?set acceptance secret directory}:/run/mtmf-secrets
+      - ${MTMF_PR20A_FIXTURE_DIR:?set acceptance fixture directory}:/run/fixtures
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      forwarder:
+        condition: service_healthy
+    restart: "no"
+
+  service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["python", "-m", "mtmf_service"]
+    environment:
+      MTMF_SERVICE_DEPLOYMENT_MODE: development
+      MTMF_SERVICE_HOST: 0.0.0.0
+      MTMF_SERVICE_PORT: "28001"
+      MTMF_SERVICE_ALLOW_CONTAINER_BIND: "1"
+      MTMF_SERVICE_INITIALIZED: "1"
+      MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS: ${MTMF_SERVICE_MAX_IN_FLIGHT_EVALUATIONS:-40}
+      MTMF_RUNTIME_DATABASE_URL: ${MTMF_RUNTIME_DATABASE_URL:?set acceptance runtime URL}
+      MTMF_RUNTIME_STATEMENT_TIMEOUT_MS: ${MTMF_RUNTIME_STATEMENT_TIMEOUT_MS:-10000}
+      MTMF_RUNTIME_LOCK_TIMEOUT_MS: ${MTMF_RUNTIME_LOCK_TIMEOUT_MS:-3000}
+      MTMF_AUTH_ISSUER: ${MTMF_AUTH_ISSUER:?set acceptance issuer}
+      MTMF_AUTH_SERVICE_AUDIENCE: ${MTMF_AUTH_SERVICE_AUDIENCE:?set service audience}
+      MTMF_AUTH_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
+      MTMF_AUTH_ALLOW_SHARED_AUDIENCE: ${MTMF_AUTH_ALLOW_SHARED_AUDIENCE:-1}
+      MTMF_AUTH_JWKS_URI: ${MTMF_AUTH_JWKS_URI:?set JWKS URI}
+      MTMF_AUTH_EXPECTED_MANIFEST: ${MTMF_AUTH_EXPECTED_MANIFEST:-dev/keycloak/expected-realm-security.json}
+      MTMF_AUTH_EXPECTED_CLIENT_POLICY: ${MTMF_AUTH_EXPECTED_CLIENT_POLICY:-dev/keycloak/expected-client-policy.json}
+      MTMF_AUTH_ADMIN_REALM: ${MTMF_AUTH_ADMIN_REALM:-mtmf-dev}
+      MTMF_AUTH_ADMIN_BASE: ${MTMF_AUTH_ADMIN_BASE:?set acceptance admin base}
+      SSL_CERT_FILE: /certs/mtmf-ca.crt
+      MTMF_AUTH_ATTESTATION_CLIENT_ID: ${MTMF_AUTH_ATTESTATION_CLIENT_ID:?set attestation reader client id}
+      MTMF_AUTH_ATTESTATION_CLIENT_SECRET: ${MTMF_AUTH_ATTESTATION_CLIENT_SECRET:?set attestation reader client secret}
+    volumes:
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+      - ./dev/nsswitch.conf:/etc/nsswitch.conf:ro
+    ports:
+      - "127.0.0.1:${MTMF_PR20A_SERVICE_PORT:-29501}:28001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:28001/health/ready',timeout=2).status==200 else 1)\""
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  reference-app:
+    build:
+      context: .
+      dockerfile: examples/mtmf-reference-app/Dockerfile
+    environment:
+      MTMF_REFERENCE_APP_ISSUER: ${MTMF_AUTH_ISSUER:?set acceptance issuer}
+      MTMF_REFERENCE_APP_USER_AUDIENCE: ${MTMF_AUTH_USER_AUDIENCE:?set user audience}
+      MTMF_REFERENCE_APP_MTMF_BASE_URL: https://mtmf.mtmf.test:29501
+      MTMF_REFERENCE_APP_TOKEN_ENDPOINT: ${MTMF_AUTH_ISSUER:?set acceptance issuer}/protocol/openid-connect/token
+      MTMF_REFERENCE_APP_APPLICATION_ID: ${MTMF_PR20A_APPLICATION_ID:?set reference application id}
+      MTMF_REFERENCE_APP_CLIENT_ID: ${MTMF_PR20A_CLIENT_ID:-mtmf-evidence-same-client}
+      MTMF_REFERENCE_APP_CLIENT_SECRET_FILE: /run/secrets/mtmf-evidence-same-client.secret
+      MTMF_REFERENCE_APP_CA_BUNDLE: /certs/mtmf-ca.crt
+      MTMF_REFERENCE_APP_SQLITE_PATH: /data/reference-app.db
+      MTMF_REFERENCE_APP_FIXTURE_MAPPING_PATH: /run/fixtures/reference-app-fixture.json
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - reference-app-data:/data
+      - ${MTMF_DEV_SECRET_DIR:?set acceptance secret directory}:/run/secrets:ro
+      - ${MTMF_PR20A_FIXTURE_DIR:?set acceptance fixture directory}:/run/fixtures:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/dev-ca.crt:/certs/mtmf-ca.crt:ro
+    ports:
+      - "127.0.0.1:${MTMF_PR20A_REFERENCE_APP_PORT:-29511}:8080"
+    depends_on:
+      service-tls-proxy:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health/ready',timeout=2).status==200 else 1)\""
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  mtmf-postgres-data:
+  mtmf-dev-keycloak-data:
+  reference-app-data:
