@@ -1,0 +1,37 @@
+[project]
+name = "mtmf-reference-app"
+version = "0.1.0"
+description = "Minimal, independently deployed MTMF reference Policy Enforcement Point (PR 20A)."
+requires-python = ">=3.14"
+# This example is a real, independently installable consumer of the official
+# MTMF HTTP boundary. It depends only on the public DTO package and the
+# official HTTP client plus ordinary web/JWT libraries. It must never depend
+# on mtmf-core, mtmf-service, a database migration library, or MTMF's private
+# trust logic.
+dependencies = [
+    "fastapi>=0.115",
+    "httpx>=0.28,<0.29",
+    "mtmf-api==0.1.0",
+    "mtmf-client==0.1.0",
+    "pyjwt[crypto]>=2.13,<3",
+    "uvicorn>=0.30",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mtmf_reference_app"]
+
+[tool.uv.sources]
+mtmf-api = { path = "../../packages/mtmf-api" }
+mtmf-client = { path = "../../packages/mtmf-client" }
+
+[tool.pytest.ini_options]
+# The example is an independent distribution. When its own test suite is run
+# explicitly, this configuration is authoritative so the root workspace's
+# package-coverage add-opts do not apply.
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = ["-q"]

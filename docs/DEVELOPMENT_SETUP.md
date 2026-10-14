@@ -479,3 +479,39 @@ uv run python scripts/mtmf-dev-stack.py acceptance-pr19c   # cold -> repeat -> r
 `reset` is destructive but scoped strictly to the verified acceptance project and its two
 volumes; it refuses any mismatched ownership and never touches the default stack. The
 default host ports (25432/28443/28001) are untouched by acceptance.
+
+## PR 20A reference application (`mtmf-reference-app`)
+
+The independently deployable reference consumer lives at
+[`examples/mtmf-reference-app`](../examples/mtmf-reference-app/README.md). It is a real
+Policy Enforcement Point (PEP): it owns a minimal Tenant-scoped Document store, verifies
+the inbound end-user access token at its own boundary, calls MTMF only through the
+official `mtmf-client` HTTP library, and enforces the returned decision before disclosing
+any body. It imports no `mtmf-core`/`mtmf-service` and never opens an MTMF database
+connection.
+
+Its isolated acceptance topology is separate from both the default stack and the PR 19C
+stack, and never mutates them.
+
+- Project: `mtmf-pr20a-acceptance`; Compose model: `compose.pr20a-acceptance.yaml` alone.
+- Issuer: `https://keycloak.mtmf.test:29543/realms/mtmf-dev`; PostgreSQL on
+  `127.0.0.1:29532`; restricted MTMF service on `127.0.0.1:29501`; reference app on
+  `127.0.0.1:29511`.
+- The `mtmf-client` HTTPS requirement is met by an internal development-only TLS
+  terminator; TLS verification is never disabled.
+- Own CA (`/tmp/mtmf-pr20a-acceptance-ca`), secrets
+  (`/tmp/mtmf-pr20a-acceptance-secrets`), and non-secret fixtures
+  (`/tmp/mtmf-pr20a-acceptance-fixtures`).
+
+Commands:
+
+```
+uv run python scripts/pr20a-reference-acceptance.py preflight    # read-only validation
+uv run python scripts/pr20a-reference-acceptance.py up           # CA/secrets + full isolated stack + seed
+uv run python scripts/pr20a-reference-acceptance.py test         # run L01-L05 against it
+uv run python scripts/pr20a-reference-acceptance.py down         # stop containers, keep volumes
+uv run python scripts/pr20a-reference-acceptance.py recreate     # DESTRUCTIVE: remove acceptance volumes + fixtures
+uv run python scripts/pr20a-reference-acceptance.py acceptance   # cold -> repeat -> recreate
+```
+
+See [docs/pr-artifacts/pr-20a/](pr-artifacts/pr-20a/) for the executed acceptance evidence.
