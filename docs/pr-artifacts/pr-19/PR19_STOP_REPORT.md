@@ -56,3 +56,19 @@ Leave the current atomic audit foundations unchanged, keep the uncovered
 mutations as-is, and document them as known gaps. This preserves the
 existing privilege boundary and makes no false completeness claim. PR 19
 took exactly this alternative.
+
+## 2026-10-14 status cross-reference (PR 19A)
+
+The approved scoped follow-up "PR 19A — verified-provenance mutation audit"
+was executed on branch `dev/mutation-audit`. Its Phase 0 reconciliation
+confirmed this STOP: **no existing authenticated-and-authorized category-A
+management mutation entry point exists** in the codebase (the runtime
+service exposes only the batch decision endpoint and health probes; all
+writes are privileged operator/bootstrap or structural repository/test
+paths). In accordance with the PR 19A plan's mandatory early STOP, no
+management API, schema, stored function, grant, or route was manufactured.
+Only an internal immutable `VerifiedMutationProvenance` contract with an
+empty closed registration map and fail-closed validation was added, plus
+deterministic contract tests. **This STOP remains open; no mutation is
+audited by PR 19A.** Evidence and the required reviewer decisions are under
+[docs/pr-artifacts/pr-19a/](../pr-19a/).

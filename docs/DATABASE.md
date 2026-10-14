@@ -133,6 +133,18 @@ unverified actor attribution. Full classification and the proposed
 follow-up are recorded in
 [docs/pr-artifacts/pr-19/PR19_SECURITY_AUDIT_INVENTORY.md](pr-artifacts/pr-19/PR19_SECURITY_AUDIT_INVENTORY.md).
 
+The scoped follow-up PR 19A (2026-10-14) added **no** table, stored
+function, grant, or revocation. Its Phase 0 reconciliation found no
+existing authenticated-and-authorized (category-A) management mutation
+entry point, so per its mandatory early STOP it implemented only an
+internal provenance contract and did not create speculative audit plumbing.
+The runtime allowlist is unchanged (29 mutating functions remain
+runtime-`EXECUTE`-granted, 6 of them with the pre-existing unverified
+membership-removal audit), `0011` remains the Alembic head, and every
+uncovered mutation above remains a `STRUCTURAL/UNVERIFIED`,
+`PRIVILEGED-OPERATOR`, or `BLOCKED` gap. See
+[docs/pr-artifacts/pr-19a/](pr-artifacts/pr-19a/).
+
 ### 6.4 Effective privilege verification
 
 `mtmf_core.persistence.postgres.roles.verify_runtime_privileges` is a read-only, administrator-invoked check (also exposed as `scripts/mtmf-provision-roles.py --verify`) that runs after migration to head, for both fresh and legacy-handoff databases. It fails closed unless:
@@ -285,3 +297,12 @@ PR 7A is complete when privileged migration access and restricted runtime access
 For the six PR 10 STOP gates, consult [PR 10 Architecture Decisions](pr-artifacts/pr-10/PR10_ARCHITECTURE_DECISIONS.md). Its implementation contract requires an explicit LOCAL/FEDERATED Identity origin, non-authorizing Tenant provisioning/suspension, transaction-safe protection of existing mutation paths, and separate installation/verified-actor/database authority. The built-in Permission manifest and legacy-data classification must be reviewed before a data-changing migration; no privileged runtime grants are implied by the design record.
 
 Do not let a coding agent silently resolve these security architecture choices by convenience.
+
+
+### Future management mutation audit — enforceable database boundary
+
+**PR 19A limitation:** the current production service exposes no authenticated, authorized management mutation operation; structural repository writes are not proof of domain authorization. The shared `mtmf_runtime` login cannot identify the human actor. The PR 19A provenance type is application-verified only; it is not database attestation, and a compromised runtime credential may forge provenance arguments.
+
+Before claiming coverage for any future security-state mutation, its implementing PR MUST demonstrate: an independently authenticated acting Identity; exact Action ALLOW and target binding under the existing scope/stewardship rules; immutable transaction-bound provenance; a narrowly scoped versioned stored function that atomically changes state and writes append-only audit; accurate no-op/rollback semantics; and removal of every runtime-callable unaudited legacy bypass for that operation. Verify both positive authorized execution and negative legacy `EXECUTE` denial using the **actual** `mtmf_runtime` login, and update the effective-function-grant allowlist. Do not introduce direct runtime table writes, a generic audit-insert privilege, or use `SET LOCAL`/custom GUCs as authentication evidence. Database `EXECUTE` permission alone does not prove application authorization; merely revoking a legacy function does not prevent forged provenance passed to a replacement function. Privileged operator/bootstrap flows require separate explicit classification and must not be mislabeled as user-verified. Root recovery keeps its independent operator-controlled durable audit channel.
+
+This is a future enforcement requirement, not an assertion that PR 19A implemented database audit coverage. Date partitioning belongs to PR 19B. See [PR 19A STOP report](pr-artifacts/pr-19a/PR19A_STOP_REPORT.md).
