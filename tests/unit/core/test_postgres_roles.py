@@ -342,13 +342,14 @@ def test_expected_removal_signatures_are_exactly_six() -> None:
 def test_expected_runtime_signatures_add_repository_and_assignment_functions() -> None:
     removal = roles.expected_removal_signatures()
     runtime = roles.expected_runtime_signatures()
-    assert len(runtime) == 77
+    assert len(runtime) == 78
     assert removal <= runtime
     # 44 repository functions through v004, 8 role-assignment entry points,
     # 9 TenantManagementGroup/root-registry reads through v009,
-    # 8 Application-registry reads through v010, and 2 authentication-binding
-    # reads through v011.
-    assert len(runtime - removal) == 71
+    # 8 Application-registry reads through v010, 2 authentication-binding
+    # reads through v011, and the 2 PR 19C membership-add entry points through
+    # v012, minus the revoked legacy membership-add repository function.
+    assert len(runtime - removal) == 72
     for name in (
         "mtmf.tenant_add",
         "mtmf.role_add",
@@ -366,8 +367,14 @@ def test_expected_runtime_signatures_add_repository_and_assignment_functions() -
         "mtmf.tenant_application_subscription_find_by_application_and_tenant",
         "mtmf.service_credential_application_find_active",
         "mtmf.external_subject_identity_find_active",
+        "mtmf.identity_group_membership_add_lock",
+        "mtmf.identity_group_membership_add_verified",
     ):
         assert any(signature.startswith(name + "(") for signature in runtime)
+    # The legacy unaudited membership-add grant is revoked by revision 0012.
+    assert not any(
+        signature.startswith("mtmf.identity_group_membership_add(") for signature in runtime
+    )
     # Privileged management-group mutation entry points are never approved.
     assert not any(
         "management_group_membership_add" in signature

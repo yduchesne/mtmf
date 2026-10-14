@@ -446,7 +446,8 @@ def test_sc08_concurrent_seed_install_is_idempotent(
         assert all(value == "ok" for value in outcomes.values()), (cycle, outcomes)
         assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 13
         assert db.execute("SELECT count(*) FROM mtmf.permission_set").fetchone()[0] == 13
-        assert db.execute("SELECT count(*) FROM mtmf.permission").fetchone()[0] == 13
+        # 13 historical Gate M Permissions plus the PR 19C membership-add Permission.
+        assert db.execute("SELECT count(*) FROM mtmf.permission").fetchone()[0] == 14
 
 
 # --- SC09: transfer vs successor deactivation ----------------------------------
@@ -630,8 +631,10 @@ def test_sc11_designation_races_successor_assignment_revocation(
             assert principal_id != str(successor_principal.id.value)
 
 
-def _add_group_steward_concurrent(spi: MtmfSpi, tenant: Tenant) -> tuple[Principal, Identity, str]:
-    from mtmf_core import Group, GroupRoleAssignment, GroupTenantMembership, IdentityGroupMembership
+def _add_group_steward_concurrent(
+    spi: MtmfSpi, db: psycopg.Connection, tenant: Tenant
+) -> tuple[Principal, Identity, str]:
+    from mtmf_core import Group, GroupRoleAssignment, GroupTenantMembership
 
     principal = Principal(DomainId.generate(), "Group Steward")
     identity = Identity(DomainId.generate(), principal.id, "Group I", IdentityOrigin.LOCAL)
@@ -649,13 +652,12 @@ def _add_group_steward_concurrent(spi: MtmfSpi, tenant: Tenant) -> tuple[Princip
         spi.create_group_tenant_membership_repository(uow).add(
             GroupTenantMembership(group.id, tenant.id)
         )
-        spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(identity.id, group.id)
-        )
         spi.create_group_role_assignment_repository(uow).add(
             GroupRoleAssignment(DomainId.generate(), tenant.id, group.id, _TENANT_ADMIN_URN)
         )
         uow.commit()
+    # The legacy runtime IdentityGroup add grant is revoked by revision 0012.
+    helpers.add_identity_group_membership(db, identity.id.value, group.id.value)
     return principal, identity, group.id.value
 
 
@@ -667,7 +669,7 @@ def test_sc12_designation_races_successor_group_assignment_revocation(
             postgres_spi, db
         )
         successor_principal, successor_identity, group_id = _add_group_steward_concurrent(
-            postgres_spi, tenant
+            postgres_spi, db, tenant
         )
         assignment_id = db.execute(
             "SELECT id FROM mtmf.group_role_assignment "
@@ -767,7 +769,7 @@ def test_sc14_designation_races_successor_group_revocation_with_unrelated_role(
             postgres_spi, db
         )
         successor_principal, successor_identity, group_id = _add_group_steward_concurrent(
-            postgres_spi, tenant
+            postgres_spi, db, tenant
         )
         with postgres_spi.create_unit_of_work() as uow:
             postgres_spi.create_group_role_assignment_repository(uow).add(

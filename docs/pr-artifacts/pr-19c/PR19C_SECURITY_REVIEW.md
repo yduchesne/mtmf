@@ -55,6 +55,36 @@ The plan requires a transaction-level advisory lock for the Tenant management la
 
 PostgreSQL performs no cryptographic attestation of the human actor. `mtmf_runtime` is a shared application credential; a compromised runtime credential could forge provenance arguments. PR 19C audit provenance is **application-verified**, not database-attested. This residual risk is unchanged because no code was added, and it must be documented explicitly in the eventual implementation.
 
-## 9. Security disposition
+## 9. Security disposition (Phase 0 STOP)
 
 The secure outcome of this PR is to make **no** change: the operation is denied by absence, and the existing default-deny/fail-closed boundaries are preserved. Introducing an endpoint or a stored function against an unapproved Action would have weakened the Security Model. The reviewer decision required is to approve one exact membership-add Action and its built-in Role grant (or amend scope).
+
+---
+
+# Amendment 01 implementation review (2026-10-14)
+
+The Phase 0 STOP above is superseded by human approval (Amendment 01 §A). This section reviews the implemented security boundary.
+
+## 10. Approved-action boundary
+
+The exact Action `urn:mtmf:iam:actions:system:identity-group-membership:add-object` and its exact Permission are installed by an idempotent, operator-only seed; the sole grant is the Tenant Administrator built-in Role. No wildcard, generic CRUD, or unrelated-Action substitution exists. `VerifiedMutationProvenance` now registers exactly this target-kind/Action pairing.
+
+## 11. Atomic audit
+
+`mtmf.security_mutation_audit` is append-only (UPDATE/DELETE/TRUNCATE guards), carries no runtime table DML, and receives exactly one row iff `identity_group_membership_add_verified` actually inserted a membership row (`INSERT … ON CONFLICT DO NOTHING RETURNING`, then the audit insert in the same statement/transaction). A duplicate is a no-op with zero audit rows; an audit failure aborts the whole statement.
+
+## 12. Privilege boundary
+
+The runtime allowlist is exactly 78 reviewed signatures. The legacy `identity_group_membership_add(uuid,uuid)` grant is revoked from `mtmf_runtime` and `PUBLIC` and demoted to `SECURITY INVOKER`, so it is neither runtime-executable nor part of the elevated surface. The mandatory post-upgrade verifier passes; direct audit-table DML and legacy invocation are denied on the real runtime login (`test_i06`, `test_i07`).
+
+## 13. Concurrency
+
+The ordered row-lock/recheck protocol was proven against real PostgreSQL 18 (E1–E5 blocked). The application takes the locks before resolving applicable Roles and authorizing, so the exact-Action ALLOW cannot be invalidated by a concurrent revocation/replacement/suspension before commit; a conflicting writer blocks or forces a safe abort. `SERIALIZABLE` was not substituted.
+
+## 14. Residual risk (unchanged, explicit)
+
+`mtmf_runtime` is a shared application credential; the database cannot cryptographically attest the human actor. Provenance is **application-verified**, not database-attested. A compromised runtime credential can forge the provenance arguments. This is documented, not mitigated, and no DB-attested claim is made.
+
+## 15. Present security gaps
+
+The HTTP/DTO/service composition is not implemented, so the operation is not externally reachable; the core is callable only by trusted application code today. The live dual-token acceptance is not executed. No other mutator is covered. The Security Model and DATABASE docs are not yet updated to claim coverage, which is the correct fail-closed posture for a PARTIAL implementation.

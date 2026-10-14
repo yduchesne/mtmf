@@ -29,9 +29,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import datetime
 from enum import Enum
 from types import TracebackType
 from typing import ClassVar, Self, cast
+from uuid import UUID
 
 from mtmf_core.domain.action import Action
 from mtmf_core.domain.application import (
@@ -593,6 +595,43 @@ class _InMemoryIdentityGroupMembershipRepository(
     def find_by_group(self, group_id: DomainId) -> tuple[IdentityGroupMembership, ...]:
         """Return every Identity membership fact of one Group."""
         return self._find(lambda membership: membership.group_id == group_id)
+
+    def lock_verified_add(
+        self,
+        *,
+        tenant_id: DomainId,
+        actor_identity_id: DomainId,
+        subject_identity_id: DomainId,
+        group_id: DomainId,
+    ) -> None:
+        """No-op lock scope for the single-process in-memory provider."""
+        self._uow._require_active(f"{type(self).__name__}.lock_verified_add")
+
+    def add_verified(
+        self,
+        *,
+        identity_id: DomainId,
+        group_id: DomainId,
+        operation_id: UUID,
+        actor_identity_id: DomainId,
+        actor_principal_id: DomainId,
+        tenant_id: DomainId,
+        application_id: DomainId,
+        action_urn: ActionUrn,
+        target_kind: str,
+        target_id: DomainId,
+        authorized_at: datetime,
+    ) -> bool:
+        """Stage the membership iff absent; return whether it was newly inserted."""
+        del operation_id, actor_identity_id, actor_principal_id, application_id
+        del action_urn, target_kind, target_id, authorized_at
+        self._uow._require_active(f"{type(self).__name__}.add_verified")
+        membership = IdentityGroupMembership(identity_id, group_id)
+        staged = self._uow._staged_for(self._collection)
+        if membership in staged or self._uow._committed_state.has(self._collection, membership):
+            return False
+        staged[membership] = membership
+        return True
 
 
 class _InMemoryIdentityOrgMembershipRepository(

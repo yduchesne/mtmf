@@ -1,11 +1,9 @@
-"""Deterministic unit tests for the PR 19A provenance contract.
+"""Deterministic unit tests for the PR 19A/19C provenance contract.
 
 These tests exercise the immutable :class:`VerifiedMutationProvenance`
 contract and its fail-closed registration guard. They do **not** prove the
-end-to-end trusted-application mutation path: PR 19A Phase 0 found no
-category-A management mutation entry point, so the database/atomicity cases
-of the PR 19A matrix are recorded as BLOCKED in
-``docs/pr-artifacts/pr-19a/`` rather than simulated here.
+end-to-end trusted-application mutation path; the database/atomicity cases
+are exercised by the PR 19C PostgreSQL integration and HTTP suites.
 """
 
 from __future__ import annotations
@@ -190,10 +188,28 @@ def test_pa_u04_module_exposes_no_trusted_factory_or_flag() -> None:
 # --- PA-U13: closed target-kind/Action registration guard -------------------
 
 
-def test_pa_u13_registry_is_empty_and_read_only_in_pr19a() -> None:
-    assert dict(registered_mutations()) == {}
+def test_pa_u13_registry_registers_exactly_the_approved_pairing() -> None:
+    assert dict(registered_mutations()) == {
+        "identity_group_membership": frozenset(
+            {"urn:mtmf:iam:actions:system:identity-group-membership:add-object"}
+        )
+    }
     with pytest.raises(TypeError):
         registered_mutations()["tenant"] = frozenset()  # type: ignore[index]
+
+
+def test_pa_u13_approved_membership_pairing_is_accepted() -> None:
+    provenance = _valid_provenance(
+        target_kind="identity_group_membership",
+        action_urn=ActionUrn("urn:mtmf:iam:actions:system:identity-group-membership:add-object"),
+    )
+    require_registered_mutation(provenance)
+
+
+def test_pa_u13_registered_kind_with_unapproved_action_fails_closed() -> None:
+    provenance = _valid_provenance(target_kind="identity_group_membership")
+    with pytest.raises(UnregisteredMutationError, match="is not approved for target kind"):
+        require_registered_mutation(provenance)
 
 
 def test_pa_u13_unregistered_target_kind_fails_closed() -> None:

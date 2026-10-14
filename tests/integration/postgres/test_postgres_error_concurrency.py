@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import threading
 
+import helpers
 import psycopg
 import pytest
 
 from mtmf_core import (
     DomainId,
+    GroupOrgMembership,
     GroupTenantMembership,
     Identity,
-    IdentityGroupMembership,
     IdentityOrigin,
     IdentityTenantMembership,
     Principal,
@@ -105,17 +106,21 @@ def test_v6_unknown_save_is_not_a_transaction_failure(postgres_spi: MtmfSpi) -> 
 
 def test_v6_prerequisite_insert_and_removal_serialize_through_locks(
     postgres_spi: MtmfSpi,
+    db: psycopg.Connection,
 ) -> None:
-    # A dependent IdentityGroupMembership insert is rejected when the
-    # IdentityTenantMembership prerequisite is absent, and adding it after
-    # the prerequisite exists succeeds; the removal functions retain their
-    # row-lock serialization (covered exhaustively by the PR 6B suites).
+    # A dependent membership insert is rejected when its prerequisite is
+    # absent, and adding it after the prerequisite exists succeeds; the
+    # removal functions retain their row-lock serialization (covered
+    # exhaustively by the PR 6B suites). The legacy IdentityGroup runtime add
+    # is revoked by revision 0012, so the deterministic failure is proven
+    # through a still-runtime-granted relationship and the identity-group row
+    # is seeded through the administrator connection.
     from provider_helpers import seed_entity_graph
 
     graph = seed_entity_graph(postgres_spi)
     with postgres_spi.create_unit_of_work() as uow, pytest.raises(PersistenceReferenceError):
-        postgres_spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(graph.identity.id, graph.group.id)
+        postgres_spi.create_group_org_membership_repository(uow).add(
+            GroupOrgMembership(graph.group.id, graph.organization.id)
         )
     with postgres_spi.create_unit_of_work() as uow:
         postgres_spi.create_principal_tenant_membership_repository(uow).add(
@@ -127,10 +132,8 @@ def test_v6_prerequisite_insert_and_removal_serialize_through_locks(
         postgres_spi.create_group_tenant_membership_repository(uow).add(
             GroupTenantMembership(graph.group.id, graph.tenant.id)
         )
-        postgres_spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(graph.identity.id, graph.group.id)
-        )
         uow.commit()
+    helpers.add_identity_group_membership(db, graph.identity.id.value, graph.group.id.value)
     with postgres_spi.create_unit_of_work() as uow:
         assert (
             postgres_spi.create_identity_group_membership_repository(uow).get(

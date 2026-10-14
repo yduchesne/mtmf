@@ -33,7 +33,7 @@ from mtmf_core.persistence.errors import (
 from mtmf_core.persistence.spi import MtmfSpi
 
 
-def _add_all_memberships(spi: MtmfSpi) -> DomainGraph:
+def _add_all_memberships(spi: MtmfSpi, db: psycopg.Connection) -> DomainGraph:
     graph = seed_entity_graph(spi)
     with spi.create_unit_of_work() as uow:
         spi.create_principal_tenant_membership_repository(uow).add(
@@ -45,9 +45,6 @@ def _add_all_memberships(spi: MtmfSpi) -> DomainGraph:
         spi.create_group_tenant_membership_repository(uow).add(
             GroupTenantMembership(graph.group.id, graph.tenant.id)
         )
-        spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(graph.identity.id, graph.group.id)
-        )
         spi.create_identity_org_membership_repository(uow).add(
             IdentityOrgMembership(graph.identity.id, graph.organization.id)
         )
@@ -55,31 +52,16 @@ def _add_all_memberships(spi: MtmfSpi) -> DomainGraph:
             GroupOrgMembership(graph.group.id, graph.organization.id)
         )
         uow.commit()
+    # The legacy runtime IdentityGroup add grant is revoked by revision 0012;
+    # seed this one relationship through the administrator connection.
+    helpers.add_identity_group_membership(db, graph.identity.id.value, graph.group.id.value)
     return graph
 
 
-def test_v4_full_graph_and_both_lookup_directions(postgres_spi: MtmfSpi) -> None:
-    graph = seed_entity_graph(postgres_spi)
-    with postgres_spi.create_unit_of_work() as uow:
-        postgres_spi.create_principal_tenant_membership_repository(uow).add(
-            PrincipalTenantMembership(graph.principal.id, graph.tenant.id)
-        )
-        postgres_spi.create_identity_tenant_membership_repository(uow).add(
-            IdentityTenantMembership(graph.identity.id, graph.tenant.id)
-        )
-        postgres_spi.create_group_tenant_membership_repository(uow).add(
-            GroupTenantMembership(graph.group.id, graph.tenant.id)
-        )
-        postgres_spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(graph.identity.id, graph.group.id)
-        )
-        postgres_spi.create_identity_org_membership_repository(uow).add(
-            IdentityOrgMembership(graph.identity.id, graph.organization.id)
-        )
-        postgres_spi.create_group_org_membership_repository(uow).add(
-            GroupOrgMembership(graph.group.id, graph.organization.id)
-        )
-        uow.commit()
+def test_v4_full_graph_and_both_lookup_directions(
+    postgres_spi: MtmfSpi, db: psycopg.Connection
+) -> None:
+    graph = _add_all_memberships(postgres_spi, db)
 
     with postgres_spi.create_unit_of_work() as uow:
         assert postgres_spi.create_principal_tenant_membership_repository(uow).get(
@@ -134,10 +116,12 @@ def test_v4_missing_prerequisite_fails_deterministically(postgres_spi: MtmfSpi) 
         postgres_spi.create_unit_of_work() as uow,
         pytest.raises(PersistenceReferenceError),
     ):
-        # IdentityGroupMembership needs the IdentityTenantMembership and
-        # GroupTenantMembership prerequisites first.
-        postgres_spi.create_identity_group_membership_repository(uow).add(
-            IdentityGroupMembership(graph.identity.id, graph.group.id)
+        # GroupOrgMembership needs the GroupTenantMembership prerequisite
+        # first. (The legacy IdentityGroupMembership runtime add is revoked by
+        # revision 0012; the equivalent deterministic missing-prerequisite
+        # behavior is proven here through a still-runtime-granted relationship.)
+        postgres_spi.create_group_org_membership_repository(uow).add(
+            GroupOrgMembership(graph.group.id, graph.organization.id)
         )
 
 
@@ -182,7 +166,7 @@ def test_v4_group_is_exclusive_to_one_tenant(postgres_spi: MtmfSpi) -> None:
 def test_v4_existing_removal_functions_still_cascade_and_audit(
     postgres_spi: MtmfSpi, runtime_connection: psycopg.Connection, db: psycopg.Connection
 ) -> None:
-    graph = _add_all_memberships(postgres_spi)
+    graph = _add_all_memberships(postgres_spi, db)
     # Remove a leaf relationship through the unchanged sanctioned function.
     row = runtime_connection.execute(
         "SELECT mtmf.remove_identity_group_membership(%s, %s, %s)",

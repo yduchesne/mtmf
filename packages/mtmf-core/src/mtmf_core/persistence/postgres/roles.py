@@ -140,7 +140,6 @@ _REPOSITORY_FUNCTION_ARGUMENTS = {
     "group_tenant_membership_get": ("group_id_value uuid, tenant_id_value uuid"),
     "group_tenant_membership_find_by_group": ("group_id_value uuid"),
     "group_tenant_membership_find_by_tenant": ("tenant_id_value uuid"),
-    "identity_group_membership_add": ("identity_id_value uuid, group_id_value uuid"),
     "identity_group_membership_get": ("identity_id_value uuid, group_id_value uuid"),
     "identity_group_membership_find_by_identity": ("identity_id_value uuid"),
     "identity_group_membership_find_by_group": ("group_id_value uuid"),
@@ -222,6 +221,24 @@ _AUTHENTICATION_BINDING_FUNCTION_ARGUMENTS = {
     "external_subject_identity_find_active": ("issuer_value text, subject_value text"),
 }
 
+#: Exact approved runtime EXECUTE signatures introduced by revision 0012
+#: (PR 19C): the bounded row-lock/recheck helper and the audited membership-add
+#: entry point. The legacy ``identity_group_membership_add(uuid, uuid)`` is
+#: deliberately absent and is revoked in the same revision so no unaudited
+#: runtime bypass remains.
+_SECURITY_MUTATION_FUNCTION_ARGUMENTS = {
+    "identity_group_membership_add_lock": (
+        "tenant_id_value uuid, actor_identity_id_value uuid, "
+        "subject_identity_id_value uuid, group_id_value uuid"
+    ),
+    "identity_group_membership_add_verified": (
+        "identity_id_value uuid, group_id_value uuid, operation_id_value uuid, "
+        "actor_identity_id_value uuid, actor_principal_id_value uuid, "
+        "tenant_id_value uuid, application_id_value uuid, action_urn_value text, "
+        "target_kind_value text, target_id_value uuid, authorized_at_value timestamp with time zone"
+    ),
+}
+
 
 class RoleProvisioningError(RuntimeError):
     """The MTMF role topology or effective privileges are unsafe."""
@@ -243,18 +260,20 @@ def expected_removal_signatures() -> frozenset[str]:
 
 
 def expected_runtime_signatures() -> frozenset[str]:
-    """Return the reviewed runtime EXECUTE allowlist through revision 0010.
+    """Return the reviewed runtime EXECUTE allowlist through revision 0012.
 
     This is the six membership-removal entry points plus the 44 repository
     read/write functions introduced through v004, plus the eight typed
     Role-assignment entry points introduced by v005, plus the nine
     TenantManagementGroup/root-registry reads introduced by v009, plus the
     eight Application-registry reads introduced by v010, plus the two
-    authentication-binding reads introduced by v011. The mandatory
-    post-upgrade verifier compares the runtime's effective EXECUTE set
-    against exactly this manifest, so a function is only approved when both
-    the migration grants and this manifest are updated in the same
-    migration.
+    authentication-binding reads introduced by v011, plus the two PR 19C
+    membership-add entry points introduced by v012. The legacy
+    ``identity_group_membership_add(uuid, uuid)`` grant is intentionally
+    omitted and revoked by revision 0012. The mandatory post-upgrade verifier
+    compares the runtime's effective EXECUTE set against exactly this
+    manifest, so a function is only approved when both the migration grants
+    and this manifest are updated in the same migration.
     """
     arguments = {
         **_REMOVAL_FUNCTION_ARGUMENTS,
@@ -263,6 +282,7 @@ def expected_runtime_signatures() -> frozenset[str]:
         **_TENANT_MANAGEMENT_FUNCTION_ARGUMENTS,
         **_APPLICATION_REGISTRY_FUNCTION_ARGUMENTS,
         **_AUTHENTICATION_BINDING_FUNCTION_ARGUMENTS,
+        **_SECURITY_MUTATION_FUNCTION_ARGUMENTS,
     }
     return frozenset(
         f"{SCHEMA}.{name}({arguments_text})" for name, arguments_text in arguments.items()
