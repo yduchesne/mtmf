@@ -54,10 +54,28 @@ invented policy decision.
 | `GET` | `/health/live` | liveness |
 | `GET` | `/health/ready` | readiness (config + SQLite schema usable) |
 | `GET` | `/v1/documents/{document_id}` | authenticated, Tenant-scoped document read |
+| `POST` | `/v1/documents/batch-read` | bounded multi-document read with all-or-nothing disclosure |
 
-Success body: `{"id": "<canonical UUID>", "title": "...", "body": "..."}`.
+Single-document success body:
+`{"id": "<canonical UUID>", "title": "...", "body": "..."}`.
 
-There is no list/create/update/delete/admin/generic-authorize endpoint.
+### Batch read semantics
+
+Request: `{"document_ids": ["<canonical UUID>", ...]}` with **1–16 unique**
+canonical UUIDs and no other fields. Duplicates, malformed/non-canonical
+UUIDs, excess/missing entries, unknown fields, and a malformed body are
+rejected with `400` **before any MTMF call**. The route accepts no Action,
+Tenant, Application, or target parameter from the caller.
+
+Success body: `{"documents": [{"id": ..., "title": ..., "body": ...}, ...]}`
+in request order. The app resolves **every** row against its Tenant-scoped
+store first; any absent or cross-Tenant row is a generic `404` with no
+evaluation and no body. It then sends **one** MTMF batch (one occurrence per
+loaded row, `request_id="document-read-<zero-based-index>"`), calls `require`
+for every occurrence in order, and only then serializes content. A single
+non-ALLOW occurrence is `403` with **zero** document bodies (atomic disclosure;
+no partial-allow). There is no list/create/update/delete/admin/generic-authorize
+endpoint and no per-document fallback.
 
 ## Configuration
 

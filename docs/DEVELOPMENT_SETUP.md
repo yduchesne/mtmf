@@ -515,3 +515,27 @@ uv run python scripts/pr20a-reference-acceptance.py acceptance   # cold -> repea
 ```
 
 See [docs/pr-artifacts/pr-20a/](pr-artifacts/pr-20a/) for the executed acceptance evidence.
+
+### PR 20B deployed conformance and resilience
+
+PR 20B reuses the same isolated `mtmf-pr20a-acceptance` topology and adds a
+bounded multi-document batch route plus black-box lifecycle, subscription,
+spoofing, cross-Tenant, revocation, and concurrency conformance. It does not
+change any production MTMF package, migration, or protected policy.
+
+```
+uv run python scripts/pr20b-reference-acceptance.py preflight    # delegate to PR 20A preflight
+uv run python scripts/pr20b-reference-acceptance.py up           # PR 20A stack + PR 20B fixture seed
+uv run python scripts/pr20b-reference-acceptance.py test         # PR 20A L01-L05 + PR 20B conformance
+uv run python scripts/pr20b-reference-acceptance.py down         # stop the acceptance project
+uv run python scripts/pr20b-reference-acceptance.py recreate     # DESTRUCTIVE: acceptance-only reset
+uv run python scripts/pr20b-reference-acceptance.py acceptance   # cold -> repeat -> recreate
+```
+
+Lifecycle/subscription/Role transitions use the privileged, acceptance-only
+one-shot helper `scripts/pr20b_fixture_transitions.py`, which calls only
+sanctioned stored functions as the authenticated `mtmf_migrator` identity and
+verifies the connected database before mutating. `scripts/pr20b-fault-proxy.py`
+is an acceptance-only deterministic fault fronting component; see
+[docs/pr-artifacts/pr-20b/](pr-artifacts/pr-20b/) for the executed evidence and
+the explicit P0 STOP on mixed-batch disclosure.

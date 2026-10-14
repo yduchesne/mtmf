@@ -58,9 +58,12 @@ from mtmf_reference_app.auth import (
     UserTokenVerifier,
 )
 from mtmf_reference_app.config import ReferenceAppConfig
+from mtmf_reference_app.models import Document
 from mtmf_reference_app.store import DocumentStore, DocumentStoreError
 
 __all__ = [
+    "BATCH_READ_MAX_IDS",
+    "BATCH_READ_MIN_IDS",
     "DOCUMENT_READ_ACTION",
     "READ_REQUEST_ID",
     "AuthorizationClient",
@@ -76,8 +79,15 @@ __all__ = [
 #: one-shot initializer; it is never a wildcard or an unrelated management Action.
 DOCUMENT_READ_ACTION = "urn:mtmf:iam:actions:system:document:read-object"
 
-#: Stable correlation discriminator for the one occurrence in every batch.
+#: Stable correlation discriminator for the one occurrence in every batch. The
+#: batch route appends the zero-based occurrence index (``document-read-0``).
 READ_REQUEST_ID = "document-read"
+
+#: Bounded multi-document batch. The fixed route is deliberately small so a
+#: single verified actor cannot amplify one request into an unbounded number of
+#: MTMF evaluations.
+BATCH_READ_MIN_IDS = 1
+BATCH_READ_MAX_IDS = 16
 
 #: Bounded concurrent MTMF evaluations. The worker never unboundedly multiplies
 #: threads under load.
@@ -299,12 +309,7 @@ class DocumentReader:
             resource_type="document",
             resource_id=document.document_id,
         )
-        context = TrustedActorContext(
-            actor_key=f"{verified.issuer}|{verified.subject}",
-            session_key=self._session_keys.derive(token),
-            tenant_id=tenant_id,
-            application_id=self._config.application_id,
-        )
+        context = self._trusted_context(verified, token, tenant_id)
         batch = AuthorizationBatchRequest(
             tenant_id=tenant_id,
             organization_id=None,
@@ -357,6 +362,115 @@ class DocumentReader:
             body=document.body,
         )
 
+    async def read_batch(
+        self, *, token: str, document_ids: tuple[str, ...]
+    ) -> list[DocumentResponse]:
+        """Return an ordered document batch with all-or-nothing disclosure.
+
+        The trusted context is built exactly once from the independently
+        verified end-user token and the server-owned subject mapping. Every
+        requested document is resolved against the app's own Tenant-scoped
+        store **before** any authorization is requested; if any row is absent
+        or belongs to another Tenant the whole request is a generic 404 with no
+        MTMF evaluation. Exactly one ordered batch with one occurrence per
+        loaded row is evaluated through the official client, then ``require`` is
+        called for every occurrence in input order before any body is
+        serialized. A single non-ALLOW occurrence denies the whole request and
+        discloses zero bodies.
+
+        :raises _UnauthenticatedError: on any inbound authentication failure.
+        :raises _AccessDeniedError: on an unknown subject or an MTMF policy DENY.
+        :raises _NotFoundError: for any malformed/absent/cross-Tenant document.
+        :raises _DependencyFailureError: on a local or remote dependency failure.
+        """
+        if not BATCH_READ_MIN_IDS <= len(document_ids) <= BATCH_READ_MAX_IDS:
+            raise ValueError("document_ids is outside the bounded batch size")
+        verified = await self._verify(token)
+        binding = self._config.fixture_mapping.binding_for(verified.subject)
+        if binding is None:
+            logger.info("event=subject_not_allowlisted")
+            raise _AccessDeniedError()
+        tenant_id = binding.tenant_id
+        documents: list[Document] = []
+        for document_id in document_ids:
+            document = await self._evaluate_worker.run(
+                self._store.load, str(tenant_id), document_id
+            )
+            if document is None:
+                logger.info("event=document_not_found")
+                raise _NotFoundError()
+            documents.append(document)
+        occurrences = tuple(
+            ActionRequest(
+                request_id=f"{READ_REQUEST_ID}-{index}",
+                action=DOCUMENT_READ_ACTION,
+                resource=ResourceTarget(
+                    kind=ResourceKind.APPLICATION_OWNED,
+                    resource_type="document",
+                    resource_id=document.document_id,
+                ),
+            )
+            for index, document in enumerate(documents)
+        )
+        context = self._trusted_context(verified, token, tenant_id)
+        batch = AuthorizationBatchRequest(
+            tenant_id=tenant_id,
+            organization_id=None,
+            actions=occurrences,
+        )
+        try:
+            snapshot = await self._evaluate_worker.run(
+                self._client.evaluate,
+                batch,
+                user_access_token=token,
+                context=context,
+            )
+            for occurrence in occurrences:
+                self._client.require(
+                    snapshot,
+                    context=context,
+                    action=occurrence.action,
+                    resource=occurrence.resource,
+                    request_id=occurrence.request_id,
+                )
+        except AuthorizationDenied as exc:
+            logger.info("event=access_denied documents=%d", len(documents))
+            raise _AccessDeniedError() from exc
+        except ActorContextError as exc:
+            raise _UnauthenticatedError() from exc
+        except RemoteAuthenticationError as exc:
+            raise _UnauthenticatedError() from exc
+        except RemoteEligibilityError as exc:
+            logger.info("event=access_denied documents=%d", len(documents))
+            raise _AccessDeniedError() from exc
+        except (
+            ClientAuthenticationError,
+            DependencyUnavailableError,
+            RemoteProtocolError,
+            ClientClosedError,
+        ) as exc:
+            raise _DependencyFailureError() from exc
+        except DocumentStoreError as exc:
+            raise _DependencyFailureError() from exc
+        logger.info("event=documents_allowed documents=%d", len(documents))
+        return [
+            DocumentResponse(
+                document_id=document.document_id,
+                title=document.title,
+                body=document.body,
+            )
+            for document in documents
+        ]
+
+    def _trusted_context(self, verified: Any, token: str, tenant_id: UUID) -> TrustedActorContext:
+        """Build the request-local trusted actor context for a verified user."""
+        return TrustedActorContext(
+            actor_key=f"{verified.issuer}|{verified.subject}",
+            session_key=self._session_keys.derive(token),
+            tenant_id=tenant_id,
+            application_id=self._config.application_id,
+        )
+
     async def _verify(self, token: str) -> Any:
         try:
             return await self._verify_worker.run(self._token_verifier.verify, token)
@@ -378,6 +492,42 @@ def _canonical_document_id(value: str) -> str | None:
         return str(UUID(value))
     except ValueError, AttributeError, TypeError:
         return None
+
+
+async def _parse_batch_body(request: Request) -> tuple[str, ...] | None:
+    """Parse and strictly validate a batch-read body or return ``None``.
+
+    The accepted shape is exactly ``{"document_ids": [<canonical UUID>, ...]}``:
+    a JSON object with no additional keys, a list of 1..``BATCH_READ_MAX_IDS``
+    unique canonical UUID strings in canonical lowercase-hyphenated form. Any
+    duplicate, malformed, out-of-range, or unknown-field input returns ``None``
+    and must be rejected with 400 *before* any MTMF evaluation. The route, the
+    Tenant, and the Application are never accepted from caller input.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        return None
+    if not isinstance(payload, dict) or set(payload) != {"document_ids"}:
+        return None
+    raw_ids = payload["document_ids"]
+    if not isinstance(raw_ids, list) or not (
+        BATCH_READ_MIN_IDS <= len(raw_ids) <= BATCH_READ_MAX_IDS
+    ):
+        return None
+    canonical_ids: list[str] = []
+    seen: set[str] = set()
+    for value in raw_ids:
+        if not isinstance(value, str):
+            return None
+        canonical = _canonical_document_id(value)
+        if canonical is None or canonical != value:
+            return None
+        if canonical in seen:
+            return None
+        seen.add(canonical)
+        canonical_ids.append(canonical)
+    return tuple(canonical_ids)
 
 
 def _extract_bearer(header: str | None) -> str | None:
@@ -469,6 +619,32 @@ def create_app(dependencies: CreateDependencies) -> FastAPI:
             return _error_response(503, _DependencyFailureError.message)
         return JSONResponse(
             content={"id": document.document_id, "title": document.title, "body": document.body},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/v1/documents/batch-read")
+    async def batch_read_documents(request: Request) -> JSONResponse:
+        token = _extract_bearer(request.headers.get("authorization"))
+        if token is None:
+            return _error_response(401, _UnauthenticatedError.message)
+        document_ids = await _parse_batch_body(request)
+        if document_ids is None:
+            return _error_response(400, "invalid batch request")
+        try:
+            documents = await reader.read_batch(token=token, document_ids=document_ids)
+        except _ReadError as exc:
+            return _error_response(exc.status_code, exc.message)
+        except Exception:
+            # Any unexpected fault is a fail-closed dependency failure; it never
+            # becomes an ALLOW and never discloses document content.
+            return _error_response(503, _DependencyFailureError.message)
+        return JSONResponse(
+            content={
+                "documents": [
+                    {"id": document.document_id, "title": document.title, "body": document.body}
+                    for document in documents
+                ]
+            },
             headers={"Cache-Control": "no-store"},
         )
 
