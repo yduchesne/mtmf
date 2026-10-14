@@ -40,18 +40,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PROJECT = os.environ.get("MTMF_DEV_STACK_PROJECT", "mtmf")
-COMPOSE_FILES = (
-    "-f",
-    "compose.yaml",
-    "-f",
-    "compose.dev.yaml",
-    *(
-        ("-f", os.environ["MTMF_DEV_STACK_EXTRA_COMPOSE"])
-        if os.environ.get("MTMF_DEV_STACK_EXTRA_COMPOSE", "").strip()
-        else ()
-    ),
-)
+PROJECT = "mtmf"
+COMPOSE_FILES = ("-f", "compose.yaml", "-f", "compose.dev.yaml")
 SERVICE_READY_URL = "http://127.0.0.1:28001/health/ready"
 SERVICE_LIVE_URL = "http://127.0.0.1:28001/health/live"
 
@@ -394,36 +384,6 @@ def _postgres_inspect() -> None:
         raise OrchestrationError("the MTMF PostgreSQL container is not healthy")
 
 
-def _setup_realm() -> None:
-    """Provision the canonical realm/clients/users before the initializer.
-
-    A fresh disposable fixture volume has only the Keycloak master realm, so
-    the canonical ``mtmf-dev`` realm and its evidence clients/users must be
-    reconciled before the initializer resolves the development user. Runs only
-    when explicitly requested (``MTMF_DEV_REALM_SETUP=1``); the default
-    persistent development stack keeps its existing realm.
-    """
-    _run(
-        [
-            sys.executable,
-            str(REPO_ROOT / "dev" / "keycloak" / "setup-realm.py"),
-            "--base",
-            _required_env("MTMF_AUTH_ADMIN_BASE"),
-            "--realm",
-            _required_env("MTMF_AUTH_ADMIN_REALM"),
-            "--admin-username",
-            _required_env("MTMF_AUTH_ADMIN_USERNAME"),
-            "--admin-password",
-            _required_env("MTMF_AUTH_ADMIN_PASSWORD"),
-            "--user-password",
-            _required_env("MTMF_PR14_KC_USER_PASSWORD"),
-            "--ca-file",
-            str(_ca_cert_file()),
-            "--allow-nonlocal",
-        ]
-    )
-
-
 def up() -> int:
     """Bring up the development stack in the required order."""
     _require_development()
@@ -462,9 +422,6 @@ def up() -> int:
     # forwarder IP is written to the Compose environment or the launcher state.
     _probe_until_stable(_probe_host, issuer)
     _probe_until_stable(_probe_container, issuer)
-
-    if os.environ.get("MTMF_DEV_REALM_SETUP", "").strip() == "1":
-        _setup_realm()
 
     # Privileged one-shot: migrations + postflight + fixture reconciliation.
     _run(_compose("run", "--rm", "--no-deps", "initializer"))

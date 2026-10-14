@@ -68,37 +68,36 @@ class ProbeReport:
         self.checks.append(message)
 
 
-def _parse_issuer(issuer: str) -> tuple[str, int]:
+def _parse_issuer(issuer: str, expected: str = CANONICAL_ISSUER) -> tuple[str, int]:
     """Return the canonical ``(host, port)`` for ``issuer`` or fail closed.
 
-    The supplied issuer must be the literal canonical issuer; any other
+    The supplied issuer must be the literal expected issuer; any other
     host/port/scheme/path (including values containing the canonical hostname
     as a substring) is rejected. The untrusted value is never echoed.
     """
-    if issuer != CANONICAL_ISSUER:
+    if issuer != expected:
         raise ProbeError(
-            "the issuer must exactly equal the canonical development issuer "
-            f"{CANONICAL_ISSUER} (rejected the supplied value)"
+            "the issuer must exactly equal the expected development issuer "
+            f"{expected} (rejected the supplied value)"
         )
     parsed = urllib.parse.urlparse(issuer)
-    if parsed.scheme != "https" or parsed.hostname != "keycloak.mtmf.test":
-        raise ProbeError("the canonical issuer must use https://keycloak.mtmf.test")
-    if parsed.port != 28443:
-        raise ProbeError("the canonical issuer must use port 28443")
+    expected_parsed = urllib.parse.urlparse(expected)
+    if parsed.scheme != "https" or parsed.hostname != expected_parsed.hostname:
+        raise ProbeError(f"the issuer must use https://{expected_parsed.hostname}")
+    if parsed.port != expected_parsed.port:
+        raise ProbeError(f"the issuer must use port {expected_parsed.port}")
     return parsed.hostname, parsed.port
 
 
-def _require_expected_jwks_uri(jwks_uri: object) -> str:
-    """Return the JWKS URI only when it is the exact canonical endpoint.
+def _require_expected_jwks_uri(jwks_uri: object, expected_jwks_uri: str = EXPECTED_JWKS_URI) -> str:
+    """Return the JWKS URI only when it is the exact expected endpoint.
 
     This is a pure, network-free check applied to the untrusted discovery
     document before any JWKS request. Prefix/suffix/hostname-only matching,
     normalization, percent-decoding, and relative URLs are all rejected.
     """
-    if not isinstance(jwks_uri, str) or jwks_uri != EXPECTED_JWKS_URI:
-        raise ProbeError(
-            "discovery jwks_uri does not equal the expected canonical Keycloak endpoint"
-        )
+    if not isinstance(jwks_uri, str) or jwks_uri != expected_jwks_uri:
+        raise ProbeError("discovery jwks_uri does not equal the expected Keycloak endpoint")
     return jwks_uri
 
 
@@ -162,10 +161,18 @@ def _fetch(url: str, context: ssl.SSLContext, *, timeout: float, what: str) -> b
         raise ProbeError(f"{what} could not be read: {exc}") from exc
 
 
-def check_issuer(issuer: str, ca_file: str, *, namespace: str, timeout: float) -> ProbeReport:
-    """Run the full canonical-issuer preflight and return collected diagnostics."""
-    host, port = _parse_issuer(issuer)
-    anchor = CANONICAL_ISSUER
+def check_issuer(
+    issuer: str,
+    ca_file: str,
+    *,
+    namespace: str,
+    timeout: float,
+    expected_issuer: str = CANONICAL_ISSUER,
+) -> ProbeReport:
+    """Run the full issuer preflight and return collected diagnostics."""
+    host, port = _parse_issuer(issuer, expected_issuer)
+    anchor = expected_issuer
+    expected_jwks_uri = anchor + EXPECTED_JWKS_SUFFIX
     report = ProbeReport(namespace=namespace, host=host, port=port)
     report.addresses = resolve_host(host)
     report.record(f"dns {host} -> {', '.join(report.addresses)}")
@@ -183,7 +190,7 @@ def check_issuer(issuer: str, ca_file: str, *, namespace: str, timeout: float) -
             "trust anchor; refusing to continue"
         )
     report.record(f"discovery issuer == {anchor}")
-    jwks_uri = _require_expected_jwks_uri(discovery.get("jwks_uri"))
+    jwks_uri = _require_expected_jwks_uri(discovery.get("jwks_uri"), expected_jwks_uri)
     report.record(f"discovery jwks_uri == {jwks_uri}")
     jwks = json.loads(_fetch(jwks_uri, context, timeout=timeout, what="jwks"))
     if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list) or not jwks["keys"]:
@@ -198,12 +205,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--issuer", required=True)
     parser.add_argument("--ca-file", required=True)
     parser.add_argument("--namespace", default="host")
+    parser.add_argument(
+        "--expected-issuer",
+        default=CANONICAL_ISSUER,
+        help="exact expected trust anchor (defaults to the canonical issuer)",
+    )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--json", action="store_true", help="emit a machine-readable report")
     args = parser.parse_args(argv)
     try:
         report = check_issuer(
-            args.issuer, args.ca_file, namespace=args.namespace, timeout=args.timeout
+            args.issuer,
+            args.ca_file,
+            namespace=args.namespace,
+            timeout=args.timeout,
+            expected_issuer=args.expected_issuer,
         )
     except ProbeError as exc:
         print(f"preflight[{args.namespace}] failed: {exc}", file=sys.stderr)

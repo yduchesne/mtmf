@@ -7,9 +7,10 @@ loopback and driven with genuine issuer-signed service and acting-user
 access tokens. Without the flag the module is skipped.
 
 Environment (same shape as the PR 14/17 live suites):
-``MTMF_PR14_KC_BASE``, ``MTMF_PR14_KC_ADMIN_USERNAME``,
-``MTMF_PR14_KC_ADMIN_PASSWORD``, ``MTMF_PR14_KC_USER_PASSWORD``,
-``MTMF_PR14_KC_CA_FILE``, plus the ``MTMF_RUNTIME_*`` configuration.
+``MTMF_PR19C_KC_BASE``/``MTMF_PR14_KC_BASE``,
+``MTMF_PR19C_CA_FILE``/``MTMF_PR14_KC_CA_FILE``, and the acceptance admin/user
+passwords (``MTMF_PR19C_*`` or ``MTMF_PR14_KC_*``), plus the ``MTMF_RUNTIME_*``
+configuration.
 
 Tokens, secrets and admin credentials are never printed or persisted.
 """
@@ -72,6 +73,32 @@ def _env(name: str) -> str:
     return value
 
 
+def _kc_base() -> str:
+    return os.environ.get("MTMF_PR19C_KC_BASE", "").strip() or _env("MTMF_PR14_KC_BASE")
+
+
+def _ca_file() -> str:
+    return os.environ.get("MTMF_PR19C_CA_FILE", "").strip() or _env("MTMF_PR14_KC_CA_FILE")
+
+
+def _admin_user() -> str:
+    return os.environ.get("MTMF_PR19C_ADMIN_USERNAME", "").strip() or _env(
+        "MTMF_PR14_KC_ADMIN_USERNAME"
+    )
+
+
+def _admin_password() -> str:
+    return os.environ.get("MTMF_PR19C_ADMIN_PASSWORD", "").strip() or _env(
+        "MTMF_PR14_KC_ADMIN_PASSWORD"
+    )
+
+
+def _user_password() -> str:
+    return os.environ.get("MTMF_PR19C_USER_PASSWORD", "").strip() or _env(
+        "MTMF_PR14_KC_USER_PASSWORD"
+    )
+
+
 def _uuid() -> str:
     import uuid
 
@@ -79,11 +106,11 @@ def _uuid() -> str:
 
 
 def _issuer_str() -> str:
-    return f"{_env('MTMF_PR14_KC_BASE')}/realms/{REALM}"
+    return f"{_kc_base()}/realms/{REALM}"
 
 
 def _issuer_config() -> IssuerConfig:
-    base = _env("MTMF_PR14_KC_BASE")
+    base = _kc_base()
     issuer = f"{base}/realms/{REALM}"
     return IssuerConfig(
         issuer=issuer,
@@ -101,9 +128,9 @@ def _issuer_config() -> IssuerConfig:
 
 def _keycloak_issuer() -> Any:
     return ev.Issuer(
-        base=_env("MTMF_PR14_KC_BASE"),
+        base=_kc_base(),
         realm=REALM,
-        ca_file=os.environ.get("MTMF_PR14_KC_CA_FILE", ""),
+        ca_file=_ca_file(),
     )
 
 
@@ -119,7 +146,7 @@ def _user_token(user: str) -> str:
         SAME_CLIENT,
         SAME_SECRET,
         user,
-        _env("MTMF_PR14_KC_USER_PASSWORD"),
+        _user_password(),
         "http://127.0.0.1:28400/callback",
         28400,
     )
@@ -235,7 +262,7 @@ class _LiveServer:
 
 def _live_app() -> Any:
     if os.environ.get("SSL_CERT_FILE", "").strip() == "":
-        os.environ["SSL_CERT_FILE"] = _env("MTMF_PR14_KC_CA_FILE")
+        os.environ["SSL_CERT_FILE"] = _ca_file()
     spi = PostgresMtmfSpi(PostgresConfig.from_env(PostgresRole.RUNTIME))
     settings = ServiceSettings(evaluation_timeout_seconds=30)
     dependencies = build_dependencies(

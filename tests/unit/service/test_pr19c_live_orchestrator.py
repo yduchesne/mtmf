@@ -1,85 +1,117 @@
-"""Deterministic tests for the PR 19C live-acceptance orchestrator helpers.
+"""Deterministic tests for the PR 19C isolated acceptance orchestrator.
 
-These exercise the secret lifecycle, ownership refusal, canonical-issuer
-invariant and redaction without touching Podman, Keycloak or PostgreSQL.
+These exercise the secret lifecycle, Compose isolation validation,
+canonical acceptance-issuer invariants and default-launcher preservation
+without touching Podman, Keycloak or PostgreSQL.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import os
 import stat
 from pathlib import Path
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "mtmf-pr19c-live.py"
-_spec = importlib.util.spec_from_file_location("mtmf_pr19c_live", _SCRIPT)
-assert _spec is not None and _spec.loader is not None
-orch = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(orch)
+_SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
 
 
-def test_oru01_default_project_is_refused() -> None:
+def _load(name: str, filename: str):  # type: ignore[no-untyped-def]
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS / filename)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+orch = _load("mtmf_pr19c_live", "mtmf-pr19c-live.py")
+default_launcher = _load("mtmf_dev_stack", "mtmf-dev-stack.py")
+
+
+def test_oru05_iso06_acceptance_issuer_is_exact() -> None:
+    assert orch.ACCEPTANCE_ISSUER == "https://keycloak.mtmf.test:29443/realms/mtmf-dev"
+    assert orch.ACCEPTANCE_JWKS == (
+        "https://keycloak.mtmf.test:29443/realms/mtmf-dev/protocol/openid-connect/certs"
+    )
+    orch._verify_issuer_constants()
+
+
+def test_oru01_iso01_committed_compose_is_isolated() -> None:
+    # The committed standalone model must pass the isolation validation.
+    orch._validate_compose_isolation()
+
+
+def test_iso01_external_compose_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "compose.yaml"
+    path.write_text(
+        "volumes:\n  mtmf-postgres-data:\n    external: true\n  mtmf-dev-keycloak-data:\n",
+        encoding="utf-8",
+    )
     with pytest.raises(orch.AcceptanceError):
-        orch._assert_owned_project("mtmf")
-    # A dedicated project is accepted.
-    orch._assert_owned_project("mtmf-pr19c-acceptance")
+        orch._validate_compose_isolation(path)
 
 
-def test_oru03_secrets_are_owner_only(tmp_path: Path) -> None:
+def test_iso02_globally_named_volume_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "compose.yaml"
+    path.write_text(
+        "volumes:\n  mtmf-postgres-data:\n"
+        "  mtmf-dev-keycloak-data:\n    name: mtmf-dev-keycloak-data\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(orch.AcceptanceError):
+        orch._validate_compose_isolation(path)
+
+
+def test_oru03_secrets_are_owner_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(orch, "ACCEPTANCE_SECRET_DIR", tmp_path / "secrets")
+    files = orch._stage_secrets()
     run_dir = tmp_path / "secrets"
-    files = orch._stage_secrets(run_dir)
     assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
     for name in files:
-        path = run_dir / name
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    assert len(files["admin_password"]) >= 24
-    assert len(files["user_password"]) >= 24
+        assert stat.S_IMODE((run_dir / name).stat().st_mode) == 0o600
+    assert stat.S_IMODE((run_dir / "dev-user-password").stat().st_mode) == 0o600
 
 
 def test_oru04_secrets_are_redacted() -> None:
     orch._SECRET_VALUES.clear()
     orch._SECRET_VALUES.append("supersecretvalue")
-    assert orch._redact("MTMF_AUTH_ADMIN_PASSWORD=supersecretvalue") == (
-        "MTMF_AUTH_ADMIN_PASSWORD=<redacted>"
-    )
-    assert "supersecretvalue" not in orch._redact("prefix supersecretvalue suffix")
+    assert orch._redact("X=supersecretvalue") == "X=<redacted>"
+    assert "supersecretvalue" not in orch._redact("a supersecretvalue b")
     orch._SECRET_VALUES.clear()
 
 
-def test_oru05_canonical_issuer_is_exact() -> None:
-    assert orch.CANONICAL_ISSUER == "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
-    assert orch.CANONICAL_REALM == "mtmf-dev"
-
-
-def test_oru08_initializer_gets_admin_secret_and_extra_compose(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("MTMF_MIGRATOR_POSTGRES_USER", "u")
-    dotenv = {
-        "MTMF_MIGRATOR_POSTGRES_USER": "migrator",
-        "MTMF_MIGRATOR_POSTGRES_PASSWORD": "pw",
-        "MTMF_RUNTIME_POSTGRES_USER": "runtime",
-        "MTMF_RUNTIME_POSTGRES_PASSWORD": "pw",
+def test_oru08_build_env_uses_acceptance_issuer_and_admin_secret() -> None:
+    staged = {
+        "admin_password": "admin-secret-value",
+        "user_password": "user-secret-value",
+        "db_password": "db-secret-value",
+        "migrator_password": "mig-secret-value",
+        "runtime_password": "run-secret-value",
     }
-    staged = {"admin_password": "admin-secret-value", "user_password": "user-secret-value"}
-    env = orch._build_env(staged, "mtmf-pr19c-acceptance", dotenv)
+    env = orch._build_env(staged, {})
+    assert env["MTMF_AUTH_ISSUER"] == orch.ACCEPTANCE_ISSUER
+    assert env["MTMF_AUTH_JWKS_URI"] == orch.ACCEPTANCE_JWKS
     assert env["MTMF_DEV_KC_ADMIN_PASSWORD"] == "admin-secret-value"
-    assert env["COMPOSE_PROJECT_NAME"] == "mtmf-pr19c-acceptance"
-    assert env["MTMF_DEV_STACK_EXTRA_COMPOSE"] == orch._EXTRA_COMPOSE
-    assert env["MTMF_DEV_REALM_SETUP"] == "1"
-    # The generated acceptance project never targets the default project.
-    assert env["MTMF_DEV_STACK_PROJECT"] == "mtmf-pr19c-acceptance"
+    assert env["MTMF_DEV_USER_CREATE"] == "true"
+    assert env["MTMF_POSTGRES_PORT"] == str(orch.ACCEPTANCE_POSTGRES_PORT)
+    assert env["MTMF_MIGRATOR_DATABASE_URL"].endswith("@postgres:5432/mtmf")
+    assert env["MTMF_PR19C_CA_FILE"].startswith(str(orch.ACCEPTANCE_CA_DIR))
 
 
-def test_oru10_cleanup_removes_only_the_run_dir(tmp_path: Path) -> None:
-    run_dir = tmp_path / "run"
-    orch._stage_secrets(run_dir)
-    orch._cleanup_secrets(run_dir)
-    assert not run_dir.exists()
-    # A foreign directory is untouched by a missing run dir.
-    orch._cleanup_secrets(tmp_path / "absent")
+def test_iso10_acceptance_project_is_distinct() -> None:
+    assert orch.ACCEPTANCE_PROJECT == "mtmf-pr19c-acceptance"
+    assert orch.ACCEPTANCE_PROJECT != orch.DEFAULT_PROJECT
 
 
-def test_default_stack_project_is_distinct() -> None:
-    assert orch.DEFAULT_PROJECT != orch.DEFAULT_STACK_PROJECT
-    assert os.environ.get("MTMF_DEV_STACK_PROJECT") is None or True
+def test_iso14_default_launcher_remains_exact() -> None:
+    assert default_launcher.PROJECT == "mtmf"
+    assert default_launcher.CANONICAL_KC_PORT == 28443
+    assert default_launcher.CANONICAL_KC_ISSUER == (
+        "https://keycloak.mtmf.test:28443/realms/mtmf-dev"
+    )
+    assert default_launcher.COMPOSE_FILES == (
+        "-f",
+        "compose.yaml",
+        "-f",
+        "compose.dev.yaml",
+    )

@@ -35,3 +35,9 @@ Choose one:
 3. Accept the canonical-stack live H01–H05 evidence as PR 19C live acceptance and scope the disposable cold-start orchestration to a follow-up.
 
 No security invariant was weakened; the live feature acceptance passed. PR 19C remains **not DONE** until COLD/REPEAT/RECREATE reproducibility is executed or the human selects option 3.
+
+---
+
+## Amendment 04 resolution (2026-10-14)
+
+The disposable cold-start isolation STOP above is **resolved**. Amendment 04 replaced the unreliable volume-name override with a standalone acceptance Compose model (`compose.pr19c-acceptance.yaml`, project `mtmf-pr19c-acceptance`, port `29443`, project-scoped volumes). COLD-01, REPEAT-01 and RECREATE-01 all executed with H01–H05 passing and zero skips, with the default `mtmf` stack untouched. See `PR19C_AMENDMENT04_LIVE_ACCEPTANCE.md`. This historical STOP is preserved, not erased.
