@@ -3,6 +3,7 @@
 **Amendment:** PR 20A review fixup 01 (bounded worker lifetime + exact fixture Role reconciliation).
 **Branch:** `dev/pr20a-reference-app`.
 **Start-of-fixup HEAD:** `5e49b2b892a5e1cfab9c415b792c3a44dc6f4337` (reviewed).
+**Validated fixup commit:** `f8b7eac142a1aadc822fb529930475766d7245af` (all gates and deployed acceptance below were executed on this revision; this report is a follow-up documentation commit).
 **Baseline `origin/main`:** `56695c08e5b71a032877f319aa05193db31a47ec`.
 **Status:** **DONE** — both defects corrected and every mandatory gate re-executed.
 
