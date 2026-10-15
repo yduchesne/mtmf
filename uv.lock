@@ -956,12 +956,12 @@ wheels = [
 
 [[package]]
 name = "mtmf-api"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "packages/mtmf-api" }
 
 [[package]]
 name = "mtmf-client"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "packages/mtmf-client" }
 dependencies = [
     { name = "httpx" },
@@ -987,7 +987,7 @@ provides-extras = ["observability"]
 
 [[package]]
 name = "mtmf-core"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "packages/mtmf-core" }
 dependencies = [
     { name = "alembic" },
@@ -1002,7 +1002,7 @@ requires-dist = [
 
 [[package]]
 name = "mtmf-service"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "packages/mtmf-service" }
 dependencies = [
     { name = "fastapi" },
@@ -1029,7 +1029,7 @@ requires-dist = [
 
 [[package]]
 name = "mtmf-workspace"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { virtual = "." }
 dependencies = [
     { name = "mtmf-api" },

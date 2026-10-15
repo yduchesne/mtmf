@@ -1,13 +1,13 @@
 [project]
 name = "mtmf-workspace"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "Multi-Tenant Management Framework (MTMF) Python workspace"
 requires-python = ">=3.14"
 dependencies = [
-    "mtmf-api==0.1.0",
-    "mtmf-core==0.1.0",
-    "mtmf-client==0.1.0",
-    "mtmf-service==0.1.0",
+    "mtmf-api==0.1.0a1",
+    "mtmf-core==0.1.0a1",
+    "mtmf-client==0.1.0a1",
+    "mtmf-service==0.1.0a1",
 ]
 
 [tool.uv]

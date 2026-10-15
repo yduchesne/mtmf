@@ -1,12 +1,12 @@
 [project]
 name = "mtmf-service"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "MTMF optional HTTP deployment adapting mtmf-api and mtmf-core."
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",
-    "mtmf-api==0.1.0",
-    "mtmf-core==0.1.0",
+    "mtmf-api==0.1.0a1",
+    "mtmf-core==0.1.0a1",
     "opentelemetry-api>=1.37,<2",
     "opentelemetry-exporter-otlp-proto-grpc>=1.37,<2",
     "opentelemetry-sdk>=1.37,<2",

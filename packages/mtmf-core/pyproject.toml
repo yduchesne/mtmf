@@ -1,6 +1,6 @@
 [project]
 name = "mtmf-core"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "MTMF framework core: domain model, application layer, and authorization."
 requires-python = ">=3.14"
 dependencies = [
