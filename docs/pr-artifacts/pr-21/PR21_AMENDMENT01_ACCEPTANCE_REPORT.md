@@ -11,7 +11,7 @@
 | Branch | `dev/onboarding-foundation` |
 | Base SHA | `455ae7a35d090b2546afa0c78fc9e4750ffee5ec` |
 | Pre-amendment PR 21 tip | `739397820c064e5b7d2cc2b6cc90d3ec4f2025a2` |
-| Amendment commit under test | recorded in `PR21_FINAL_SHA.md` |
+| Amendment commit under test | `2ef3d9adb6139b0e65c3ba2abb2db753e4514779` (this record's commit parent) |
 | Migration head | `0013_security_mutation_audit_partitioning` |
 | Production changes | none |
 

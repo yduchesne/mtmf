@@ -16,9 +16,11 @@ The four canonical gates and the pre-commit hook (gitleaks, `--rust`, `--qa`,
 ## Amendment 01
 
 - **Pre-amendment PR 21 tip:** `739397820c064e5b7d2cc2b6cc90d3ec4f2025a2`
-- **Amendment 01 documentation commit under test:** recorded by the
-  `PR 21 Amendment 01` commit that adds this section; `./build.sh --qa`
+- **Amendment 01 documentation commit under test:**
+  `2ef3d9adb6139b0e65c3ba2abb2db753e4514779`; `./build.sh --qa`
   (2462 passed / 90.36%), `--sec` (0 findings), `--rust` (pass), and
-  `--integration` (593 passed / 90 skipped) all passed on that tree.
+  `--integration` (593 passed / 90 skipped) all passed on that tree. The
+  pre-commit hook (gitleaks, `--rust`, `--qa`, `--sec`) passed when the commit
+  was created. The final PR tip adds only this SHA record.
 - **Status:** STOP-01 closed (Option B direction); STOP-02–STOP-06 open; PR 21
   remains **NOT DONE**. See `PR21_AMENDMENT01_ACCEPTANCE_REPORT.md`.
