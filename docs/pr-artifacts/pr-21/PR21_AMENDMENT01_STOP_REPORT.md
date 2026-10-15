@@ -121,3 +121,13 @@ STOP-02 (P02), STOP-04 (P04), STOP-05 (P05), and STOP-06 (P06) are **CLOSED**.
 **STOP-03 remains OPEN** (exact Action/Permission/Role manifest). The
 Amendment 01 report is retained as history. See
 [PR21_AMENDMENT02_STOP_REPORT.md](PR21_AMENDMENT02_STOP_REPORT.md).
+
+
+---
+
+## STOP-03 addendum cross-reference (2026-10-15)
+
+The open STOP-03 now has an exact approval-ready package:
+[PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md)
+and [PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md](PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md).
+Status remains `PROPOSED — AWAITING HUMAN APPROVAL`.

@@ -72,3 +72,18 @@ This is a design-review artifact, not a test result.
 - `PR21_AMENDMENT02_ACTION_MANIFEST.md`, `PR21_AMENDMENT02_DECISION_RECORD.md`,
   `PR21_AMENDMENT02_STOP_REPORT.md`.
 - `docs/ONBOARDING_ARCHITECTURE.md` §§3, 17; `docs/ONBOARDING_HTTP_CONTRACT.md` §15.
+
+
+---
+
+## STOP-03 approval addendum (2026-10-15)
+
+The exact proposed Role partition is now: `application-administrator` (11
+permissions: 5 application + 3 registration + 3 entitlement),
+`application-credential-administrator` (2 credential-binding permissions), and
+the additive Tenant Administrator `tenant-administrator` (7: 5 subscription +
+2 invitation), all exact Tenant scope. Rows 2 and 19 are admission-only Action
+identifiers with zero Role grants. All literals remain `PROPOSED — AWAITING
+HUMAN APPROVAL`. See
+[PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md)
+and [PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md](PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md).

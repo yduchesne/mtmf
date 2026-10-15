@@ -104,3 +104,12 @@ STOP-02, STOP-04, STOP-05, and STOP-06.** **STOP-03 (exact Action/Permission/
 Role manifest) remains OPEN** pending human approval of the literals and
 grants. See [PR21_AMENDMENT02_STOP_REPORT.md](PR21_AMENDMENT02_STOP_REPORT.md).
 The original STOP-01 record is retained unchanged; PR 21 remains NOT DONE.
+
+
+---
+
+## STOP-03 addendum cross-reference (2026-10-15)
+
+STOP-03 remains OPEN with an exact approval-ready manifest and operator
+boundary; see
+[PR21_AMENDMENT02_STOP03_STOP_REPORT.md](PR21_AMENDMENT02_STOP03_STOP_REPORT.md).

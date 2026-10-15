@@ -1,95 +1,180 @@
 # PR21_AMENDMENT02_ACTION_MANIFEST
 
-**PR:** roadmap PR 21 — Amendment 02
-**Status:** **CANDIDATE MANIFEST — STOP-03 remains OPEN.** No new literal URN,
-Permission, built-in Role grant, or system-management Role here is approved.
-This table is review-ready input for a human decision. **Do not implement.**
+**PR:** roadmap PR 21 — Amendment 02 (updated by the STOP-03 Authorization Approval Addendum)
+**Status:** **PROPOSED — AWAITING HUMAN APPROVAL. STOP-03 remains OPEN.** No new
+literal URN, Permission, Role definition, or grant here is approved. This table
+is the exact review-ready input for a human decision. **Do not implement.**
 
-## 1. Grammar validation (grounded)
+> Amendment 02 addendum (2026-10-15): rows 1–25 are preserved. Vague Role
+> references are replaced with the exact proposed Role URNs and the **11/2/7**
+> grant partition. Rows 2 and 19 are **admission-only Action identifiers with
+> zero Role/Permission grants**. Row 11 reuses row 8; row 17 reuses row 12.
+> Exact Role/authority design: `PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`;
+> operator boundary: `PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`.
 
-Canonical grammar (`domain/iam_urn.py`): exactly three colon-separated
-components after `urn:mtmf:iam:actions:`:
+## 1. Grammar and URN validation (grounded)
 
-```text
-urn:mtmf:iam:actions:system:<resource>:<verb>-<qualifier>
-```
+Canonical grammar (`domain/iam_urn.py`): `urn:mtmf:iam:actions:system:<resource>:<verb>-<qualifier>`.
+- `system` is the **definition namespace** (the only supported one for
+  Action/Permission URNs), **not** a license for SYSTEM-scope execution.
+- Resource is one non-empty, whitespace-free, colon-free component (hyphens
+  allowed); operation is `<verb>-<qualifier>` (first `-` splits).
+- No wildcard in any component; Action URNs are exact.
+- Permission URN mirrors the Action under `urn:mtmf:iam:permissions:`.
+- SYSTEM Role URN: `urn:mtmf:iam:roles:system:<role-name>` (one name component).
 
-- definition namespace `system` only (a `tenant` Action namespace is rejected);
-- resource is a single non-empty, whitespace-free, colon-free component
-  (hyphens allowed, e.g. `application-tenant-registration`);
-- operation is `<verb>-<qualifier>` (first `-` splits; both non-empty);
-- no wildcard in any component. Action URNs are exact.
+Every literal below was validated against these rules. Grammar-validity is not
+approval.
 
-Permission URNs mirror the Action with the `urn:mtmf:iam:permissions:` prefix
-and an exact qualifier (no `*`), or a complete `*` qualifier where a wildcard
-matcher is explicitly approved (none is proposed here).
+## 2. Proposed exact Role URNs
 
-Every literal in §2 was validated against these rules. Grammar-validity does
-**not** imply approval.
+| Role | Exact URN | Proposed scope/authority |
+| --- | --- | --- |
+| Application Administrator | `urn:mtmf:iam:roles:system:application-administrator` | Application + registration + entitlement administration (SYSTEM definition namespace) |
+| Application Credential Administrator | `urn:mtmf:iam:roles:system:application-credential-administrator` | Service-credential-binding administration only (SYSTEM definition namespace; PR 14 gate) |
+| Tenant Administrator (existing) | `urn:mtmf:iam:roles:system:tenant-administrator` | Additive: own-Tenant subscription + invitation create/revoke, exact Tenant scope |
 
-## 2. Candidate manifest
+> **Reconciliation finding (grounded):** the `Role` domain object has no scope
+> field; `SecurityScope` is `ROOT/SYSTEM/TENANT/ORGANIZATION`, and the current
+> `Authorizer`/`AuthorizationContext` binds a session to exactly one Tenant and
+> accepts a cross-Tenant target only through a positively resolved
+> TenantManagementGroup `management_scope`. **There is no current mechanism to
+> authorize a global, Tenant-independent Application resource as a SYSTEM-scoped
+> operator.** Therefore the operator authorization and privileged execution for
+> rows 3–11, 21–25 are **future gates** (PR 24 or a named prerequisite), not
+> implemented authority. See `PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`.
 
-Status legend: **APPROVED** = already seeded and human-approved; **NEEDS HUMAN
-APPROVAL** = new literal/grant requiring an explicit human decision;
-**PROPOSED** = naming recommendation that is not approved and whose grant is
-not approved.
+## 3. Exact operation manifest (rows 1–25)
 
-| # | Operation | Literal Action URN | Resource kind | Target scope | Verified actor | Required Permission (ALLOW) | Authorized Role / entitlement | Existing/New | PR owner | Audit kind | Status |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | Tenant resolve / inspect | `urn:mtmf:iam:actions:system:tenant:get-object` | tenant | exact Tenant (authorized) | verified user | `urn:mtmf:iam:permissions:system:tenant:get-object` | existing built-in Roles holding it | Existing | 24 | none (read) | APPROVED |
-| 2 | Initial Tenant provisioning | `urn:mtmf:iam:actions:system:tenant:provision-object` | tenant | new ordinary Tenant | pre-Tenant entitlement | `urn:mtmf:iam:permissions:system:tenant:provision-object` | Application onboarding entitlement (not a Role) | New | 22/23 | provision | NEEDS HUMAN APPROVAL |
-| 3 | Application create | `urn:mtmf:iam:actions:system:application:create-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:create-object` | new system-management Role | New | 24 | create | NEEDS HUMAN APPROVAL |
-| 4 | Application inspect | `urn:mtmf:iam:actions:system:application:get-object` | application | exact Application | system operator | `urn:mtmf:iam:permissions:system:application:get-object` | new system-management Role | New | 24 | none | NEEDS HUMAN APPROVAL |
-| 5 | Application suspend | `urn:mtmf:iam:actions:system:application:suspend-object` | application | exact Application | system operator | `urn:mtmf:iam:permissions:system:application:suspend-object` | new system-management Role | New | 24 | lifecycle | NEEDS HUMAN APPROVAL |
-| 6 | Application resume (SUSPENDED→ACTIVE) | `urn:mtmf:iam:actions:system:application:resume-object` | application | exact Application | system operator | `urn:mtmf:iam:permissions:system:application:resume-object` | new system-management Role | New | 24 | lifecycle | NEEDS HUMAN APPROVAL |
-| 7 | Application retire | `urn:mtmf:iam:actions:system:application:retire-object` | application | exact Application | system operator | `urn:mtmf:iam:permissions:system:application:retire-object` | new system-management Role | New | 24 | lifecycle | NEEDS HUMAN APPROVAL |
-| 8 | Registration create | `urn:mtmf:iam:actions:system:application-tenant-registration:add-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:add-object` | new system-management Role | New | 24 | create | NEEDS HUMAN APPROVAL |
-| 9 | Registration inspect / list | `urn:mtmf:iam:actions:system:application-tenant-registration:get-object` | registration | exact Application+Tenant | system operator or Tenant admin (read own Tenant) | `urn:mtmf:iam:permissions:system:application-tenant-registration:get-object` | system Role / scoped read | New | 24 | none | NEEDS HUMAN APPROVAL |
-| 10 | Registration revoke | `urn:mtmf:iam:actions:system:application-tenant-registration:revoke-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:revoke-object` | new system-management Role | New | 24 | lifecycle | NEEDS HUMAN APPROVAL |
-| 11 | Registration replacement (new UUID) | reuses `...:add-object` | registration | exact Application+Tenant | system operator | same | system Role | New | 24 | replacement | NEEDS HUMAN APPROVAL |
-| 12 | Subscription create | `urn:mtmf:iam:actions:system:application-subscription:add-object` | subscription | exact Tenant (Application via path) | Tenant admin or system operator | `urn:mtmf:iam:permissions:system:application-subscription:add-object` | Tenant Administrator (own Tenant) | New | 24 | create | NEEDS HUMAN APPROVAL |
-| 13 | Subscription inspect / list | `urn:mtmf:iam:actions:system:application-subscription:get-object` | subscription | exact Tenant | Tenant admin or system operator | `urn:mtmf:iam:permissions:system:application-subscription:get-object` | Tenant Administrator (own Tenant) | New | 24 | none | NEEDS HUMAN APPROVAL |
-| 14 | Subscription suspend | `urn:mtmf:iam:actions:system:application-subscription:suspend-object` | subscription | exact Tenant | Tenant admin or system operator | `urn:mtmf:iam:permissions:system:application-subscription:suspend-object` | Tenant Administrator (own Tenant) | New | 24 | lifecycle | NEEDS HUMAN APPROVAL |
-| 15 | Subscription resume (SUSPENDED→ACTIVE) | `urn:mtmf:iam:actions:system:application-subscription:resume-object` | subscription | exact Tenant | Tenant admin or system operator | `urn:mtmf:iam:permissions:system:application-subscription:resume-object` | Tenant Administrator (own Tenant) | New | 24 | lifecycle | NEEDS HUMAN APPROVAL |
-| 16 | Subscription cancel | `urn:mtmf:iam:actions:system:application-subscription:cancel-object` | subscription | exact Tenant | Tenant admin or system operator | `urn:mtmf:iam:permissions:system:application-subscription:cancel-object` | Tenant Administrator (own Tenant) | New | 24 | lifecycle | NEEDS HUMAN APPROVAL |
-| 17 | Subscription replacement (new UUID) | reuses `...:add-object` | subscription | exact Tenant | Tenant admin or system operator | same | Tenant Administrator (own Tenant) | New | 24 | replacement | NEEDS HUMAN APPROVAL |
-| 18 | Invitation create | `urn:mtmf:iam:actions:system:tenant-invitation:create-object` | invitation | exact Tenant | steward/Tenant admin | `urn:mtmf:iam:permissions:system:tenant-invitation:create-object` | Tenant Administrator (own Tenant) | New | 25 | create | NEEDS HUMAN APPROVAL |
-| 19 | Invitation accept | `urn:mtmf:iam:actions:system:tenant-invitation:accept-object` | invitation | invited Tenant only | verified recipient + capability | `urn:mtmf:iam:permissions:system:tenant-invitation:accept-object` | pre-membership seam | New | 25 | accept | NEEDS HUMAN APPROVAL |
-| 20 | Invitation revoke | `urn:mtmf:iam:actions:system:tenant-invitation:revoke-object` | invitation | exact Tenant | steward/Tenant admin | `urn:mtmf:iam:permissions:system:tenant-invitation:revoke-object` | Tenant Administrator (own Tenant) | New | 25 | lifecycle | NEEDS HUMAN APPROVAL |
-| 21 | Entitlement grant | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:grant-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:grant-object` | new system-management Role | New | 22/23 | grant | NEEDS HUMAN APPROVAL |
-| 22 | Entitlement revoke | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:revoke-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:revoke-object` | new system-management Role | New | 22/23 | revoke | NEEDS HUMAN APPROVAL |
-| 23 | Entitlement inspect | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:get-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:get-object` | new system-management Role | New | 24 | none | NEEDS HUMAN APPROVAL |
-| 24 | Credential binding add | `urn:mtmf:iam:actions:system:service-credential-binding:add-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:add-object` | new system-management Role + PR 14 gate | New | 24 (gated) | create | NEEDS HUMAN APPROVAL |
-| 25 | Credential binding revoke | `urn:mtmf:iam:actions:system:service-credential-binding:revoke-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:revoke-object` | new system-management Role + PR 14 gate | New | 24 (gated) | revoke | NEEDS HUMAN APPROVAL |
+Status legend: **APPROVED** = already seeded and human-approved (reused
+unchanged); **ADMISSION-ONLY** = canonical Action/audit identifier with zero
+Role/Permission grant; **PROPOSED** = exact literal proposed for approval, not
+approved; **ALIAS** = reuses an existing proposed add Action.
 
-## 3. Existing approved URNs reused unchanged
+| # | Operation | Literal Action URN | Resource | Target scope | Verified actor | Required Permission | Authorized Role / admission | PR | Status |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | Tenant resolve/inspect | `urn:mtmf:iam:actions:system:tenant:get-object` | tenant | exact Tenant | verified user | `urn:mtmf:iam:permissions:system:tenant:get-object` | existing Tenant-scoped grants | 24 | APPROVED (do not reseed) |
+| 2 | Initial Tenant provisioning | `urn:mtmf:iam:actions:system:tenant:provision-object` | tenant | new ordinary Tenant | pre-Tenant entitlement + verified new Identity | — (none) | ADMISSION-ONLY (entitlement; zero Role grant) | 22/23 | ADMISSION-ONLY |
+| 3 | Application create | `urn:mtmf:iam:actions:system:application:create-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:create-object` | `application-administrator` | 24 | PROPOSED |
+| 4 | Application inspect | `urn:mtmf:iam:actions:system:application:get-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:get-object` | `application-administrator` | 24 | PROPOSED |
+| 5 | Application suspend | `urn:mtmf:iam:actions:system:application:suspend-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:suspend-object` | `application-administrator` | 24 | PROPOSED |
+| 6 | Application resume | `urn:mtmf:iam:actions:system:application:resume-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:resume-object` | `application-administrator` | 24 | PROPOSED |
+| 7 | Application retire | `urn:mtmf:iam:actions:system:application:retire-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:retire-object` | `application-administrator` | 24 | PROPOSED |
+| 8 | Registration create | `urn:mtmf:iam:actions:system:application-tenant-registration:add-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:add-object` | `application-administrator` | 24 | PROPOSED |
+| 9 | Registration inspect | `urn:mtmf:iam:actions:system:application-tenant-registration:get-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:get-object` | `application-administrator` | 24 | PROPOSED |
+| 10 | Registration revoke | `urn:mtmf:iam:actions:system:application-tenant-registration:revoke-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:revoke-object` | `application-administrator` | 24 | PROPOSED |
+| 11 | Registration replacement | reuses row 8 `...:add-object` | registration | exact Application+Tenant | system operator | row 8 Permission | `application-administrator` | 24 | ALIAS (row 8) |
+| 12 | Subscription create | `urn:mtmf:iam:actions:system:application-subscription:add-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:add-object` | `tenant-administrator` | 24 | PROPOSED |
+| 13 | Subscription inspect | `urn:mtmf:iam:actions:system:application-subscription:get-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:get-object` | `tenant-administrator` | 24 | PROPOSED |
+| 14 | Subscription suspend | `urn:mtmf:iam:actions:system:application-subscription:suspend-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:suspend-object` | `tenant-administrator` | 24 | PROPOSED |
+| 15 | Subscription resume | `urn:mtmf:iam:actions:system:application-subscription:resume-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:resume-object` | `tenant-administrator` | 24 | PROPOSED |
+| 16 | Subscription cancel | `urn:mtmf:iam:actions:system:application-subscription:cancel-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:cancel-object` | `tenant-administrator` | 24 | PROPOSED |
+| 17 | Subscription replacement | reuses row 12 `...:add-object` | subscription | exact Tenant | Tenant admin (exact scope) | row 12 Permission | `tenant-administrator` | 24 | ALIAS (row 12) |
+| 18 | Invitation create | `urn:mtmf:iam:actions:system:tenant-invitation:create-object` | invitation | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:tenant-invitation:create-object` | `tenant-administrator` | 25 | PROPOSED |
+| 19 | Invitation accept | `urn:mtmf:iam:actions:system:tenant-invitation:accept-object` | invitation | invited Tenant only | verified recipient + capability | — (none) | ADMISSION-ONLY (pre-membership seam; zero Role grant) | 25 | ADMISSION-ONLY |
+| 20 | Invitation revoke | `urn:mtmf:iam:actions:system:tenant-invitation:revoke-object` | invitation | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:tenant-invitation:revoke-object` | `tenant-administrator` | 25 | PROPOSED |
+| 21 | Entitlement grant | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:grant-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:grant-object` | `application-administrator` | 22/23 | PROPOSED |
+| 22 | Entitlement revoke | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:revoke-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:revoke-object` | `application-administrator` | 22/23 | PROPOSED |
+| 23 | Entitlement inspect | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:get-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:get-object` | `application-administrator` | 24 | PROPOSED |
+| 24 | Credential binding add | `urn:mtmf:iam:actions:system:service-credential-binding:add-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:add-object` | `application-credential-administrator` (PR 14 gate) | 24 (gated) | PROPOSED |
+| 25 | Credential binding revoke | `urn:mtmf:iam:actions:system:service-credential-binding:revoke-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:revoke-object` | `application-credential-administrator` (PR 14 gate) | 24 (gated) | PROPOSED |
+
+## 4. Exact Permission/Role mapping and counts
+
+### 4.1 Application Administrator — `urn:mtmf:iam:roles:system:application-administrator`
+
+| # | Exact Permission | Count |
+|---|---|---|
+| 1 | `urn:mtmf:iam:permissions:system:application:create-object` | |
+| 2 | `urn:mtmf:iam:permissions:system:application:get-object` | |
+| 3 | `urn:mtmf:iam:permissions:system:application:suspend-object` | |
+| 4 | `urn:mtmf:iam:permissions:system:application:resume-object` | |
+| 5 | `urn:mtmf:iam:permissions:system:application:retire-object` | 5 application |
+| 6 | `urn:mtmf:iam:permissions:system:application-tenant-registration:add-object` | |
+| 7 | `urn:mtmf:iam:permissions:system:application-tenant-registration:get-object` | |
+| 8 | `urn:mtmf:iam:permissions:system:application-tenant-registration:revoke-object` | 3 registration |
+| 9 | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:grant-object` | |
+| 10 | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:revoke-object` | |
+| 11 | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:get-object` | 3 entitlement |
+| | **Total** | **11** |
+
+No credential-binding, subscription, invitation, root, or wildcard Permission.
+
+### 4.2 Application Credential Administrator — `urn:mtmf:iam:roles:system:application-credential-administrator`
+
+| # | Exact Permission | Count |
+|---|---|---|
+| 1 | `urn:mtmf:iam:permissions:system:service-credential-binding:add-object` | |
+| 2 | `urn:mtmf:iam:permissions:system:service-credential-binding:revoke-object` | 2 |
+| | **Total** | **2** |
+
+No Application create/retire, entitlement, registration, subscription,
+invitation, root, or wildcard Permission.
+
+### 4.3 Tenant Administrator additive — `urn:mtmf:iam:roles:system:tenant-administrator`
+
+| # | Exact Permission (additive) | Count |
+|---|---|---|
+| 1 | `urn:mtmf:iam:permissions:system:application-subscription:add-object` | |
+| 2 | `urn:mtmf:iam:permissions:system:application-subscription:get-object` | |
+| 3 | `urn:mtmf:iam:permissions:system:application-subscription:suspend-object` | |
+| 4 | `urn:mtmf:iam:permissions:system:application-subscription:resume-object` | |
+| 5 | `urn:mtmf:iam:permissions:system:application-subscription:cancel-object` | 5 subscription |
+| 6 | `urn:mtmf:iam:permissions:system:tenant-invitation:create-object` | |
+| 7 | `urn:mtmf:iam:permissions:system:tenant-invitation:revoke-object` | 2 invitation |
+| | **Total** | **7** |
+
+All seven are enforced at the **exact same Tenant**. No registration,
+entitlement, credential, root, or wildcard Permission. Existing `0006`/`0012`
+seed history is not modified; a future additive migration preserves seed
+immutability.
+
+### 4.4 Totals and arithmetic
+
+| Class | Count |
+| --- | --- |
+| Application Administrator permission-backed operations | 11 |
+| Application Credential Administrator permission-backed operations | 2 |
+| Tenant Administrator additive permission-backed operations | 7 |
+| **Distinct new Permission-backed operations** | **20** |
+| Admission-only Action identifiers (rows 2, 19; zero grants) | 2 |
+| Existing approved Action reused (row 1) | 1 |
+| Aliases (rows 11→8, 17→12) | 2 |
+| **Manifest rows** | **25** |
+
+This arithmetic reconciles with the manifest and with the addendum; no conflict
+with verified source semantics was found.
+
+## 5. Admission-only identifiers (rows 2 and 19)
+
+`tenant:provision-object` and `tenant-invitation:accept-object` are canonical
+**operation/audit identifiers** used by the specialized admission paths. They
+carry **no Role grant and no ordinary Permission assignment**. If the Action
+catalog requires an associated Permission row, it must be a **dormant exact
+Permission with zero Role grants**; ordinary Role authorization is bypassed only
+through the separately verified admission path. A broad grant to make a
+pre-membership operation pass is forbidden (contract failure S17).
+
+## 6. Existing approved URNs reused unchanged
 
 | Literal | Seed | Grant |
 | --- | --- | --- |
-| `urn:mtmf:iam:actions:system:tenant:get-object` | revision `0006` | built-in Roles (Tenant Administrator, System Reader, …) |
-| `urn:mtmf:iam:actions:system:role:get-object` | revision `0006` | built-in Security Administrator Roles |
-| `urn:mtmf:iam:actions:system:organization:get-object` | revision `0006` | built-in Organization Roles |
-| `urn:mtmf:iam:actions:system:identity-group-membership:add-object` | revision `0012` | sole built-in `urn:mtmf:iam:roles:system:tenant-administrator` |
+| `urn:mtmf:iam:actions:system:tenant:get-object` | `0006` | built-in Tenant-scoped Roles |
+| `urn:mtmf:iam:actions:system:role:get-object` | `0006` | built-in Security Administrator Roles |
+| `urn:mtmf:iam:actions:system:organization:get-object` | `0006` | built-in Organization Roles |
+| `urn:mtmf:iam:actions:system:identity-group-membership:add-object` | `0012` | sole built-in `tenant-administrator` |
 
-These are **APPROVED** and MUST NOT be re-litigated or duplicated.
+These are **APPROVED** and MUST NOT be re-litigated, mutated, or duplicated.
 
-## 4. Required human decisions (STOP-03 subgate)
+## 7. Required human decisions (STOP-03 subgate)
 
-1. Approve or amend every **NEEDS HUMAN APPROVAL** literal above.
-2. Approve the new **system-management Role** (name, URN, exact Permissions) or
-   an equivalent approved authority model. No SYSTEM Role is approved here.
-3. Approve the additive, idempotent, fail-closed seed migration(s) that add any
-   new Action/Permission/Role grant without mutating the immutable
-   `0006`/`0012` definitions.
-4. Approve the entitlement administrative Actions (rows 21–23) and the
-   credential-binding Actions (rows 24–25, gated by PR 14).
+1. Approve or amend every **PROPOSED** literal in §3.
+2. Approve the two new SYSTEM Role definitions and the exact 11/2/7 composition
+   in §4.
+3. Approve the additive, idempotent, fail-closed seed migration(s) that add the
+   Actions/Permissions/Role definitions/grants without mutating `0006`/`0012`.
+4. Approve the admission-only treatment of rows 2 and 19 (zero Role grants).
+5. Approve the operator boundary and the future Role-assignment/privileged
+   execution gate (`PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`).
 
-Until all four are approved, **STOP-03 remains OPEN** and PR 21 remains NOT DONE.
-
-## 5. Constraints
-
-- No wildcard Action or Permission.
-- No auto-grant and no Role escalation.
-- No runtime grant of operator-only registry/credential functions.
-- Immutable revision `0006`/`0012` definitions are not modified; additions are
-  separate additive seeds.
+Until approved, **STOP-03 remains OPEN** and PR 21 remains **NOT DONE**.

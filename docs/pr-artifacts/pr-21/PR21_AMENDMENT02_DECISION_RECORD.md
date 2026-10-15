@@ -157,3 +157,17 @@ authority, migrations, seeds, or grants. D1–D8 remain binding.
 - `PR21_AMENDMENT02_STOP_REPORT.md`, `PR21_AMENDMENT02_ACTION_MANIFEST.md`,
   `PR21_AMENDMENT02_AUTHORIZATION_MATRIX.md`.
 - `PR21_AMENDMENT01_DECISION_RECORD.md` (D1–D8), `PR21_AMENDMENT02_BASELINE_RECONCILIATION.md`.
+
+
+---
+
+## STOP-03 approval addendum (2026-10-15)
+
+P03's method is now backed by an exact proposed design: two SYSTEM Role URNs
+(`application-administrator`, `application-credential-administrator`), an
+additive 7-Permission Tenant Administrator set, admission-only identifiers for
+tenant provisioning and invitation acceptance, and a documented operator
+boundary that explicitly does **not** claim an implemented operator
+sign-in/assignment/global-target mechanism. Status: `PROPOSED — AWAITING HUMAN
+APPROVAL`; STOP-03 remains OPEN. See
+[PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md).

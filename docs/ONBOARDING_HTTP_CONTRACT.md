@@ -14,7 +14,10 @@
 > **Amendment 02 (2026-10-15): STOP-02, STOP-04, STOP-05, STOP-06 closed**
 > (P02/P04/P05/P06; see §16). **STOP-03 — the exact Action/Permission/Role
 > manifest — remains OPEN**; all Action URNs and error codes below are still
-> proposals. See
+> proposals. An exact STOP-03 approval package (Role partition and operator
+> boundary) is in
+> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md` (status:
+> PROPOSED — AWAITING HUMAN APPROVAL). See
 > `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP_REPORT.md`. PR 21 is not DONE.
 
 This document uses the existing `mtmf-api` detached DTO and static
@@ -444,6 +447,26 @@ Registration and subscription inspect/list are bounded and scoped to the
 verified actor's authorized Tenant(s); invisible targets return the same opaque
 result; no cross-Tenant enumeration; no metadata fingerprinting.
 
+### 16.7 Execution status — proposed routes vs currently executable operations
+
+The routes in this contract are **PROPOSED HTTP routes**, not executable
+operations. As of branch tip `8c5937d`:
+
+| Operation group | Status |
+| --- | --- |
+| Application create/get/suspend/resume/retire; registration create/get/revoke; entitlement grant/revoke/get; credential-binding add/revoke | **NOT IMPLEMENTED / OPERATOR-EXECUTION GATED** — no operator sign-in, SYSTEM-scope assignment, global-target authorization, or privileged execution adapter exists; PR 24 (or a named prerequisite) owns the reviewed bridge. |
+| Subscription create/get/suspend/resume/cancel | **NOT IMPLEMENTED** — requires a verified actor with the exact Tenant-scoped grant; PR 24. |
+| Invitation create/accept/revoke | **NOT IMPLEMENTED** — PR 25. |
+| `resolve-or-provision` | **NOT IMPLEMENTED** — PR 24 transport + PR 23 admission seam. |
+
+No route is exposed merely because its Action URN is proposed or approved.
+Privileged registry/entitlement/credential mutations remain privileged
+administrative operations and are **never** granted to `mtmf_runtime`. The
+exact proposed Role partition and operator contract are in
+`pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md` and
+`PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md` (status: PROPOSED — AWAITING
+HUMAN APPROVAL).
+
 ## 17. Forward compatibility and change control
 
 - Response fields are additive within `/v1`; an incompatible change requires a
@@ -463,5 +486,8 @@ result; no cross-Tenant enumeration; no metadata fingerprinting.
   `PR21_AMENDMENT01_STOP_REPORT.md`, `PR21_AMENDMENT01_DECISION_RECORD.md`
 - `pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`,
   `PR21_AMENDMENT02_AUTHORIZATION_MATRIX.md`,
-  `PR21_AMENDMENT02_STOP_REPORT.md`
+  `PR21_AMENDMENT02_STOP_REPORT.md`,
+  `PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`,
+  `PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`,
+  `PR21_AMENDMENT02_STOP03_SECURITY_CASES.md`
 - [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)

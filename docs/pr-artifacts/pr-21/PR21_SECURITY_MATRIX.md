@@ -85,3 +85,12 @@ C01–C36 are retained unchanged. **Amendment 02 adds B01–B28** in
 entitlement, registration, replacement, credential-separation, quota, and
 idempotency cases. No prior row is renumbered or deleted; all new cases are
 design-time and NOT RUN.
+
+
+---
+
+## STOP-03 addendum cross-reference (2026-10-15)
+
+S01–S24 are added in
+[PR21_AMENDMENT02_STOP03_SECURITY_CASES.md](PR21_AMENDMENT02_STOP03_SECURITY_CASES.md)
+without renumbering C01–C36. All are NOT RUN.

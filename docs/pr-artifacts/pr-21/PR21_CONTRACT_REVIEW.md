@@ -136,3 +136,14 @@ exact Action/Permission/Role manifest, for which a review-ready candidate table
 [PR21_AMENDMENT02_ACTION_MANIFEST.md](PR21_AMENDMENT02_ACTION_MANIFEST.md). No
 new literal or grant is approved. The §1.1 proposals here are superseded by that
 manifest and remain UNAPPROVED.
+
+
+---
+
+## STOP-03 addendum cross-reference (2026-10-15)
+
+The §1.1 candidate literals are superseded by the exact proposed manifest and
+Role partition in
+[PR21_AMENDMENT02_ACTION_MANIFEST.md](PR21_AMENDMENT02_ACTION_MANIFEST.md) and
+[PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md).
+All new literals remain `PROPOSED — AWAITING HUMAN APPROVAL`.

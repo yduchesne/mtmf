@@ -118,3 +118,17 @@ Amendment 02 passes as a documentation-only deliverable even with STOP-03 open,
 provided the unapproved literals remain isolated in the review-ready manifest
 and no implementation is authorized. **PR 21 remains NOT DONE** until STOP-03
 is human-approved and the normative documents are reconciled.
+
+
+---
+
+## STOP-03 approval addendum update (2026-10-15)
+
+STOP-03 remains **OPEN** but is now review-ready: the exact Role URNs, the
+11/2/7 Permission partition, the two admission-only Action identifiers, and the
+operator boundary are recorded in
+[PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md),
+[PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md](PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md),
+and the updated [PR21_AMENDMENT02_ACTION_MANIFEST.md](PR21_AMENDMENT02_ACTION_MANIFEST.md).
+No human approval is recorded; STOP-02/04/05/06 remain CLOSED and unchanged.
+PR 21 remains NOT DONE.

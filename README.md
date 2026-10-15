@@ -27,7 +27,9 @@ approval, and a narrowly scoped pre-Tenant admission (STOP-01 Option B).
 **Amendment 02** closes STOP-02/04/05/06 (per-Application onboarding
 entitlement, system-authorized registration, fresh-UUID terminal replacement,
 separate credential binding); **STOP-03 (exact Action/Permission/Role manifest)
-remains open**. None of this is implemented.
+remains open**, with an exact approval-ready package awaiting human approval
+(`docs/pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`).
+None of this is implemented.
 
 ## Development
 

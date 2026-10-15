@@ -21,6 +21,15 @@
 > `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP_REPORT.md`; so PR 21 is still not
 > DONE.
 >
+> **STOP-03 approval package (2026-10-15):** an exact proposed Role partition
+> (`application-administrator`, `application-credential-administrator`, additive
+> `tenant-administrator`), admission-only identifiers, and the operator boundary
+> are recorded in §19 and
+> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`.
+> Status: **PROPOSED — AWAITING HUMAN APPROVAL**; the operator sign-in,
+> SYSTEM-scope assignment, and global-target authorization mechanisms are
+> **NOT IMPLEMENTED** and gated to PR 24 (or a named prerequisite).
+>
 > The original STOP-01 record (Option A vs B) is preserved in
 > [`pr-artifacts/pr-21/PR21_STOP_REPORT.md`](pr-artifacts/pr-21/PR21_STOP_REPORT.md).
 > Until the narrower STOPs are resolved, this design is a draft and PR 21 is
@@ -640,6 +649,69 @@ DB transaction performs no network I/O, and no cross-IdP/DB atomicity is
 claimed. Failures are reconciled explicitly (idempotent retry or authorized
 resolution).
 
+## 19. Amendment 02 STOP-03 approval addendum — exact authority partition and operator gate
+
+Normative for PRs 22–26. Status: **PROPOSED — AWAITING HUMAN APPROVAL.** Exact
+literals: `pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`. Decision:
+`pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`.
+Operator boundary: `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`.
+
+### 19.1 Exact Role partition
+
+- `urn:mtmf:iam:roles:system:application-administrator` — exactly **11** exact
+  Permissions: 5 `application` (create/get/suspend/resume/retire), 3
+  `application-tenant-registration` (add/get/revoke), 3
+  `application-onboarding-entitlement` (grant/revoke/get).
+- `urn:mtmf:iam:roles:system:application-credential-administrator` — exactly
+  **2** `service-credential-binding` Permissions (add/revoke), gated on the
+  PR 14 trust model.
+- `urn:mtmf:iam:roles:system:tenant-administrator` (existing) — additive
+  exactly **7** Permissions: 5 `application-subscription`
+  (add/get/suspend/resume/cancel) and 2 `tenant-invitation` (create/revoke),
+  all enforced at the **exact same Tenant**.
+- `tenant:get-object` is unchanged. No wildcard, no cross-Tenant union, no
+  implicit grant, no automatic Role assignment.
+
+### 19.2 Admission-only identifiers
+
+`tenant:provision-object` and `tenant-invitation:accept-object` are canonical
+operation/audit identifiers with **zero Role/Permission grants**. They are used
+only by the separately verified pre-Tenant and pre-membership admission seams.
+Creating a broad grant to make a pre-membership operation pass is forbidden.
+
+### 19.3 Operator boundary (not implemented)
+
+- Operator identity: independently verified human/system administrator principal
+  via the approved operator/root mechanism; service credentials alone never
+  qualify.
+- Authority: an explicitly assigned, effective SYSTEM-scoped Role with the exact
+  Permission and existing scope/dominance rules; an unassigned definition
+  conveys nothing; no root impersonation.
+- Execution: registry/entitlement/credential mutations remain privileged
+  administrative operations; **the future HTTP route is not authorized for
+  exposure** merely because its Action URN is approved. A future PR must design
+  and test a trusted, audited operator execution adapter preserving
+  `mtmf_runtime` privilege separation, or retain an operator-only interface.
+- **Grounded gap:** the current `Authorizer` binds a session to one Tenant and
+  permits a cross-Tenant target only via TenantManagementGroup delegation; there
+  is no operator sign-in, no global SYSTEM-scope assignment, and no
+  Tenant-independent Application target representation. Those are future gates
+  owned by PR 24 (or a named prerequisite). No privileged `mtmf_runtime` grant.
+
+### 19.4 Tenant administrative operations
+
+Subscription and invitation create/revoke require a verified user holding the
+exact effective Tenant Administrator grant in the target Tenant; the service
+token is independent transport authentication and never substitutes for the
+actor.
+
+### 19.5 Role assignment gate
+
+There is no automatic assignment of the new SYSTEM Roles. Assignment is a
+separately authorized verified operation through an existing approved
+mechanism; if none exists, it is **BLOCKED** and must be named as a future
+prerequisite rather than invented.
+
 ## References
 
 - [Onboarding HTTP contract (PROPOSED)](ONBOARDING_HTTP_CONTRACT.md)
@@ -652,6 +724,9 @@ resolution).
 - `pr-artifacts/pr-21/PR21_AMENDMENT02_DECISION_RECORD.md`,
   `PR21_AMENDMENT02_STOP_REPORT.md`, `PR21_AMENDMENT02_ACTION_MANIFEST.md`,
   `PR21_AMENDMENT02_AUTHORIZATION_MATRIX.md`,
-  `PR21_AMENDMENT02_SECURITY_CASES.md`
+  `PR21_AMENDMENT02_SECURITY_CASES.md`,
+  `PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`,
+  `PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`,
+  `PR21_AMENDMENT02_STOP03_SECURITY_CASES.md`
 - [Security Model](SECURITY_MODEL.md), [Root and Stewardship](ROOT_AND_STEWARDSHIP.md),
   [HTTP Integration](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md), [Roadmap](ROADMAP_V01.md)
