@@ -53,11 +53,56 @@ invented policy decision.
 | --- | --- | --- |
 | `GET` | `/health/live` | liveness |
 | `GET` | `/health/ready` | readiness (config + SQLite schema usable) |
-| `GET` | `/v1/documents/{document_id}` | authenticated, Tenant-scoped document read |
+| `GET` | `/v1/documents/{document_id}` | authenticated, Tenant-scoped document content read |
+| `GET` | `/v1/documents/{document_id}/metadata` | metadata-only read (`id` + `title`, never `body`) |
+| `POST` | `/v1/documents/batch-read` | bounded multi-document content read with all-or-nothing disclosure |
+| `POST` | `/v1/documents/batch-access` | bounded mixed metadata/content batch with atomic disclosure |
 
-Success body: `{"id": "<canonical UUID>", "title": "...", "body": "..."}`.
+Single-document success body:
+`{"id": "<canonical UUID>", "title": "...", "body": "..."}`.
 
-There is no list/create/update/delete/admin/generic-authorize endpoint.
+### Batch read semantics
+
+Request: `{"document_ids": ["<canonical UUID>", ...]}` with **1–16 unique**
+canonical UUIDs and no other fields. Duplicates, malformed/non-canonical
+UUIDs, excess/missing entries, unknown fields, and a malformed body are
+rejected with `400` **before any MTMF call**. The route accepts no Action,
+Tenant, Application, or target parameter from the caller.
+
+Success body: `{"documents": [{"id": ..., "title": ..., "body": ...}, ...]}`
+in request order. The app resolves **every** row against its Tenant-scoped
+store first; any absent or cross-Tenant row is a generic `404` with no
+evaluation and no body. It then sends **one** MTMF batch (one occurrence per
+loaded row, `request_id="document-read-<zero-based-index>"`), calls `require`
+for every occurrence in order, and only then serializes content. A single
+non-ALLOW occurrence is `403` with **zero** document bodies (atomic disclosure;
+no partial-allow). ### Metadata read
+
+`GET /v1/documents/{document_id}/metadata` is a genuine second operation with
+its own exact Action `urn:mtmf:iam:actions:system:document:read-metadata` and a
+server-defined Tenant-scoped metadata-reader Role. Success is
+`{"id": ..., "title": ...}` and **never** includes a `body`. A content-read
+grant alone does not authorize metadata, and a metadata-read grant alone does
+not authorize content.
+
+### Mixed metadata/content batch
+
+`POST /v1/documents/batch-access` accepts exactly
+`{"operations": [{"document_id": "<canonical UUID>", "operation":
+"metadata"|"content"}, ...]}` with 1–16 entries, no unknown keys, and no
+duplicate `(document_id, operation)` pair (the same id with different
+operations is required and legal). The operation string is a closed server enum
+mapped to the two server-defined exact Actions; it never selects policy by
+itself and the caller cannot supply an Action, Tenant, Application, or target.
+All distinct documents are resolved first (any absent/cross-Tenant row is a
+generic `404` with no MTMF call), one ordered MTMF batch is evaluated, and
+`require` is called for every occurrence before serialization. A single
+non-ALLOW occurrence is `403` with zero results. The success shape is
+`{"results": [{"operation": ..., "document": {...}}, ...]}` in input order;
+a `metadata` result never contains a `body` key.
+
+There is no list/create/update/delete/admin/generic-authorize
+endpoint and no per-document fallback.
 
 ## Configuration
 
@@ -78,7 +123,10 @@ secret file, trusted issuer/audience, existing CA bundle and fixture mapping):
 | `MTMF_REFERENCE_APP_FIXTURE_MAPPING_PATH` | Initializer-generated subject→Tenant mapping |
 
 Optional bounded values: `MTMF_REFERENCE_APP_JWKS_CACHE_SECONDS`,
-`MTMF_REFERENCE_APP_MTMF_TIMEOUT_SECONDS`, `MTMF_REFERENCE_APP_JWKS_TIMEOUT_SECONDS`.
+`MTMF_REFERENCE_APP_MTMF_TIMEOUT_SECONDS`, `MTMF_REFERENCE_APP_JWKS_TIMEOUT_SECONDS`,
+`MTMF_REFERENCE_APP_RENEWAL_LEEWAY_SECONDS` (proactive OAuth service-token renewal
+margin; the default 30s absorbs the token-endpoint round-trip so the client never
+presents a service token the PDP considers expired).
 
 ## Package layout
 

@@ -22,6 +22,12 @@ def test_valid_config_round_trips(tmp_path: Path) -> None:
     assert config.jwks_uri.endswith("/protocol/openid-connect/certs")
 
 
+def test_renewal_leeway_defaults_and_is_configurable(tmp_path: Path) -> None:
+    assert make_config(tmp_path).renewal_leeway_seconds == 30.0
+    overridden = make_config(tmp_path, {"MTMF_REFERENCE_APP_RENEWAL_LEEWAY_SECONDS": "45"})
+    assert overridden.renewal_leeway_seconds == 45.0
+
+
 @pytest.mark.parametrize(
     ("key", "value"),
     [

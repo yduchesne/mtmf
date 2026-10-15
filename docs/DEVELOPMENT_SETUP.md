@@ -515,3 +515,41 @@ uv run python scripts/pr20a-reference-acceptance.py acceptance   # cold -> repea
 ```
 
 See [docs/pr-artifacts/pr-20a/](pr-artifacts/pr-20a/) for the executed acceptance evidence.
+
+### PR 20B deployed conformance and resilience
+
+PR 20B reuses the same isolated `mtmf-pr20a-acceptance` topology and adds a
+bounded multi-document batch route plus black-box lifecycle, subscription,
+spoofing, cross-Tenant, revocation, and concurrency conformance. It does not
+change any production MTMF package, migration, or protected policy.
+
+```
+uv run python scripts/pr20b-reference-acceptance.py preflight    # delegate to PR 20A preflight
+uv run python scripts/pr20b-reference-acceptance.py up           # PR 20A stack + PR 20B fixture seed
+uv run python scripts/pr20b-reference-acceptance.py test         # PR 20A L01-L05 + PR 20B conformance
+uv run python scripts/pr20b-reference-acceptance.py down         # stop the acceptance project
+uv run python scripts/pr20b-reference-acceptance.py recreate     # DESTRUCTIVE: acceptance-only reset
+uv run python scripts/pr20b-reference-acceptance.py acceptance   # cold -> repeat -> recreate
+```
+
+Follow-up 01 adds a genuine metadata-only Document operation
+(`urn:mtmf:iam:actions:system:document:read-metadata`), a mixed-operation
+`POST /v1/documents/batch-access` route, a real mixed ALLOW/DENY deployed proof,
+deployed remote-fault scenarios, and the deferred spoofing cases.
+
+- `scripts/pr20b_metadata_fixture.py` registers the approved metadata Action,
+  TENANT-defined metadata-reader Role, and deterministic Alice/Bob assignments
+  through sanctioned stored functions as the authenticated `mtmf_migrator`.
+- `compose.pr20b-fault-acceptance.yaml` + `scripts/pr20b-fault-proxy.py` add an
+  acceptance-only deterministic fault fronting component on a **distinct**
+  CA-signed hostname (`mtmf-fault.mtmf.test`); the launcher applies it on every
+  `up()` and removes it on `down()`/`recreate()`. The canonical
+  `mtmf.mtmf.test` terminator is untouched and TLS verification is never
+  disabled.
+- Lifecycle/subscription/Role transitions use the privileged, acceptance-only
+  one-shot helper `scripts/pr20b_fixture_transitions.py`, which calls only
+  sanctioned stored functions as the authenticated `mtmf_migrator` identity and
+  verifies the connected database before mutating.
+
+See [docs/pr-artifacts/pr-20b/](pr-artifacts/pr-20b/) for the executed evidence and
+the explicit P0 STOP on mixed-batch disclosure.

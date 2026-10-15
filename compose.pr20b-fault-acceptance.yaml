@@ -1,0 +1,50 @@
+# PR 20B follow-up 01 isolated fault-injection overlay.
+#
+# Used ONLY by scripts/pr20b-reference-acceptance.py, combined with the
+# canonical PR 20A model:
+#   podman-compose -p mtmf-pr20a-acceptance \
+#     -f compose.pr20a-acceptance.yaml -f compose.pr20b-fault-acceptance.yaml ...
+#
+# It adds one internal-only TLS fronting component with a distinct hostname
+# (mtmf-fault.mtmf.test) and CA-signed leaf, and points the reference app's
+# MTMF base URL at it. The canonical service-tls-proxy and its
+# mtmf.mtmf.test alias are untouched. No host port is published and no
+# external network is used.
+services:
+  pr20b-fault-proxy:
+    image: mtmf-pr20a-acceptance_service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    command: ["python", "/app/pr20b-fault-proxy.py"]
+    environment:
+      MTMF_PR20B_PROXY_LISTEN_HOST: 0.0.0.0
+      MTMF_PR20B_PROXY_LISTEN_PORT: "29501"
+      MTMF_PR20B_PROXY_TARGET_HOST: service
+      MTMF_PR20B_PROXY_TARGET_PORT: "28001"
+      MTMF_PR20B_PROXY_TLS_CERT: /certs/mtmf-fault.crt
+      MTMF_PR20B_PROXY_TLS_KEY: /certs/mtmf-fault.key
+      MTMF_PR20B_FAULT_FILE: /control/mode
+      MTMF_PR20B_EVIDENCE_FILE: /evidence/evidence.jsonl
+      MTMF_PR20B_FAULT_DELAY_SECONDS: "12"
+      PYTHONDONTWRITEBYTECODE: "1"
+    networks:
+      default:
+        aliases:
+          - mtmf-fault.mtmf.test
+    volumes:
+      - ./scripts/pr20b-fault-proxy.py:/app/pr20b-fault-proxy.py:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/mtmf-fault.crt:/certs/mtmf-fault.crt:ro
+      - ${MTMF_DEV_CA_DIR:?set acceptance CA directory}/mtmf-fault.key:/certs/mtmf-fault.key:ro
+      - ${MTMF_PR20B_CONTROL_DIR:?set acceptance fault control directory}:/control:ro
+      - ${MTMF_PR20B_EVIDENCE_DIR:?set acceptance evidence directory}:/evidence
+    depends_on:
+      service:
+        condition: service_healthy
+
+  reference-app:
+    environment:
+      MTMF_REFERENCE_APP_MTMF_BASE_URL: https://mtmf-fault.mtmf.test:29501
+    depends_on:
+      pr20b-fault-proxy:
+        condition: service_started
