@@ -19,6 +19,7 @@ environment produced by ``scripts/pr20b-reference-acceptance.py``.
 from __future__ import annotations
 
 import base64
+import contextlib
 import importlib.util
 import json
 import os
@@ -26,6 +27,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -51,7 +53,11 @@ REALM = "mtmf-dev"
 REDIRECT_URI = "http://127.0.0.1:28400/callback"
 REDIRECT_PORT = 28400
 
-_TOKEN_CACHE: dict[str, str] = {}
+#: Cached genuine end-user tokens with a short refresh window. The full
+#: deployed suite outlives the Keycloak access-token lifespan, so a token must
+#: never be reused beyond a small fraction of its validity.
+_TOKEN_CACHE: dict[str, tuple[str, float]] = {}
+_TOKEN_CACHE_SECONDS = 120.0
 
 
 def _require(name: str) -> str:
@@ -77,8 +83,10 @@ def _issuer() -> Any:
 
 
 def _user_token(username: str) -> str:
-    if username in _TOKEN_CACHE:
-        return _TOKEN_CACHE[username]
+    cached = _TOKEN_CACHE.get(username)
+    now = time.monotonic()
+    if cached is not None and now - cached[1] < _TOKEN_CACHE_SECONDS:
+        return cached[0]
     token = _ev.authorization_code_token(
         _issuer(),
         _require("MTMF_PR20A_CLIENT_ID"),
@@ -89,7 +97,7 @@ def _user_token(username: str) -> str:
         REDIRECT_PORT,
     )
     access = str(token["access_token"])
-    _TOKEN_CACHE[username] = access
+    _TOKEN_CACHE[username] = (access, now)
     return access
 
 
@@ -394,3 +402,397 @@ def test_g01_concurrent_actors_do_not_mix_context_or_bodies() -> None:
     assert all(_expected_body() in body for _, _, body in alice_results)
     assert all(_expected_body() not in body for _, _, body in bob_results)
     assert all(not 500 <= status < 600 for _, status, _ in results)
+
+
+# ===========================================================================
+# Follow-up 01: metadata operation, mixed-action batch, faults, and spoofing.
+# ===========================================================================
+
+METADATA_ACTION = "urn:mtmf:iam:actions:system:document:read-metadata"
+CONTENT_ACTION = "urn:mtmf:iam:actions:system:document:read-object"
+WRONG_AUDIENCE_CLIENT = "mtmf-evidence-user"
+WRONG_AUDIENCE_SECRET = "mtmf-evidence-user-dev-secret"
+SERVICE_CLIENT = "mtmf-evidence-service"
+SERVICE_CLIENT_SECRET = "mtmf-evidence-service-dev-secret"
+
+
+def _get_metadata(document_id: str, *, token: str | None) -> tuple[int, dict[str, Any] | None, str]:
+    url = f"{_reference_base()}/v1/documents/{document_id}/metadata"
+    headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
+    response = httpx.get(url, headers=headers, timeout=20.0, follow_redirects=False)
+    return response.status_code, _maybe_json(response.text), response.text
+
+
+def _post_access(
+    operations: list[dict[str, str]],
+    *,
+    token: str | None,
+    extra: dict[str, Any] | None = None,
+) -> tuple[int, dict[str, Any] | None, str]:
+    url = f"{_reference_base()}/v1/documents/batch-access"
+    body: dict[str, Any] = {"operations": operations}
+    if extra:
+        body.update(extra)
+    headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
+    response = httpx.post(url, json=body, headers=headers, timeout=20.0, follow_redirects=False)
+    return response.status_code, _maybe_json(response.text), response.text
+
+
+def _pair(document_id: str, operation: str) -> dict[str, str]:
+    return {"document_id": document_id, "operation": operation}
+
+
+def _set_fault(mode: str) -> None:
+    path = Path(_require("MTMF_PR20B_CONTROL_FILE"))
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(mode, encoding="utf-8")
+    os.replace(temporary, path)
+
+
+@contextlib.contextmanager
+def _fault(mode: str):  # type: ignore[no-untyped-def]
+    _set_fault(mode)
+    try:
+        yield
+    finally:
+        _set_fault("none")
+
+
+def _evidence_records() -> list[dict[str, Any]]:
+    path = Path(_require("MTMF_PR20B_EVIDENCE_FILE"))
+    if not path.is_file():
+        return []
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            records.append(parsed)
+    return records
+
+
+def _last_decisions() -> list[dict[str, Any]]:
+    for record in reversed(_evidence_records()):
+        decisions = record.get("decisions")
+        if isinstance(decisions, list):
+            return [item for item in decisions if isinstance(item, dict)]
+    return []
+
+
+def _last_fault() -> str | None:
+    for record in reversed(_evidence_records()):
+        fault = record.get("fault")
+        if isinstance(fault, str):
+            return fault
+    return None
+
+
+def _service_token() -> str:
+    token = _ev.client_credentials_token(_issuer(), SERVICE_CLIENT, SERVICE_CLIENT_SECRET)
+    return str(token["access_token"])
+
+
+def _wrong_audience_token() -> str:
+    token = _ev.authorization_code_token(
+        _issuer(),
+        WRONG_AUDIENCE_CLIENT,
+        WRONG_AUDIENCE_SECRET,
+        _require("MTMF_PR20A_ALLOWED_USERNAME"),
+        _require("MTMF_PR20A_USER_PASSWORD"),
+        REDIRECT_URI,
+        REDIRECT_PORT,
+    )
+    return str(token["access_token"])
+
+
+def _refresh_token() -> str:
+    token = _ev.authorization_code_token(
+        _issuer(),
+        _require("MTMF_PR20A_CLIENT_ID"),
+        _require("MTMF_PR20A_CLIENT_SECRET"),
+        _require("MTMF_PR20A_ALLOWED_USERNAME"),
+        _require("MTMF_PR20A_USER_PASSWORD"),
+        REDIRECT_URI,
+        REDIRECT_PORT,
+    )
+    return str(token["refresh_token"])
+
+
+# --- Part D: metadata operation (M01-M04) ----------------------------------
+
+
+def test_m01_bob_metadata_read_allows_id_title_only() -> None:
+    status, payload, body = _get_metadata(_document(), token=_bob())
+    assert status == 200, body
+    assert payload is not None and payload["id"] == _document()
+    assert "body" not in (payload or {})
+    assert _expected_body() not in body
+
+
+def test_m02_bob_content_read_is_denied() -> None:
+    status, _payload, body = _get(_document(), token=_bob())
+    assert status == 403, body
+    assert _expected_title() not in body
+    assert _expected_body() not in body
+
+
+def test_m03_alice_metadata_read_allows_id_title_only() -> None:
+    status, payload, body = _get_metadata(_document(), token=_alice())
+    assert status == 200, body
+    assert payload is not None and payload["id"] == _document()
+    assert "body" not in (payload or {})
+
+
+def test_m04_alice_content_read_allows_full_document() -> None:
+    status, payload, body = _get(_document(), token=_alice())
+    assert status == 200, body
+    assert payload == {
+        "id": _document(),
+        "title": _expected_title(),
+        "body": _expected_body(),
+    }
+
+
+# --- Part C: genuine mixed-action batch (M05-M12) --------------------------
+
+
+def test_m05_bob_mixed_metadata_content_is_one_real_allow_deny() -> None:
+    status, _payload, body = _post_access(
+        [_pair(_document(), "metadata"), _pair(_document(), "content")], token=_bob()
+    )
+    assert status == 403, body
+    assert "results" not in body
+    assert _expected_body() not in body
+    decisions = _last_decisions()
+    assert [item.get("effect") for item in decisions] == ["ALLOW", "DENY"]
+    assert [item.get("action") for item in decisions] == [METADATA_ACTION, CONTENT_ACTION]
+    assert [item.get("request_id") for item in decisions] == [
+        "document-access-0",
+        "document-access-1",
+    ]
+    assert {item.get("resource_id") for item in decisions} == {_document()}
+
+
+def test_m06_bob_mixed_content_metadata_is_one_real_deny_allow() -> None:
+    status, _payload, body = _post_access(
+        [_pair(_document(), "content"), _pair(_document(), "metadata")], token=_bob()
+    )
+    assert status == 403, body
+    assert "results" not in body
+    decisions = _last_decisions()
+    assert [item.get("effect") for item in decisions] == ["DENY", "ALLOW"]
+    assert [item.get("action") for item in decisions] == [CONTENT_ACTION, METADATA_ACTION]
+
+
+def test_m07_alice_mixed_batch_allows_both_without_metadata_body() -> None:
+    status, payload, body = _post_access(
+        [_pair(_document(), "metadata"), _pair(_document(), "content")], token=_alice()
+    )
+    assert status == 200, body
+    results = (payload or {})["results"]
+    assert results[0]["operation"] == "metadata"
+    assert "body" not in results[0]["document"]
+    assert results[1]["operation"] == "content"
+    assert results[1]["document"]["body"] == _expected_body()
+    decisions = _last_decisions()
+    assert [item.get("effect") for item in decisions] == ["ALLOW", "ALLOW"]
+
+
+def test_m08_bob_metadata_only_batch_returns_no_body() -> None:
+    status, payload, body = _post_access([_pair(_document(), "metadata")], token=_bob())
+    assert status == 200, body
+    result = (payload or {})["results"][0]
+    assert result["operation"] == "metadata"
+    assert "body" not in result["document"]
+
+
+def test_m09_existing_batch_read_contract_unchanged() -> None:
+    status, _payload, body = _post_batch([_document(), _batch_document()], token=_bob())
+    assert status == 403, body
+    assert _expected_body() not in body
+    assert _require("MTMF_PR20B_BATCH_BODY") not in body
+
+
+def test_m10_cross_tenant_batch_access_is_local_404() -> None:
+    before = _count("event=mtmf_evaluate")
+    status, _payload, body = _post_access(
+        [_pair(_other_tenant_document(), "metadata")], token=_alice()
+    )
+    assert status == 404, body
+    assert _count("event=mtmf_evaluate") == before
+
+
+def test_m11_invalid_batch_access_is_400_without_evaluation() -> None:
+    before = _count("event=mtmf_evaluate")
+    status, _payload, body = _post_access(
+        [_pair(_document(), "metadata"), _pair(_document(), "metadata")], token=_alice()
+    )
+    assert status == 400, body
+    assert _count("event=mtmf_evaluate") == before
+
+
+def test_m12_restored_state_outcomes_are_stable() -> None:
+    assert _get(_document(), token=_alice())[0] == 200
+    assert _get(_document(), token=_bob())[0] == 403
+    assert _get_metadata(_document(), token=_bob())[0] == 200
+
+
+# --- Part B: deterministic remote faults (F01-F07) -------------------------
+
+
+def test_f01_refused_connection_fails_closed() -> None:
+    with _fault("refuse"):
+        status, _payload, body = _get(_document(), token=_alice())
+        assert _last_fault() == "refuse"
+    assert status == 503, body
+    assert _expected_title() not in body
+    assert _expected_body() not in body
+
+
+def test_f02_delayed_response_fails_closed() -> None:
+    with _fault("delay"):
+        status, _payload, body = _get(_document(), token=_alice())
+        assert _last_fault() == "delay"
+    assert status == 503, body
+    assert _expected_body() not in body
+
+
+@pytest.mark.parametrize("mode", ["http_502", "http_503"])
+def test_f03_upstream_error_fails_closed(mode: str) -> None:
+    with _fault(mode):
+        status, _payload, body = _get(_document(), token=_alice())
+        assert _last_fault() == mode
+    assert status == 503, body
+    assert _expected_body() not in body
+
+
+def test_f04_non_json_success_fails_closed() -> None:
+    with _fault("non_json"):
+        status, _payload, body = _get(_document(), token=_alice())
+        assert _last_fault() == "non_json"
+    assert status == 503, body
+    assert _expected_body() not in body
+
+
+def test_f05_malformed_json_success_fails_closed() -> None:
+    with _fault("malformed_json"):
+        status, _payload, body = _get(_document(), token=_alice())
+        assert _last_fault() == "malformed_json"
+    assert status == 503, body
+    assert _expected_body() not in body
+
+
+def test_f06_mismatched_correlation_fails_closed() -> None:
+    with _fault("mismatch"):
+        status, _payload, body = _get(_document(), token=_alice())
+        assert _last_fault() == "mismatch"
+    assert status == 503, body
+    assert _expected_body() not in body
+
+
+def test_f07_healthy_recovery_after_each_fault() -> None:
+    assert _last_fault() is None or _last_fault() != "none"
+    status, payload, body = _get(_document(), token=_alice())
+    assert status == 200, body
+    assert payload is not None and payload["body"] == _expected_body()
+    assert _get(_document(), token=_bob())[0] == 403
+    assert _get_metadata(_document(), token=_bob())[0] == 200
+
+
+# --- Part C: spoofing closure (S02/S05/S07/S08) ----------------------------
+
+
+def test_s02_spoofed_alice_header_does_not_replace_bob() -> None:
+    headers = {
+        "Authorization": f"Bearer {_bob()}",
+        "X-MTMF-User-Authorization": f"Bearer {_alice()}",
+    }
+    status, _payload, body = _get_with_headers(_document(), headers)
+    assert status == 403, body
+    assert _expected_body() not in body
+    assert _get_with_headers(f"{_document()}/metadata", headers)[0] == 200
+
+
+def test_s05a_tampered_signature_is_401_without_evaluation() -> None:
+    token = _alice()
+    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    before = _count("event=mtmf_evaluate")
+    status, _payload, body = _get(_document(), token=tampered)
+    assert status == 401, body
+    assert _count("event=mtmf_evaluate") == before
+
+
+def test_s05b_wrong_audience_real_token_is_401_without_evaluation() -> None:
+    before = _count("event=mtmf_evaluate")
+    status, _payload, body = _get(_document(), token=_wrong_audience_token())
+    assert status == 401, body
+    assert _count("event=mtmf_evaluate") == before
+
+
+def test_s05c_wrong_token_type_is_401_without_evaluation() -> None:
+    before = _count("event=mtmf_evaluate")
+    status, _payload, body = _get(_document(), token=_refresh_token())
+    assert status == 401, body
+    assert _count("event=mtmf_evaluate") == before
+
+
+def test_s07_service_token_is_never_user_content() -> None:
+    service_token = _service_token()
+    _header, claims = _ev.decode_unverified(service_token)
+    assert _ev.service_class_ok(claims)
+    before = _count("event=mtmf_evaluate")
+    status, _payload, body = _get(_document(), token=service_token)
+    assert status in (401, 403), body
+    assert _expected_body() not in body
+    assert _count("event=mtmf_evaluate") == before
+
+
+def test_s08_unmapped_verified_subject_is_403_without_evaluation() -> None:
+    unmapped = _user_token(_require("MTMF_PR20B_UNMAPPED_USERNAME"))
+    before = _count("event=mtmf_evaluate")
+    status, _payload, body = _get(_document(), token=unmapped)
+    assert status == 403, body
+    assert _expected_body() not in body
+    assert _count("event=mtmf_evaluate") == before
+
+
+# --- Part D: mixed-operation concurrency wave ------------------------------
+
+
+def test_m13_mixed_operation_concurrency_has_no_cross_actor_mixing() -> None:
+    alice = _alice()
+    bob = _bob()
+    tasks = (
+        [("bob-metadata", bob, "metadata")] * 8
+        + [("bob-content", bob, "content")] * 8
+        + [("alice-metadata", alice, "metadata")] * 8
+        + [("alice-content", alice, "content")] * 8
+    )
+    barrier = threading.Barrier(len(tasks))
+
+    def _run(task: tuple[str, str, str]) -> tuple[str, int, str]:
+        label, token, operation = task
+        barrier.wait(timeout=30)
+        if operation == "metadata":
+            status, _payload, body = _get_metadata(_document(), token=token)
+        else:
+            status, _payload, body = _get(_document(), token=token)
+        return label, status, body
+
+    with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+        results = list(pool.map(_run, tasks))
+    for label, status, body in results:
+        assert status < 500, (label, status)
+        if label == "bob-metadata":
+            assert status == 200 and _expected_body() not in body
+        elif label == "bob-content":
+            assert status == 403 and _expected_body() not in body
+        elif label == "alice-metadata":
+            assert status == 200 and _expected_body() not in body
+        else:
+            assert status == 200 and _expected_body() in body

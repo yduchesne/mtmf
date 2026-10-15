@@ -215,6 +215,54 @@ class BlockingEvaluateClient:
         self.closed = True
 
 
+class PolicyClient:
+    """Deterministic client with per-Action decisions and per-request overrides.
+
+    ``evaluate`` returns the exact request as the snapshot; ``require`` denies
+    any Action absent from ``allowed_actions`` or any ``request_id`` recorded in
+    ``deny_request_ids``. This exercises the PEP's own ordering and
+    atomic-disclosure logic without reimplementing client wire semantics.
+    """
+
+    def __init__(
+        self,
+        *,
+        allowed_actions: frozenset[str] | set[str] = frozenset(),
+        deny_request_ids: frozenset[str] = frozenset(),
+        error: Exception | None = None,
+    ) -> None:
+        self._allowed = set(allowed_actions)
+        self._denied_requests = set(deny_request_ids)
+        self._error = error
+        self.calls: list[tuple[AuthorizationBatchRequest, str, Any]] = []
+        self.required: list[tuple[str, ResourceTarget, str | None]] = []
+        self.closed = False
+
+    def evaluate(
+        self, request: AuthorizationBatchRequest, *, user_access_token: str, context: Any
+    ) -> Any:
+        self.calls.append((request, user_access_token, context))
+        if self._error is not None:
+            raise self._error
+        return request
+
+    def require(
+        self,
+        snapshot: Any,
+        *,
+        context: Any,
+        action: str,
+        resource: ResourceTarget,
+        request_id: str | None = None,
+    ) -> None:
+        self.required.append((action, resource, request_id))
+        if request_id in self._denied_requests or action not in self._allowed:
+            raise AuthorizationDenied("denied")
+
+    def close(self) -> None:
+        self.closed = True
+
+
 @dataclass
 class _FakeSnapshot:
     allowed: bool

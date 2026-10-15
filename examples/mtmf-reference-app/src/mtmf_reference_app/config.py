@@ -105,6 +105,10 @@ class ReferenceAppConfig:
     jwks_cache_seconds: float = 300.0
     mtmf_timeout_seconds: float = 10.0
     jwks_timeout_seconds: float = 5.0
+    #: Proactive service-token renewal margin. It must absorb the token
+    #: endpoint round-trip so the client never presents a token the service
+    #: considers expired.
+    renewal_leeway_seconds: float = 30.0
     _fixture_mapping: FixtureMapping = field(repr=False, default_factory=lambda: _empty_mapping())
 
     @classmethod
@@ -167,6 +171,9 @@ class ReferenceAppConfig:
             ),
             jwks_timeout_seconds=_positive_float(
                 source, "MTMF_REFERENCE_APP_JWKS_TIMEOUT_SECONDS", 5.0
+            ),
+            renewal_leeway_seconds=_positive_float(
+                source, "MTMF_REFERENCE_APP_RENEWAL_LEEWAY_SECONDS", 30.0
             ),
             _fixture_mapping=mapping,
         )

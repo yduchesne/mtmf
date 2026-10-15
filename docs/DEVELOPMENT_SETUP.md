@@ -532,10 +532,24 @@ uv run python scripts/pr20b-reference-acceptance.py recreate     # DESTRUCTIVE: 
 uv run python scripts/pr20b-reference-acceptance.py acceptance   # cold -> repeat -> recreate
 ```
 
-Lifecycle/subscription/Role transitions use the privileged, acceptance-only
-one-shot helper `scripts/pr20b_fixture_transitions.py`, which calls only
-sanctioned stored functions as the authenticated `mtmf_migrator` identity and
-verifies the connected database before mutating. `scripts/pr20b-fault-proxy.py`
-is an acceptance-only deterministic fault fronting component; see
-[docs/pr-artifacts/pr-20b/](pr-artifacts/pr-20b/) for the executed evidence and
+Follow-up 01 adds a genuine metadata-only Document operation
+(`urn:mtmf:iam:actions:system:document:read-metadata`), a mixed-operation
+`POST /v1/documents/batch-access` route, a real mixed ALLOW/DENY deployed proof,
+deployed remote-fault scenarios, and the deferred spoofing cases.
+
+- `scripts/pr20b_metadata_fixture.py` registers the approved metadata Action,
+  TENANT-defined metadata-reader Role, and deterministic Alice/Bob assignments
+  through sanctioned stored functions as the authenticated `mtmf_migrator`.
+- `compose.pr20b-fault-acceptance.yaml` + `scripts/pr20b-fault-proxy.py` add an
+  acceptance-only deterministic fault fronting component on a **distinct**
+  CA-signed hostname (`mtmf-fault.mtmf.test`); the launcher applies it on every
+  `up()` and removes it on `down()`/`recreate()`. The canonical
+  `mtmf.mtmf.test` terminator is untouched and TLS verification is never
+  disabled.
+- Lifecycle/subscription/Role transitions use the privileged, acceptance-only
+  one-shot helper `scripts/pr20b_fixture_transitions.py`, which calls only
+  sanctioned stored functions as the authenticated `mtmf_migrator` identity and
+  verifies the connected database before mutating.
+
+See [docs/pr-artifacts/pr-20b/](pr-artifacts/pr-20b/) for the executed evidence and
 the explicit P0 STOP on mixed-batch disclosure.

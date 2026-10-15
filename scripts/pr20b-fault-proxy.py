@@ -23,10 +23,12 @@ Fault modes: ``none``, ``refuse``, ``delay``, ``http_502``, ``http_503``,
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import ssl
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -41,6 +43,12 @@ TLS_CERT = os.environ.get("MTMF_PR20B_PROXY_TLS_CERT", "")
 TLS_KEY = os.environ.get("MTMF_PR20B_PROXY_TLS_KEY", "")
 FAULT_FILE = os.environ.get("MTMF_PR20B_FAULT_FILE", "")
 FAULT_DELAY_SECONDS = float(os.environ.get("MTMF_PR20B_FAULT_DELAY_SECONDS", "20"))
+#: Acceptance-only non-secret decision evidence (JSONL). Records only the
+#: correlation id, exact Action, effect and resource id of a successful real
+#: upstream evaluation; never request/response bodies or credentials.
+EVIDENCE_FILE = os.environ.get("MTMF_PR20B_EVIDENCE_FILE", "")
+_EVIDENCE_LOCK = threading.Lock()
+_EVIDENCE_COUNTER = itertools.count(1)
 
 EVALUATE_PATH = "/v1/authorization/evaluate"
 _KNOWN_FAULTS = frozenset(
@@ -85,9 +93,20 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- internals ---------------------------------------------------------
     def _handle(self, method: str) -> None:
+        try:
+            self._handle_inner(method)
+        except BrokenPipeError, ConnectionResetError, OSError:
+            # The caller may have abandoned a faulted request (e.g. timeout);
+            # never let a closed socket crash the handler thread.
+            self.close_connection = True
+
+    def _handle_inner(self, method: str) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
-        fault = _current_fault() if self.path.split("?", 1)[0] == EVALUATE_PATH else "none"
+        is_evaluate = self.path.split("?", 1)[0] == EVALUATE_PATH
+        fault = _current_fault() if is_evaluate else "none"
+        if is_evaluate and fault != "none":
+            _record_fault(fault)
         if fault == "refuse":
             self.close_connection = True
             return
@@ -113,6 +132,11 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if fault == "mismatch":
             payload = _tamper_request_id(payload)
+        elif is_evaluate and fault == "none":
+            if status == 200:
+                _record_evidence(body, payload, content_type)
+            else:
+                _record_error(status, payload, content_type)
         self._reply(status, payload, content_type)
 
     def _forward(self, method: str, body: bytes | None) -> tuple[int, bytes, str | None]:
@@ -132,6 +156,96 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if payload:
             self.wfile.write(payload)
+
+
+def _record_error(status: int, payload: bytes, content_type: str | None) -> None:
+    """Append the non-secret status/code of a non-200 real upstream response."""
+    if not EVIDENCE_FILE or content_type is None:
+        return
+    if not content_type.startswith("application/json"):
+        return
+    code: object = None
+    try:
+        document = json.loads(payload)
+        if isinstance(document, dict):
+            error = document.get("error")
+            if isinstance(error, dict):
+                code = error.get("code")
+    except ValueError, TypeError:
+        code = None
+    with _EVIDENCE_LOCK:
+        sequence = next(_EVIDENCE_COUNTER)
+        line = json.dumps(
+            {"n": sequence, "error_status": status, "error_code": code}, sort_keys=True
+        )
+    try:
+        with open(EVIDENCE_FILE, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        return
+
+
+def _record_fault(mode: str) -> None:
+    """Append a non-secret activation record for one injected fault mode."""
+    if not EVIDENCE_FILE:
+        return
+    with _EVIDENCE_LOCK:
+        sequence = next(_EVIDENCE_COUNTER)
+        line = json.dumps({"n": sequence, "fault": mode}, sort_keys=True)
+    try:
+        with open(EVIDENCE_FILE, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        return
+
+
+def _record_evidence(
+    request_body: bytes | None, response_payload: bytes, content_type: str | None
+) -> None:
+    """Append non-secret decision evidence for one successful real evaluation.
+
+    Only the correlation id, exact Action, effect and non-secret resource id are
+    recorded. Request/response bodies and credentials are never retained.
+    """
+    if not EVIDENCE_FILE or not response_payload:
+        return
+    if content_type is None or not content_type.startswith("application/json"):
+        return
+    try:
+        request = json.loads(request_body) if request_body else {}
+        response = json.loads(response_payload)
+    except ValueError, TypeError:
+        return
+    if not isinstance(request, dict) or not isinstance(response, dict):
+        return
+    actions = {
+        item.get("request_id"): item
+        for item in request.get("actions", [])
+        if isinstance(item, dict)
+    }
+    decisions: list[dict[str, object]] = []
+    for decision in response.get("decisions", []):
+        if not isinstance(decision, dict):
+            continue
+        request_id = decision.get("request_id")
+        action = actions.get(request_id)
+        resource = action.get("resource") if isinstance(action, dict) else None
+        decisions.append(
+            {
+                "request_id": request_id,
+                "action": action.get("action") if isinstance(action, dict) else None,
+                "effect": decision.get("effect"),
+                "resource_id": resource.get("id") if isinstance(resource, dict) else None,
+            }
+        )
+    with _EVIDENCE_LOCK:
+        sequence = next(_EVIDENCE_COUNTER)
+        line = json.dumps({"n": sequence, "decisions": decisions}, sort_keys=True)
+    try:
+        with open(EVIDENCE_FILE, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        return
 
 
 def _tamper_request_id(payload: bytes) -> bytes:

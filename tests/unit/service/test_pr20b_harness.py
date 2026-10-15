@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,7 @@ def _load(name: str, filename: str):  # type: ignore[no-untyped-def]
 transitions = _load("pr20b_transitions_test", "pr20b_fixture_transitions.py")
 fault_proxy = _load("pr20b_fault_proxy_test", "pr20b-fault-proxy.py")
 wrapper = _load("pr20b_wrapper_test", "pr20b-reference-acceptance.py")
+metadata = _load("pr20b_metadata_fixture_test", "pr20b_metadata_fixture.py")
 
 
 def test_fixture_transition_ids_match_reference_fixture() -> None:
@@ -112,3 +114,57 @@ def test_known_fault_modes_are_complete() -> None:
         "mismatch",
     }
     assert expected_modes == set(fault_proxy._KNOWN_FAULTS)
+
+
+def test_wrapper_fault_hostname_is_distinct_and_canonical() -> None:
+    assert wrapper.FAULT_HOSTNAME == "mtmf-fault.mtmf.test"
+    assert wrapper.FAULT_HOSTNAME != "mtmf.mtmf.test"
+    assert f"https://{wrapper.FAULT_HOSTNAME}:29501" == wrapper.FAULT_BASE_URL
+    assert wrapper.FAULT_PROXY_CONTAINER.startswith("mtmf-pr20a-acceptance_")
+
+
+def test_wrapper_known_modes_match_proxy() -> None:
+    assert set(fault_proxy._KNOWN_FAULTS) == wrapper.KNOWN_FAULT_MODES
+
+
+def test_metadata_fixture_action_and_role_contract() -> None:
+    tenant_id = uuid.UUID("17ab63f3-16d9-57e9-a7a1-e42b9f0c0850")
+    assert metadata.METADATA_ACTION.endswith("document:read-metadata")
+    assert metadata.METADATA_PERMISSION.endswith("document:read-metadata")
+    assert metadata.METADATA_ACTION != reference_fixture.DOCUMENT_READ_ACTION
+    payload = metadata.metadata_role_payload(tenant_id)
+    assert payload["urn"] == metadata.metadata_role_urn(tenant_id)
+    assert payload["urn"].endswith("reference-document-metadata-reader")
+    assert len(payload["permission_sets"]) == 1
+    permission_set = payload["permission_sets"][0]
+    assert permission_set["effect"] == "allow"
+    assert len(permission_set["permissions"]) == 1
+    assert permission_set["permissions"][0]["urn"] == metadata.METADATA_PERMISSION
+
+
+def test_metadata_assignments_are_distinct_per_subject() -> None:
+    tenant_id = uuid.UUID("17ab63f3-16d9-57e9-a7a1-e42b9f0c0850")
+    alice = metadata.metadata_assignment_id(
+        tenant_id, metadata.identity_id_for_subject("subject-alice")
+    )
+    bob = metadata.metadata_assignment_id(
+        tenant_id, metadata.identity_id_for_subject("subject-bob")
+    )
+    assert alice != bob
+
+
+def test_fault_proxy_records_non_secret_fault_and_error_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence = tmp_path / "evidence.jsonl"
+    monkeypatch.setattr(fault_proxy, "EVIDENCE_FILE", str(evidence))
+    fault_proxy._record_fault("http_503")
+    fault_proxy._record_error(
+        401,
+        b'{"error":{"code":"UNAUTHENTICATED","message":"secret-free"}}',
+        "application/json",
+    )
+    records = [json.loads(line) for line in evidence.read_text().splitlines()]
+    assert any(record.get("fault") == "http_503" for record in records)
+    assert any(record.get("error_code") == "UNAUTHENTICATED" for record in records)
+    assert all("token" not in json.dumps(record).lower() for record in records)
