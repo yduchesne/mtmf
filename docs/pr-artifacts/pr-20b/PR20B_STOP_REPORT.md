@@ -101,3 +101,23 @@ Because the P0 mandatory deployed proof cannot be executed, **PR 20B is NOT
 DONE.** `docs/ROADMAP_V01.md` is not marked DONE for PR 20B. This STOP is an
 explicit, recorded deviation, not a skipped acceptance case and not a
 fabricated PASS.
+
+---
+
+## Addendum — 2026-10-15: P0 STOP RESOLVED by approved follow-up 01
+
+The historical STOP above is preserved unchanged. The owner subsequently
+approved the genuine second application operation described in §6 option 2:
+a metadata-only Document read with its own exact Action
+`urn:mtmf:iam:actions:system:document:read-metadata` and matching Permission,
+provisioned through existing sanctioned stored functions.
+
+Follow-up 01 (validated SHA `7f9092ddebb7913059a03c6996e5394180247bc2`) produced
+the real, single-batch, same-actor, same-document mixed decisions through the
+deployed PDP (`ALLOW read-metadata` + `DENY read-object` for Bob, in both
+orders), with the PEP returning `403` and zero disclosure. See
+[`PR20B_FOLLOWUP01_ACCEPTANCE_REPORT.md`](PR20B_FOLLOWUP01_ACCEPTANCE_REPORT.md)
+and [`PR20B_FOLLOWUP01_SECURITY_REVIEW.md`](PR20B_FOLLOWUP01_SECURITY_REVIEW.md).
+No MTMF authorization semantics, migration, protected policy, or production
+grant changed. The earlier non-DONE declaration applied only to the pre-follow-up
+implementation; PR 20B is now DONE on the follow-up SHA.

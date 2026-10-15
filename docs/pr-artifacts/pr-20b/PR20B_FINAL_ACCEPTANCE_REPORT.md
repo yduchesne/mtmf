@@ -122,3 +122,26 @@ Because P0 cannot be executed under the approved policy model, PR 20B is
 **NOT DONE**. The implementation is complete and green for every other required
 feature-specific gate, and the one gap is recorded as an explicit STOP rather
 than a fabricated PASS.
+
+---
+
+## Addendum — 2026-10-15: follow-up 01 supersedes the NOT DONE status
+
+The earlier sections of this report describe the **initial** PR 20B
+implementation at SHA `61649b4969eb882501920a506584f2bba581d125`, for which the
+P0 mixed-batch deployed proof was blocked and the STOP was recorded. They remain
+historically accurate for that SHA.
+
+The owner-approved follow-up 01 (validated SHA
+`7f9092ddebb7913059a03c6996e5394180247bc2`) implements the genuine metadata-only
+second operation, proves real single-batch ordered `ALLOW`/`DENY` decisions for
+one verified actor and loaded document, executes the previously omitted
+`F01`–`F07` remote fault scenarios and the deferred `S02`/`S05`/`S07`/`S08`
+spoofing cases with genuine Keycloak tokens, and re-runs every canonical gate.
+The deployed launcher completed COLD/REPEAT/RECREATE with **5 PR20A + 45 PR20B
+cases per cycle and zero skips**, default stack unchanged. Under the completion
+contract, **PR 20B is DONE** on the follow-up SHA. Full evidence:
+[`PR20B_FOLLOWUP01_ACCEPTANCE_REPORT.md`](PR20B_FOLLOWUP01_ACCEPTANCE_REPORT.md)
+and [`PR20B_FOLLOWUP01_SECURITY_REVIEW.md`](PR20B_FOLLOWUP01_SECURITY_REVIEW.md).
+The historical [`PR20B_STOP_REPORT.md`](PR20B_STOP_REPORT.md) carries a dated
+resolution addendum; its original STOP text is preserved.
