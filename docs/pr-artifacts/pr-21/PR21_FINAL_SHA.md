@@ -24,3 +24,12 @@ The four canonical gates and the pre-commit hook (gitleaks, `--rust`, `--qa`,
   was created. The final PR tip adds only this SHA record.
 - **Status:** STOP-01 closed (Option B direction); STOP-02–STOP-06 open; PR 21
   remains **NOT DONE**. See `PR21_AMENDMENT01_ACCEPTANCE_REPORT.md`.
+
+
+## Amendment 02
+
+- **Pre-amendment tip:** `b79d8aaa4597ca86aff97fdf0645e41ee6853b47`
+- **Amendment 02 content commit under test:** recorded by the commit that adds
+  this section; the canonical gates were run on its tree (see
+  `PR21_AMENDMENT02_ACCEPTANCE_REPORT.md`).
+- **Status:** STOP-02/04/05/06 closed; **STOP-03 open**; PR 21 NOT DONE.

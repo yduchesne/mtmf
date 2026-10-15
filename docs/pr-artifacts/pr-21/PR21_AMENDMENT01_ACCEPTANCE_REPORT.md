@@ -93,3 +93,14 @@ resolved.
 `git diff --name-only <base>..HEAD` contains only documentation; all Markdown
 links resolve; the original PR 21 artifacts are preserved with dated amendment
 sections. **documentation-only; no runtime behavior implemented.**
+
+
+---
+
+## Amendment 02 update (2026-10-15)
+
+Amendment 01's acceptance remains valid for its baseline. Amendment 02 is a
+separate documentation-only deliverable that closes STOP-02/04/05/06 and keeps
+STOP-03 open; see
+[PR21_AMENDMENT02_ACCEPTANCE_REPORT.md](PR21_AMENDMENT02_ACCEPTANCE_REPORT.md).
+PR 21 is still NOT DONE.

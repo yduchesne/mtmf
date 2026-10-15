@@ -14,9 +14,12 @@
 > explicit multi-Tenant selection (D5), independent subscription approval (D6),
 > planned Application/registration/subscription management (D7), and a narrowly
 > scoped pre-Tenant Application-initiated admission (D8, Option B). See §17 and
-> `pr-artifacts/pr-21/PR21_AMENDMENT01_DECISION_RECORD.md`. **Narrower
-> STOP-02…STOP-06 remain open** (`pr-artifacts/pr-21/PR21_AMENDMENT01_STOP_REPORT.md`),
-> so PR 21 is still not DONE.
+> `pr-artifacts/pr-21/PR21_AMENDMENT01_DECISION_RECORD.md`. **Amendment 02
+> (2026-10-15) closed STOP-02, STOP-04, STOP-05, and STOP-06 (P02/P04/P05/P06).
+> STOP-03 — the exact Action/Permission/Role manifest — remains OPEN pending
+> human approval.** See §18 and
+> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP_REPORT.md`; so PR 21 is still not
+> DONE.
 >
 > The original STOP-01 record (Option A vs B) is preserved in
 > [`pr-artifacts/pr-21/PR21_STOP_REPORT.md`](pr-artifacts/pr-21/PR21_STOP_REPORT.md).
@@ -361,20 +364,24 @@ The full adversarial matrix `C01`–`C36` and Amendment 01 `A01`–`A24` are in
 
 ## 15. Unresolved human decisions
 
-**STOP-01 is closed** (Amendment 01, D8 — Option B direction approved; see
-§17). The narrower decisions below remain open and **block marking PR 21 DONE**:
+**Amendment 01 closed STOP-01** (D8, Option B). **Amendment 02 closed STOP-02,
+STOP-04, STOP-05, and STOP-06** (P02/P04/P05/P06; see §18). The remaining open
+decision is:
 
-1. **STOP-02** — pre-Tenant onboarding-entitlement issuer/grant/revoke model and
-   authoritative state. See `pr-artifacts/pr-21/PR21_AMENDMENT01_STOP_REPORT.md`.
-2. **STOP-03** — exact onboarding Action URNs and built-in Role/Permission
-   composition (`pr-artifacts/pr-21/PR21_CONTRACT_REVIEW.md` §1).
-3. **STOP-04** — authority for the initial/subsequent Application–Tenant
-   registration (PR 13 registration mutation is operator-only).
-4. **STOP-05** — terminal re-subscription / re-registration replacement policy.
-5. **STOP-06** — Application service-credential binding management boundary.
+1. **STOP-03 — exact Action / Permission / Role manifest.** A complete
+   review-ready candidate manifest exists in
+   `pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`, but no new literal
+   URN, exact Permission, built-in Role grant, or system-management Role is
+   human-approved. **This blocks marking PR 21 DONE.**
 
-Until resolved, implementations MUST choose the more restrictive behavior and
-MUST NOT invent a design.
+Deferred-implementation items (do not reopen the closed STOPs): the exact
+entitlement table/function shape and operator quota defaults (PR 22/23), any
+predecessor-reference schema addition (PR 22/24), and the separately gated
+credential-binding management contract (PR 24, only if the PR 14 trust model
+supports it).
+
+Until STOP-03 is approved, implementations MUST choose the more restrictive
+behavior and MUST NOT invent a design or grant.
 
 ## 16. PR 22–26 allocation
 
@@ -452,13 +459,15 @@ Additional rules:
   and other required claims. Derive identities from verified tokens, never from
   caller-provided UUID/email. Preserve the existing cross-client verification
   constraint unless an explicitly reviewed alternative is required.
-- **Pre-Tenant onboarding entitlement** is a separately configured,
-  least-privilege authority bound to the authenticated Application. It is not
-  implied by client credentials, normal subscription eligibility, the Tenant
-  Administrator Role, or root impersonation. **STOP-02** proposes an
-  operator-managed, versioned Application entitlement record (`ACTIVE`/`REVOKED`,
-  immutable grant provenance) evaluated only in the pre-Tenant branch; the exact
-  model and grant/revoke authority require human approval.
+- **Pre-Tenant onboarding entitlement (P02, approved).** A separately
+  provisioned, MTMF-controlled Application onboarding entitlement keyed to the
+  canonical Application UUID — never to an OAuth client ID, user, Tenant, or
+  service token. `ACTIVE`/`REVOKED` (terminal; re-grant is a new record),
+  granted/revoked only by an authenticated, explicitly authorized system
+  management authority; immutable grant provenance; authoritative state in MTMF
+  persistence; used only in the new-Identity branch. It is **not** a Role,
+  Permission, subscription, credential, or general management authority. See
+  §18.1.
 - Abuse controls: per-Application and per-verified-subject rate/quota limits,
   duplicate throttling, bounded payloads, idempotency, atomic audit, and
   rejection telemetry. Rate limits do **not** solve Sybil/identity-abuse risk;
@@ -485,10 +494,9 @@ verified user:
 - if the second Application has no `ACTIVE` registration/subscription for that
   Tenant, the outcome is `SUBSCRIPTION_REQUIRED`; the user's existing membership
   does not authorize the new subscription;
-- an explicitly authorized Tenant administrator (or a separately authorized
-  operator) requests the second Application's registration/subscription through
-  the management API (STOP-04 defines registration authority);
-- eligibility is re-evaluated only after the committed state;
+- Registration of the second Application is **system authorization only**
+  (P04); the Tenant administrator may then manage the subscription for its own
+  Tenant. See §18.4.
 - an ordinary user cannot cause the subscription merely by signing in.
 
 Billing/subscription commerce is out of scope; MTMF subscription is an
@@ -509,11 +517,128 @@ The actual PR 13 transitions are: Application `ACTIVE↔SUSPENDED` and
   in place.
 - Physical hard-delete is out of scope for v0.1. Terminal rows are retained as
   history. A replacement subscription/re-registration is a **new row with a new
-  UUID**; whether/when replacement is allowed is **STOP-05** (not yet approved,
-  not implemented).
+  UUID**; P05 (approved, §18.6) fixes who may replace and how it is audited.
+  Terminal rows are never reactivated in place.
 - Registration `REVOKED` and subscription `CANCELLED` are distinct facts.
 - Eligibility changes become effective for the next evaluation; already-issued
   active authorization snapshots are not retroactively invalidated (§12).
+
+## 18. Amendment 02 — entitlement, registration authority, replacement, and credential separation
+
+Normative for PRs 22–26. Grounded in `pr-artifacts/pr-21/PR21_AMENDMENT02_*.md`
+and the PR 13/14 source. Exact Action/Role literals remain STOP-03 open.
+
+### 18.1 Application onboarding entitlement (P02)
+
+- Keyed to the canonical registered `Application` UUID; `ACTIVE`/`REVOKED`
+  (terminal); re-grant is a new record.
+- Grant/revoke only by an authenticated, explicitly authorized system
+  management authority through a reviewed management/installation boundary. Not
+  a Tenant Administrator, consuming Application, or self-asserted root.
+- Immutable grant provenance (issuer/operator, time, reason, approved policy
+  version, operation/correlation ID); optional bounded validity; append-only
+  revocation history; authoritative state in MTMF persistence.
+- Required only for the new verified global Identity branch. A valid service
+  token and verified user token are necessary but insufficient.
+- Revocation prevents new provisioning and does not retroactively revoke
+  already-created Tenants. Exact table/function shape is PR 22/23.
+
+### 18.2 Pre-Tenant branch ordering
+
+```text
+verify Application service token (→ registered Application) and user proof (outside UoW)
+  → resolve global Identity/Principal by (issuer, subject)
+  → Identity absent:
+        require ACTIVE entitlement for this Application + reserve quota
+        → begin serialized UoW
+        → create Identity/Principal/Tenant/memberships/steward
+        → create exact initial registration + subscription (P04 exception)
+        → activate Tenant; atomic provenance + audit; commit
+  → Identity present:
+        resolve Tenant-context outcome (REUSED / SELECTION_REQUIRED /
+        SUBSCRIPTION_REQUIRED / ONBOARDING_REQUIRED) with no mutation; no entitlement required
+```
+
+No IdP/network call occurs inside the UoW (§18.9).
+
+### 18.3 Initial registration/subscription exception (P04)
+
+The entitled initiating Application may create the **exact initial**
+Application–Tenant registration and subscription atomically with the new Tenant.
+The composite authority is bound to that authenticated Application and the
+newly created Tenant; it cannot register other Applications, existing Tenants,
+or SYSTEM/root. Audit identifies the entitlement and both created records. No
+other application is auto-subscribed.
+
+### 18.4 Existing-Tenant registration and subscription (P04)
+
+- Registration create/revoke/replacement is **system management authority only**.
+- A Tenant Administrator manages subscriptions for its own Tenant **only when an
+  `ACTIVE` registration already exists**, via an approved exact Permission and
+  existing dominance rules.
+- An `ACTIVE` subscription without an `ACTIVE` registration is ineligible;
+  registration alone does not activate a subscription; subscription approval
+  never grants registration authority.
+- No implicit self-registration by an Application; no silent subscription.
+
+### 18.5 Multi-Application Tenant example
+
+Digr first onboards Alice: a new global Identity + a new application-independent
+Tenant T with Digr's initial registration/subscription. ATI later onboards the
+same verified Alice: the same Identity/Principal and Tenant T are reused; ATI is
+not registered/subscribed, so the outcome is `SUBSCRIPTION_REQUIRED`. A system
+authority creates ATI's registration for T; a Tenant administrator then creates
+ATI's subscription for T. ATI never creates a second Tenant and never inherits
+Digr's authorization; MTMF UUIDs are unchanged across Applications.
+
+### 18.6 Terminal replacement (P05)
+
+- Preserve PR 13 exactly (transitions, restrictive-only `ends_at`, immutable
+  `starts_at`, history, unique current-row constraints).
+- Replacement is a **fresh record/UUID only**; terminal rows are never
+  reactivated. A `REVOKED` registration is replaced only by system management
+  authority; a `CANCELLED`/`EXPIRED` subscription is replaced only by a
+  Tenant-scoped authorized manager and only when an `ACTIVE` registration exists
+  and the pair is eligible. A retired Application cannot reopen.
+- `SUSPENDED→ACTIVE` is an in-place permitted transition, not replacement.
+- Replacements are explicit, separately authorized, idempotent,
+  concurrency-safe, and atomically audited with predecessor reference, reason,
+  new UUID, actor, and correlation ID. Any required additive schema support is
+  reported by PR 22/24; none is added here.
+
+### 18.7 Service credential binding separation (P06)
+
+- Application registry lifecycle and OAuth credential lifecycle are separate
+  operations and trust boundaries. Creating an Application or subscribing a
+  Tenant mints/binds no credential.
+- Only separately authorized system credential administration may add/revoke
+  `(issuer, client_id)→Application` bindings (immutable provenance, conflict
+  detection, strict issuer/client/audience validation, audit).
+- The PR 14 verified-binding boundary is preserved; no caller-supplied UUID,
+  issuer, client ID, email, or unverified token authenticates. Suspend/retire
+  Application immediately fails active-Application eligibility even if an old
+  credential is cryptographically valid. Credential cleanup is not claimed
+  atomic with an external IdP. Raw secrets never appear in Application
+  requests/responses. Credential-binding management is a separately gated
+  future contract.
+
+### 18.8 Concurrency, quota, idempotency, and audit
+
+- Bounded per-Application rate and provisioning quotas; atomic quota
+  reservation/check under concurrency; fail closed on unavailable
+  entitlement/quota state.
+- Idempotency scoped to verified Application + user subject + operation, with a
+  durable fingerprint; same key/fingerprint returns the same IDs; a changed
+  fingerprint conflicts.
+- One atomic mutation audit per successful operation; no false success row for a
+  no-op/failure.
+
+### 18.9 No IdP network inside the transaction
+
+External verification and any remote IdP call complete **before** the UoW; the
+DB transaction performs no network I/O, and no cross-IdP/DB atomicity is
+claimed. Failures are reconciled explicitly (idempotent retry or authorized
+resolution).
 
 ## References
 
@@ -524,5 +649,9 @@ The actual PR 13 transitions are: Application `ACTIVE↔SUSPENDED` and
   `PR21_AMENDMENT01_STOP_REPORT.md`,
   `PR21_AMENDMENT01_AUTHORIZATION_MATRIX.md`,
   `PR21_AMENDMENT01_BASELINE_RECONCILIATION.md`
+- `pr-artifacts/pr-21/PR21_AMENDMENT02_DECISION_RECORD.md`,
+  `PR21_AMENDMENT02_STOP_REPORT.md`, `PR21_AMENDMENT02_ACTION_MANIFEST.md`,
+  `PR21_AMENDMENT02_AUTHORIZATION_MATRIX.md`,
+  `PR21_AMENDMENT02_SECURITY_CASES.md`
 - [Security Model](SECURITY_MODEL.md), [Root and Stewardship](ROOT_AND_STEWARDSHIP.md),
   [HTTP Integration](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md), [Roadmap](ROADMAP_V01.md)

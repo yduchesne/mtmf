@@ -43,3 +43,11 @@ PG = real-PostgreSQL restricted-runtime integration; deployed = end-to-end.
 - Authorization actors/scopes: `PR21_AMENDMENT01_AUTHORIZATION_MATRIX.md`.
 - Decision/STOP boundaries: `PR21_AMENDMENT01_DECISION_RECORD.md`,
   `PR21_AMENDMENT01_STOP_REPORT.md`.
+
+
+---
+
+## Amendment 02 update (2026-10-15)
+
+A01–A25 are retained unchanged. Amendment 02 adds B01–B28 in
+[PR21_AMENDMENT02_SECURITY_CASES.md](PR21_AMENDMENT02_SECURITY_CASES.md).

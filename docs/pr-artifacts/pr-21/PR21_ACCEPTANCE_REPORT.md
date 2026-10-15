@@ -124,3 +124,15 @@ resolved by the canonical `--rust` gate, not by weakening a threshold.
 - `PR21_BASELINE_RECONCILIATION.md`, `PR21_SECURITY_MATRIX.md`,
   `PR21_CONTRACT_REVIEW.md`, `PR21_STOP_REPORT.md` (this directory).
 - `docs/ONBOARDING_ARCHITECTURE.md`, `docs/ONBOARDING_HTTP_CONTRACT.md`.
+
+
+---
+
+## Amendment 02 update (2026-10-15) — status
+
+Amendment 01's acceptance remains valid for its baseline. **Amendment 02 is
+accepted as a documentation-only deliverable** and closes STOP-02/04/05/06;
+**STOP-03 stays OPEN**. See
+[PR21_AMENDMENT02_ACCEPTANCE_REPORT.md](PR21_AMENDMENT02_ACCEPTANCE_REPORT.md)
+and [PR21_AMENDMENT02_STOP_REPORT.md](PR21_AMENDMENT02_STOP_REPORT.md). PR 21 is
+still NOT DONE.

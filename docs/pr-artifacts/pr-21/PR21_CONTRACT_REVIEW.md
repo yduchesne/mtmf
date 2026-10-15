@@ -123,3 +123,16 @@ or its status in place.
 - `PR21_SECURITY_MATRIX.md` (C01–C36) and `PR21_AMENDMENT01_SECURITY_CASES.md` (A01–A24).
 - `PR21_AMENDMENT01_DECISION_RECORD.md` (D1–D8),
   `PR21_AMENDMENT01_STOP_REPORT.md` (STOP-02…STOP-06).
+
+
+---
+
+## Amendment 02 update (2026-10-15)
+
+STOP-01 was closed by Amendment 01 (D8). **Amendment 02 closes STOP-02, STOP-04,
+STOP-05, and STOP-06 (P02/P04/P05/P06).** The open item is now **STOP-03**: the
+exact Action/Permission/Role manifest, for which a review-ready candidate table
+(grammar-validated, per-row status) is in
+[PR21_AMENDMENT02_ACTION_MANIFEST.md](PR21_AMENDMENT02_ACTION_MANIFEST.md). No
+new literal or grant is approved. The §1.1 proposals here are superseded by that
+manifest and remain UNAPPROVED.

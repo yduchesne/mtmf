@@ -63,3 +63,14 @@ claimed.
   `MtmfSpi`/UnitOfWork, stored-function write boundary, and audit seams.
 - Runtime privilege posture: `mtmf_runtime` gains no registry mutation grant.
 - No physical deletion and no terminal reactivation.
+
+
+---
+
+## Amendment 02 update (2026-10-15)
+
+The Amendment 01 contracts above are refined by Amendment 02: entitlement (P02),
+system-authorized registration with a narrow first-Tenant exception (P04),
+fresh-UUID terminal replacement (P05), and separate credential binding (P06).
+STOP-03 (exact literals) remains open. See
+[PR21_AMENDMENT02_CONTRACT_DIFF.md](PR21_AMENDMENT02_CONTRACT_DIFF.md).

@@ -9,10 +9,13 @@
 >
 > **Amendment 01 (2026-10-15): STOP-01 direction approved (Option B).** The
 > onboarding admission direction is a narrowly scoped pre-Tenant
-> Application-initiated admission. Narrower STOP-02…STOP-06 remain open; see
-> [ONBOARDING_ARCHITECTURE.md](ONBOARDING_ARCHITECTURE.md) §17 and
-> `pr-artifacts/pr-21/PR21_AMENDMENT01_STOP_REPORT.md`. Action URNs and error
-> codes below are still proposals, not approved decisions.
+> Application-initiated admission.
+>
+> **Amendment 02 (2026-10-15): STOP-02, STOP-04, STOP-05, STOP-06 closed**
+> (P02/P04/P05/P06; see §16). **STOP-03 — the exact Action/Permission/Role
+> manifest — remains OPEN**; all Action URNs and error codes below are still
+> proposals. See
+> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP_REPORT.md`. PR 21 is not DONE.
 
 This document uses the existing `mtmf-api` detached DTO and static
 `ApiErrorResponse` conventions. It introduces no DTO class, route, or code in
@@ -365,7 +368,83 @@ invented built-in Role grant.
 | Subscription suspend/cancel | required | required | Tenant exact | same as subscribe | Tenant administrator or operator | independent approval (D6) | yes |
 | Invitation acceptance | required | required (pre-membership recipient) | invited Tenant only | `urn:mtmf:iam:actions:system:tenant-invitation:accept-object` | PR 25 pre-membership seam | n/a | yes |
 
-## 16. Forward compatibility and change control
+## 16. Amendment 02 refinements — entitlement, registration, replacement, credential separation
+
+Normative for PRs 22–26. Exact Action/Role literals remain STOP-03 open
+(`pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`).
+
+### 16.1 `resolve-or-provision` trust, admission, and lifecycle
+
+- **Required proofs:** verified Application service token **and** independently
+  verified user token; denied without either. Identity is derived from verified
+  claims, never from body UUID/email.
+- **Ordering (no IdP/network inside the UoW):** verify service token and user
+  proof outside the UoW → resolve global Identity/Principal by
+  `(issuer, subject)` → if absent, require an `ACTIVE` Application onboarding
+  entitlement and reserve quota → one serialized UoW creates the new
+  Identity/Principal/Tenant/memberships/steward **and the exact initial
+  registration + subscription** → activate → atomic audit → commit.
+- **Entitlement:** required only for the new-Identity branch; not required for a
+  read-only reuse/selection/subscription-required/onboarding-required outcome.
+  Revocation stops new provisioning and does not retroactively revoke Tenants.
+- **Outcomes and mutability:** `CREATED` (create), `REUSED` (no mutation),
+  `SELECTION_REQUIRED` (no mutation; authorized choices only), `SUBSCRIPTION_REQUIRED`
+  (no mutation; no auto-subscription), `ONBOARDING_REQUIRED` (no auto-create).
+- **Idempotency:** scope `(verified Application, verified subject, "onboarding.resolve_or_provision", idempotency_key)` + durable fingerprint; replay returns the same IDs; a changed fingerprint is `409`.
+- **Errors/visibility:** `400/401/403/404/409/429/503`; never leak inaccessible Tenant names/IDs; an existing Tenant without the calling-Application subscription is `SUBSCRIPTION_REQUIRED`, never `REUSED`.
+
+### 16.2 Application management
+
+- Requires separately authorized **system management** authority; never
+  self-registration via a caller service token.
+- **Credential binding is separate** and not implied by create/PATCH; no raw
+  client secret appears in any Application request or response; credential
+  administration is a separately gated contract (§16.5).
+- Suspend/resume follow PR 13 in-place transitions; retire is terminal.
+  Suspension/retirement immediately fails active-Application eligibility even if
+  an old credential remains valid.
+
+### 16.3 Application–Tenant registration (P04)
+
+- Create/revoke/replacement requires **system management** authority. Tenant
+  Administrators have no registration authority.
+- Subscription requires an `ACTIVE` registration; registration alone does not
+  activate a subscription; no implicit Application self-registration.
+- **Initial-Tenant exception:** the entitled onboarding transaction creates the
+  exact initial registration+subscription, bound to that Application and new
+  Tenant, audited with the entitlement and both records.
+- `REVOKED` is terminal; replacement is a new registration UUID created by
+  system authority.
+
+### 16.4 Subscription management and replacement (P05)
+
+- A **Tenant Administrator** may create/resume/suspend/cancel/replace a
+  subscription for its own Tenant only through an approved exact Permission,
+  with existing dominance, **and only when an `ACTIVE` registration exists**; a
+  system operator may do the same. No silent subscription.
+- In-place `SUSPENDED→ACTIVE` is a resume, not replacement. `CANCELLED`/`EXPIRED`
+  are terminal; replacement is a **new subscription UUID** with predecessor
+  reference, reason, actor, and correlation ID, separately authorized and
+  idempotent. `ends_at` remains restrictive-only.
+- `PATCH` uses compare-and-swap/version; stale version or illegal transition is
+  `409`. No physical DELETE.
+
+### 16.5 Credential binding (separate, gated — P06)
+
+No credential-binding endpoint is included in this contract. If the approved
+PR 14 trust model supports it, PR 24 defines a separate system-authorized
+contract for `(issuer, client_id)→Application` add/revoke with immutable
+provenance, conflict detection, audit, and no secret exposure; otherwise a
+separately named prerequisite with an exact owner is recorded. Application
+CRUD never mints credentials.
+
+### 16.6 Read/list authorization and non-enumeration
+
+Registration and subscription inspect/list are bounded and scoped to the
+verified actor's authorized Tenant(s); invisible targets return the same opaque
+result; no cross-Tenant enumeration; no metadata fingerprinting.
+
+## 17. Forward compatibility and change control
 
 - Response fields are additive within `/v1`; an incompatible change requires a
   new version under `VERSIONING.md`.
@@ -382,4 +461,7 @@ invented built-in Role grant.
   `PR21_STOP_REPORT.md`
 - `pr-artifacts/pr-21/PR21_AMENDMENT01_AUTHORIZATION_MATRIX.md`,
   `PR21_AMENDMENT01_STOP_REPORT.md`, `PR21_AMENDMENT01_DECISION_RECORD.md`
+- `pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`,
+  `PR21_AMENDMENT02_AUTHORIZATION_MATRIX.md`,
+  `PR21_AMENDMENT02_STOP_REPORT.md`
 - [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)

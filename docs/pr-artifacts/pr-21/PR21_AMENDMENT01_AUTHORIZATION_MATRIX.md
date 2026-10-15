@@ -71,3 +71,13 @@ subscription reopened. Full expected outcomes are in
 - `docs/ONBOARDING_ARCHITECTURE.md` §§3, 17.
 - `PR21_CONTRACT_REVIEW.md` §1 (grammar), `PR21_AMENDMENT01_STOP_REPORT.md`
   (STOP-02…STOP-06).
+
+
+---
+
+## Amendment 02 update (2026-10-15)
+
+The candidate Actions here remain UNAPPROVED and are superseded by
+[PR21_AMENDMENT02_ACTION_MANIFEST.md](PR21_AMENDMENT02_ACTION_MANIFEST.md)
+(STOP-03 open). Actor/authority decisions P02/P04/P05/P06 are now approved; see
+[PR21_AMENDMENT02_AUTHORIZATION_MATRIX.md](PR21_AMENDMENT02_AUTHORIZATION_MATRIX.md).

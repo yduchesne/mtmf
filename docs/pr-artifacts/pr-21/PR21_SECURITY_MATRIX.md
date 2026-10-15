@@ -74,3 +74,14 @@ external IdP boundaries may be faked for deterministic tests.
 - Action-URN mapping proposal (unapproved): `PR21_CONTRACT_REVIEW.md`.
 - Admission decision: STOP-01 closed as Option B (D8); see
   `PR21_AMENDMENT01_STOP_REPORT.md`.
+
+
+---
+
+## Amendment 02 update (2026-10-15) — preserve history
+
+C01–C36 are retained unchanged. **Amendment 02 adds B01–B28** in
+[PR21_AMENDMENT02_SECURITY_CASES.md](PR21_AMENDMENT02_SECURITY_CASES.md) for the
+entitlement, registration, replacement, credential-separation, quota, and
+idempotency cases. No prior row is renumbered or deleted; all new cases are
+design-time and NOT RUN.

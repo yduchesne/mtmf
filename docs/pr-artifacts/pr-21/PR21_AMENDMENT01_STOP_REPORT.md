@@ -110,3 +110,14 @@ is a reviewed design freeze and safe partial deliverable only.
 ## Resolution record
 
 _No resolution recorded for STOP-02…STOP-06. STOP-01 is closed per D8._
+
+
+---
+
+## Amendment 02 update (2026-10-15) — narrow STOPs resolved
+
+The STOP-02…STOP-06 recorded above were **resolved by Amendment 02**:
+STOP-02 (P02), STOP-04 (P04), STOP-05 (P05), and STOP-06 (P06) are **CLOSED**.
+**STOP-03 remains OPEN** (exact Action/Permission/Role manifest). The
+Amendment 01 report is retained as history. See
+[PR21_AMENDMENT02_STOP_REPORT.md](PR21_AMENDMENT02_STOP_REPORT.md).

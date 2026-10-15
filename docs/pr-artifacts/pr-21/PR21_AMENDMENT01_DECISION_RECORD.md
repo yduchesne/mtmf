@@ -55,3 +55,13 @@ wire contract. Those are §3 open items.
 - The protected SYSTEM/root Tenant is excluded from ordinary onboarding and
   subscriptions.
 - `mtmf_runtime` never receives a privileged registry mutation grant.
+
+
+---
+
+## Amendment 02 update (2026-10-15)
+
+D1–D8 remain binding. The narrower STOPs listed in §3 were resolved by
+Amendment 02: STOP-02 (P02), STOP-04 (P04), STOP-05 (P05), STOP-06 (P06) closed;
+STOP-03 (exact Action/Permission/Role manifest) remains open. See
+[PR21_AMENDMENT02_DECISION_RECORD.md](PR21_AMENDMENT02_DECISION_RECORD.md).

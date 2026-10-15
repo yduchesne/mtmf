@@ -93,3 +93,14 @@ Application-initiated admission**. See
 closure and for the narrower remaining STOP-02…STOP-06. This original STOP is
 preserved as history; it is not erased. The narrower open policies still block
 marking PR 21 DONE.
+
+
+---
+
+## Amendment 02 update (2026-10-15) — preserve history
+
+The STOP-01 closure above stands. **Amendment 02 (P02/P04/P05/P06) closed
+STOP-02, STOP-04, STOP-05, and STOP-06.** **STOP-03 (exact Action/Permission/
+Role manifest) remains OPEN** pending human approval of the literals and
+grants. See [PR21_AMENDMENT02_STOP_REPORT.md](PR21_AMENDMENT02_STOP_REPORT.md).
+The original STOP-01 record is retained unchanged; PR 21 remains NOT DONE.

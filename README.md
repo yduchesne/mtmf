@@ -24,8 +24,10 @@ versioned management contracts are in
 records user-approved direction: an application-independent Tenant,
 `ResolveOrProvisionTenant`, global Identity reuse, independent subscription
 approval, and a narrowly scoped pre-Tenant admission (STOP-01 Option B).
-Narrower security-policy decisions (STOP-02–STOP-06) remain open; none of this
-is implemented.
+**Amendment 02** closes STOP-02/04/05/06 (per-Application onboarding
+entitlement, system-authorized registration, fresh-UUID terminal replacement,
+separate credential binding); **STOP-03 (exact Action/Permission/Role manifest)
+remains open**. None of this is implemented.
 
 ## Development
 
