@@ -12,7 +12,7 @@ CLOSED; STOP-03 OPEN. PR 21: NOT DONE.**
 | Branch | `dev/onboarding-foundation` |
 | Base | `455ae7a35d090b2546afa0c78fc9e4750ffee5ec` |
 | Pre-amendment tip | `b79d8aaa4597ca86aff97fdf0645e41ee6853b47` |
-| Amendment 02 content commit under test | recorded in `PR21_AMENDMENT02_FINAL_SHA.md` |
+| Amendment 02 content commit under test | `98f9a62bb7e81b9302bed2f64f64ea12c95e2b11` |
 | Migration head | `0013_security_mutation_audit_partitioning` |
 | Production changes | none |
 
