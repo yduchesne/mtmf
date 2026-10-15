@@ -1,9 +1,9 @@
 [project]
 name = "mtmf-client"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "MTMF consumer-facing client implementing the mtmf-api contract."
 requires-python = ">=3.14"
-dependencies = ["mtmf-api==0.1.0", "httpx>=0.28,<0.29"]
+dependencies = ["mtmf-api==0.1.0a1", "httpx>=0.28,<0.29"]
 
 [project.optional-dependencies]
 # Optional OpenTelemetry emission. The client imports and operates with no
