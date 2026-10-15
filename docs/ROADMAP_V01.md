@@ -282,6 +282,32 @@ Using the same deployed reference consumer and the authoritative isolated topolo
 
 **Boundary and sequencing:** PR 20A establishes the reference consumer and one complete live ALLOW/DENY vertical slice; PR 20B proves the broader security and resilience matrix. No ATI or Darkula repository modifications are required. Production root recovery remains a **separate production release gate**, not a prerequisite to implement PR 20A/20B; its end-to-end conformance is deferred until that independent deliverable exists. PR 20 does not expand generic management CRUD, security-mutation audit coverage, or partition-retention behavior. Roadmap DONE status requires executed feature-specific acceptance, not merely existing tests or an implementation report.
 
+### PR 21 — Application-neutral onboarding architecture and API contracts [PLANNED]
+
+Freeze the v0.1 onboarding security model and versioned management API contracts for independent consuming Applications (ATI, Digr, and others). Specify distinct new-Tenant and join-existing-Tenant workflows; verified external IdP issuer/subject binding; global Principal/Identity reuse; explicit Tenant selection; stewardship and initial-administrator authority; application subscription eligibility; lifecycle states; idempotency keys, stable resource resolution, concurrency, error and partial-failure semantics; and audit obligations. Define how authoritative MTMF UUIDs are returned to consumers. No application-specific or implicit privilege grants. **Design approval gate:** PRs 22–26 implement the approved contracts, not new policy invented by implementers.
+
+### PR 22 — Transactional Tenant provisioning and subscription foundation [PLANNED]
+
+Implement authorized, idempotent ordinary-Tenant provisioning and stable resolution with database-enforced uniqueness, lifecycle validation, and initial stewardship safeguards; support eligible Application–Tenant registration/subscription without allowing SYSTEM/root Tenant subscription. Use reviewed stored-function write boundaries, least-privilege runtime grants, and atomic mutation audit. Coordinate with PR 23 for the initial verified Principal/Identity: no active Tenant may be committed without its required stewardship, and no placeholder or fabricated identity is permitted. Prove retries, races, rollback, and cross-Tenant denials on real PostgreSQL.
+
+### PR 23 — Identity, Principal, and Tenant membership provisioning [PLANNED]
+
+Implement verified issuer/subject-to-Identity resolution, Principal association and reuse across Tenants, Identity/Principal Tenant memberships, and strictly controlled initial administrator/steward assignments. Reuse an existing global Identity/Principal when appropriate; do not duplicate identities per Application or automatically grant membership in all of a Principal's Tenants. Ensure the new-Tenant onboarding transaction establishes valid stewardship with PR 22. Apply exact-Action authorization, immutable provenance, atomic audit, safe idempotency, concurrency protection, and fail-closed handling of conflicting external bindings.
+
+### PR 24 — Authenticated versioned onboarding management HTTP API [PLANNED]
+
+Expose the PR 21-approved Tenant and Identity provisioning/resolution and membership/subscription workflows over the MTMF versioned HTTPS management API. Reuse the verified Application and acting-user trust boundary, explicit Tenant context, management authorization, bounded request handling, strict detached DTOs, static error envelopes, and telemetry/audit architecture. Distinguish narrowly permitted self-service Tenant creation from privileged operator administration; ordinary Client Credentials alone never confer unrestricted provisioning authority. No direct consumer access to MTMF persistence.
+
+### PR 25 — Invitations, acceptance, and official mtmf-client onboarding support [PLANNED]
+
+Implement authorized invitations to an existing Tenant and verified-user acceptance with replay protection, expiry, safe membership/Role establishment, revocation or invalidation semantics, and atomic audit. Extend the independently installable HTTP-only `mtmf-client` with typed, versioned operations for Tenant onboarding, Identity resolution, invitation acceptance, and authoritative UUID retrieval. Consumers own their UX and local Tenant/Identity reference projections, not MTMF security-state copies. Support idempotent retry/reconciliation after consumer-local persistence failures.
+
+### PR 26 — Multi-Application onboarding conformance and v0.1 release gate [PLANNED]
+
+Validate complete new-Tenant and existing-Tenant invitation onboarding against deployed MTMF, real PostgreSQL, and a trusted development IdP with **two independently authenticated consuming Applications** (ATI-like and Digr-like; no changes to those repositories required). Demonstrate global Identity/Principal reuse, unchanged MTMF UUIDs across Applications, independently authorized Tenant subscriptions, initial stewardship, per-Tenant isolation, successful subsequent batch authorization, concurrent duplicate requests, replay resistance, partial-failure recovery, privilege-escalation denial, cross-Tenant denial, and security audit correctness. Include COLD/REPEAT/RECREATE deployment cycles and fail-closed fault cases. v0.1 onboarding is not complete without executed feature-specific acceptance.
+
+**v0.1 onboarding release requirement:** MTMF must let an authorized consuming Application securely onboard a new ordinary Tenant and its initial verified user, or invite a verified user to an existing Tenant, and return authoritative Tenant/Principal/Identity UUIDs for the consumer's local references. MTMF owns security state; consumers retain domain data and enforcement. These PRs do not implement ATI/Digr UI, OIDC login, or local reference-table synchronization, which remain consumer-repository work. No unplanned separate audit/hardening PRs: audit and adversarial tests are acceptance requirements of PRs 22–26. Production root recovery remains the separate release gate below.
+
 ### Production root authentication and recovery — explicit release gate [PLANNED]
 
 PR 10 has implemented the protected canonical root Principal/Tenant/designated LOCAL Identity and the installation/operator-only `recover_root_identity` database primitive. **An operational production root recovery mechanism does not yet exist.** No current root password store, recovery CLI, production IdP binding repair, independent approval/custody, or complete recovery runbook is implied.
