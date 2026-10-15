@@ -34,6 +34,26 @@ Version-specific plans remain in `ROADMAP_V01.md` and future versioned roadmaps.
 
 **Relevant current code:** `packages/mtmf-service/src/mtmf_service/authentication/{jwt_verifier,attestation,composition,config}.py`; `packages/mtmf-core/src/mtmf_core/application/authentication.py`.
 
+### R-002 — First-class administrative CLI (`mtmf-cli`)
+
+**Status:** Architecture approved; implementation not started. **Target version:** Unassigned. **Priority:** Staged delivery, parallel to onboarding PRs 21–26.
+
+**Architecture:** [Administrative CLI — Architecture and Requirements](CLI_ARCHITECTURE.md).
+
+**Problem.** MTMF needs a supported, scriptable, human-friendly administration interface without granting operators or consuming Applications direct database access or privileged internal-service access.
+
+**Intended outcome:** Deliver a separately installable Python `mtmf-cli` with a hierarchical Typer/Rich `mtmf` command, named profiles, secure authentication, deterministic human/JSON output, stable exit codes, and resource-management operations backed **exclusively** by the official `mtmf-client` and versioned authorized HTTPS endpoints. The CLI must never import MTMF internals, invoke privileged initialization/root recovery, impersonate users, or infer authority from Client Credentials.
+
+**Staged implementation:**
+
+1. **CLI-1 — Foundation:** distribution/workspace packaging, command shell, configuration/profile precedence, supported authentication, redaction, output/error contracts, completion, clean-install and deterministic tests. Do not invent unsupported API operations.
+2. **CLI-2 — Existing API coverage:** implement only commands supported by real authenticated/authorized HTTP endpoints; require deployed authorization, cross-Tenant denial and mutation-audit acceptance.
+3. **CLI-3 — Expanded management:** add Tenant, Organization, Group, Role, Application/subscription and invitation commands only as corresponding versioned APIs and official client operations become available. In particular, `mtmf tenants add` is gated on approved onboarding contracts and implementation in PRs 21–26.
+
+**Security and dependency gates:** Reuse server-side verified service and acting-user identities, exact-Action authorization, explicit Tenant context, default DENY and atomic audit. The CLI is **not** a root recovery tool. CLI-1/2 may proceed independently of PRs 21–26; CLI-3 depends on the relevant HTTP operations. Each implementation PR must include its own security and acceptance evidence, including negative cases. Detailed design, proposed commands and testing requirements are normative in [`CLI_ARCHITECTURE.md`](CLI_ARCHITECTURE.md).
+
+**Promotion:** Assign release and bounded implementation PR identifiers only after prioritization; retain this item here until that decision, then cross-link the versioned roadmap rather than duplicating commitments.
+
 ## Backlog maintenance
 
 Use stable IDs, problem statement, security implications, dependencies, proposed outcome, and disposition. Items remain uncommitted until promoted into a versioned roadmap. This file must not be used to bypass the existing release gates or authorization invariants.
