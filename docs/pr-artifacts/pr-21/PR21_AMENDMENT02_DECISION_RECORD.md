@@ -52,7 +52,9 @@ authority, migrations, seeds, or grants. D1–D8 remain binding.
   new built-in Role grant, new system-management Role, or change to the
   immutable revision `0006`/`0012` seed** that cannot be derived from an
   already-approved exact manifest remains **PENDING HUMAN APPROVAL**. Approving
-  the manifest method does not approve the literals. **STOP-03 remains OPEN.**
+  the manifest method does not approve the literals. **At Amendment 02,
+  STOP-03 remained OPEN** (subsequently CLOSED 2026-10-15; see the closure
+  section below and `PR21_AMENDMENT03_HUMAN_APPROVAL.md`).
 - Default privilege mapping: Tenant Administrator may manage subscriptions for
   its own Tenant only through an explicitly approved exact Permission and
   existing dominance rules; system management authority is required for
@@ -171,3 +173,14 @@ boundary that explicitly does **not** claim an implemented operator
 sign-in/assignment/global-target mechanism. Status: `PROPOSED — AWAITING HUMAN
 APPROVAL`; STOP-03 remains OPEN. See
 [PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md).
+
+---
+
+## STOP-03 closure (2026-10-15)
+
+The P03 method is now backed by a recorded human approval of the exact manifest,
+the 11/2/7 Role composition, the two admission-only zero-grant identifiers, the
+additive seed plan, the PR 14 credential-binding gate, and the operator boundary
+(deferred prerequisite). **STOP-03 is CLOSED as design.** See
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).
+Runtime behavior remains NOT IMPLEMENTED.

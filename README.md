@@ -17,19 +17,17 @@ For a plain-language explanation of local Keycloak → MTMF → application star
 
 The proposed first-class administrative CLI is specified in [CLI Architecture](docs/CLI_ARCHITECTURE.md); it is not yet implemented.\n\nProject documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
 
-The proposed (design-only, **not implemented**) v0.1 onboarding design and future
-versioned management contracts are in
+The onboarding design is **approved (design-only, not implemented)**. The v0.1
+onboarding architecture and future versioned management contracts are in
 [onboarding architecture](docs/ONBOARDING_ARCHITECTURE.md) and the
-[onboarding HTTP contract](docs/ONBOARDING_HTTP_CONTRACT.md). **Amendment 01**
-records user-approved direction: an application-independent Tenant,
-`ResolveOrProvisionTenant`, global Identity reuse, independent subscription
-approval, and a narrowly scoped pre-Tenant admission (STOP-01 Option B).
-**Amendment 02** closes STOP-02/04/05/06 (per-Application onboarding
-entitlement, system-authorized registration, fresh-UUID terminal replacement,
-separate credential binding); **STOP-03 (exact Action/Permission/Role manifest)
-remains open**, with an exact approval-ready package awaiting human approval
-(`docs/pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`).
-None of this is implemented.
+[onboarding HTTP contract](docs/ONBOARDING_HTTP_CONTRACT.md). All six design
+STOPs are closed by recorded human decisions (Amendment 03,
+[PR21-STOP03-APPROVAL-2026-10-15](docs/pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md)):
+application-independent Tenant, `ResolveOrProvisionTenant`, global Identity
+reuse, independent subscription approval, and pre-Tenant admission (STOP-01
+Option B), with an exact 11/2/7 Role composition. **Nothing is implemented**;
+roadmap PRs 22–26 implement onboarding, and the operator sign-in / privileged
+management execution infrastructure is a future PR 24 prerequisite.
 
 ## Development
 

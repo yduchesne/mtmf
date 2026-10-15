@@ -106,3 +106,13 @@ Markdown under `docs/` plus `README.md`. No production file differs from `main`.
 
 No blocking conflict with an existing canonical URN, Role namespace, or trust
 invariant was found. Proceeding is safe.
+
+
+---
+
+## Amendment 03 closure note (2026-10-15)
+
+The `PROPOSED — AWAITING HUMAN APPROVAL (STOP-03 OPEN)` baseline-status row
+above is historical. STOP-03 was subsequently **CLOSED** by
+`PR21-STOP03-APPROVAL-2026-10-15`; see
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).

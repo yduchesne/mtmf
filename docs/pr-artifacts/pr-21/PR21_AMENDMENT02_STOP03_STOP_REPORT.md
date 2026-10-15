@@ -1,9 +1,12 @@
 # PR21_AMENDMENT02_STOP03_STOP_REPORT
 
 **PR:** roadmap PR 21 — Amendment 02 STOP-03 Authorization Approval Addendum
-**Status:** **STOP-03 OPEN — PROPOSED, AWAITING HUMAN APPROVAL.** The design is
-complete and internally consistent; the human approval is not recorded. PR 21
-remains **NOT DONE**.
+**Status:** **STOP-03 CLOSED — HUMAN APPROVED 2026-10-15.** The design is
+approved; the operator sign-in, SYSTEM-scope assignment, global-target
+authorization, and privileged execution adapter remain **NOT IMPLEMENTED**
+implementation prerequisites for PR 24 (or a named predecessor). PR 21 design
+acceptance proceeds; PR 21 runtime remains NOT IMPLEMENTED. (Original status
+prior to 2026-10-15 was `OPEN — PROPOSED, AWAITING HUMAN APPROVAL`.)
 
 ## 1. What is proposed (exact)
 
@@ -55,9 +58,19 @@ invariant is contradicted; the gap is explicitly recorded.
 ## 5. Effect
 
 - Amendment addendum documentation: **PASS** (see acceptance report).
-- **STOP-03: OPEN.**
-- PR 21: **NOT DONE.**
+- **STOP-03: CLOSED (human approved 2026-10-15).**
+- PR 21 **design** milestone: DONE (subject to final gate re-run on the
+  approval-closure content).
+- PR 21 **runtime**: NOT IMPLEMENTED; PRs 22–26 own implementation and feature
+  acceptance.
 
-## 6. Resolution record
+## 6. Resolution record — STOP-03 CLOSED 2026-10-15
 
-_No approval recorded. STOP-02/04/05/06 remain CLOSED and unchanged._
+**Resolution:** the project owner approved the exact 25-row manifest, the
+11/2/7 Role composition, the two admission-only zero-grant identifiers, the
+additive seed plan, the PR 14 credential-binding gate, and the operator
+boundary (as a deferred prerequisite). Provenance:
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md)
+(`PR21-STOP03-APPROVAL-2026-10-15`). The approval covers **design only**;
+STOP-02/04/05/06 remain CLOSED and unchanged, and the operator prerequisites
+remain future implementation gates.

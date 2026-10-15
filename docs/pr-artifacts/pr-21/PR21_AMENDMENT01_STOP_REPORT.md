@@ -131,3 +131,16 @@ The open STOP-03 now has an exact approval-ready package:
 [PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md)
 and [PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md](PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md).
 Status remains `PROPOSED — AWAITING HUMAN APPROVAL`.
+
+
+---
+
+## Amendment 03 closure (2026-10-15) — preserve history
+
+**STOP-03 is CLOSED by recorded human approval** (`PR21-STOP03-APPROVAL-2026-10-15`):
+the exact 25-row manifest, the 11/2/7 Role composition, the two admission-only
+zero-grant identifiers, the additive seed plan, the PR 14 credential-binding
+gate, and the operator boundary (deferred prerequisite). Provenance:
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).
+All earlier `OPEN`/`AWAITING` statements in this file are historical; nothing is
+implemented and PRs 22–26 own implementation.

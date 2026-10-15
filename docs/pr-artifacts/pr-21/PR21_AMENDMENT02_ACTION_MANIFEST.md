@@ -1,9 +1,11 @@
 # PR21_AMENDMENT02_ACTION_MANIFEST
 
 **PR:** roadmap PR 21 — Amendment 02 (updated by the STOP-03 Authorization Approval Addendum)
-**Status:** **PROPOSED — AWAITING HUMAN APPROVAL. STOP-03 remains OPEN.** No new
-literal URN, Permission, Role definition, or grant here is approved. This table
-is the exact review-ready input for a human decision. **Do not implement.**
+**Status:** **APPROVED DESIGN — HUMAN DECISION RECORDED 2026-10-15. STOP-03
+CLOSED.** The exact literals, Role composition, and admission-only treatment
+below are approved as design. **NOT IMPLEMENTED**: no Action, Permission, Role,
+seed, or grant is created. (Prior status before 2026-10-15 was `PROPOSED —
+AWAITING HUMAN APPROVAL`; that history is retained.)
 
 > Amendment 02 addendum (2026-10-15): rows 1–25 are preserved. Vague Role
 > references are replaced with the exact proposed Role URNs and the **11/2/7**
@@ -47,37 +49,39 @@ approval.
 ## 3. Exact operation manifest (rows 1–25)
 
 Status legend: **APPROVED** = already seeded and human-approved (reused
-unchanged); **ADMISSION-ONLY** = canonical Action/audit identifier with zero
-Role/Permission grant; **PROPOSED** = exact literal proposed for approval, not
-approved; **ALIAS** = reuses an existing proposed add Action.
+unchanged); **APPROVED DESIGN — ADMISSION-ONLY (zero grants)** = canonical
+Action/audit identifier with zero Role/Permission grant; **APPROVED DESIGN** =
+exact literal approved as design (not implemented); **ALIAS** = reuses an
+existing approved add Action; **APPROVED DESIGN — IMPLEMENTATION GATED BY
+PR 14** = approved design whose implementation awaits the PR 14 trust review.
 
 | # | Operation | Literal Action URN | Resource | Target scope | Verified actor | Required Permission | Authorized Role / admission | PR | Status |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | Tenant resolve/inspect | `urn:mtmf:iam:actions:system:tenant:get-object` | tenant | exact Tenant | verified user | `urn:mtmf:iam:permissions:system:tenant:get-object` | existing Tenant-scoped grants | 24 | APPROVED (do not reseed) |
-| 2 | Initial Tenant provisioning | `urn:mtmf:iam:actions:system:tenant:provision-object` | tenant | new ordinary Tenant | pre-Tenant entitlement + verified new Identity | — (none) | ADMISSION-ONLY (entitlement; zero Role grant) | 22/23 | ADMISSION-ONLY |
-| 3 | Application create | `urn:mtmf:iam:actions:system:application:create-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:create-object` | `application-administrator` | 24 | PROPOSED |
-| 4 | Application inspect | `urn:mtmf:iam:actions:system:application:get-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:get-object` | `application-administrator` | 24 | PROPOSED |
-| 5 | Application suspend | `urn:mtmf:iam:actions:system:application:suspend-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:suspend-object` | `application-administrator` | 24 | PROPOSED |
-| 6 | Application resume | `urn:mtmf:iam:actions:system:application:resume-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:resume-object` | `application-administrator` | 24 | PROPOSED |
-| 7 | Application retire | `urn:mtmf:iam:actions:system:application:retire-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:retire-object` | `application-administrator` | 24 | PROPOSED |
-| 8 | Registration create | `urn:mtmf:iam:actions:system:application-tenant-registration:add-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:add-object` | `application-administrator` | 24 | PROPOSED |
-| 9 | Registration inspect | `urn:mtmf:iam:actions:system:application-tenant-registration:get-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:get-object` | `application-administrator` | 24 | PROPOSED |
-| 10 | Registration revoke | `urn:mtmf:iam:actions:system:application-tenant-registration:revoke-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:revoke-object` | `application-administrator` | 24 | PROPOSED |
+| 2 | Initial Tenant provisioning | `urn:mtmf:iam:actions:system:tenant:provision-object` | tenant | new ordinary Tenant | pre-Tenant entitlement + verified new Identity | — (none) | ADMISSION-ONLY (entitlement; zero Role grant) | 22/23 | APPROVED DESIGN — ADMISSION-ONLY (zero grants) |
+| 3 | Application create | `urn:mtmf:iam:actions:system:application:create-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:create-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 4 | Application inspect | `urn:mtmf:iam:actions:system:application:get-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:get-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 5 | Application suspend | `urn:mtmf:iam:actions:system:application:suspend-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:suspend-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 6 | Application resume | `urn:mtmf:iam:actions:system:application:resume-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:resume-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 7 | Application retire | `urn:mtmf:iam:actions:system:application:retire-object` | application | global | system operator | `urn:mtmf:iam:permissions:system:application:retire-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 8 | Registration create | `urn:mtmf:iam:actions:system:application-tenant-registration:add-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:add-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 9 | Registration inspect | `urn:mtmf:iam:actions:system:application-tenant-registration:get-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:get-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 10 | Registration revoke | `urn:mtmf:iam:actions:system:application-tenant-registration:revoke-object` | registration | exact Application+Tenant | system operator | `urn:mtmf:iam:permissions:system:application-tenant-registration:revoke-object` | `application-administrator` | 24 | APPROVED DESIGN |
 | 11 | Registration replacement | reuses row 8 `...:add-object` | registration | exact Application+Tenant | system operator | row 8 Permission | `application-administrator` | 24 | ALIAS (row 8) |
-| 12 | Subscription create | `urn:mtmf:iam:actions:system:application-subscription:add-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:add-object` | `tenant-administrator` | 24 | PROPOSED |
-| 13 | Subscription inspect | `urn:mtmf:iam:actions:system:application-subscription:get-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:get-object` | `tenant-administrator` | 24 | PROPOSED |
-| 14 | Subscription suspend | `urn:mtmf:iam:actions:system:application-subscription:suspend-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:suspend-object` | `tenant-administrator` | 24 | PROPOSED |
-| 15 | Subscription resume | `urn:mtmf:iam:actions:system:application-subscription:resume-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:resume-object` | `tenant-administrator` | 24 | PROPOSED |
-| 16 | Subscription cancel | `urn:mtmf:iam:actions:system:application-subscription:cancel-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:cancel-object` | `tenant-administrator` | 24 | PROPOSED |
+| 12 | Subscription create | `urn:mtmf:iam:actions:system:application-subscription:add-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:add-object` | `tenant-administrator` | 24 | APPROVED DESIGN |
+| 13 | Subscription inspect | `urn:mtmf:iam:actions:system:application-subscription:get-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:get-object` | `tenant-administrator` | 24 | APPROVED DESIGN |
+| 14 | Subscription suspend | `urn:mtmf:iam:actions:system:application-subscription:suspend-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:suspend-object` | `tenant-administrator` | 24 | APPROVED DESIGN |
+| 15 | Subscription resume | `urn:mtmf:iam:actions:system:application-subscription:resume-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:resume-object` | `tenant-administrator` | 24 | APPROVED DESIGN |
+| 16 | Subscription cancel | `urn:mtmf:iam:actions:system:application-subscription:cancel-object` | subscription | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:application-subscription:cancel-object` | `tenant-administrator` | 24 | APPROVED DESIGN |
 | 17 | Subscription replacement | reuses row 12 `...:add-object` | subscription | exact Tenant | Tenant admin (exact scope) | row 12 Permission | `tenant-administrator` | 24 | ALIAS (row 12) |
-| 18 | Invitation create | `urn:mtmf:iam:actions:system:tenant-invitation:create-object` | invitation | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:tenant-invitation:create-object` | `tenant-administrator` | 25 | PROPOSED |
-| 19 | Invitation accept | `urn:mtmf:iam:actions:system:tenant-invitation:accept-object` | invitation | invited Tenant only | verified recipient + capability | — (none) | ADMISSION-ONLY (pre-membership seam; zero Role grant) | 25 | ADMISSION-ONLY |
-| 20 | Invitation revoke | `urn:mtmf:iam:actions:system:tenant-invitation:revoke-object` | invitation | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:tenant-invitation:revoke-object` | `tenant-administrator` | 25 | PROPOSED |
-| 21 | Entitlement grant | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:grant-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:grant-object` | `application-administrator` | 22/23 | PROPOSED |
-| 22 | Entitlement revoke | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:revoke-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:revoke-object` | `application-administrator` | 22/23 | PROPOSED |
-| 23 | Entitlement inspect | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:get-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:get-object` | `application-administrator` | 24 | PROPOSED |
-| 24 | Credential binding add | `urn:mtmf:iam:actions:system:service-credential-binding:add-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:add-object` | `application-credential-administrator` (PR 14 gate) | 24 (gated) | PROPOSED |
-| 25 | Credential binding revoke | `urn:mtmf:iam:actions:system:service-credential-binding:revoke-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:revoke-object` | `application-credential-administrator` (PR 14 gate) | 24 (gated) | PROPOSED |
+| 18 | Invitation create | `urn:mtmf:iam:actions:system:tenant-invitation:create-object` | invitation | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:tenant-invitation:create-object` | `tenant-administrator` | 25 | APPROVED DESIGN |
+| 19 | Invitation accept | `urn:mtmf:iam:actions:system:tenant-invitation:accept-object` | invitation | invited Tenant only | verified recipient + capability | — (none) | ADMISSION-ONLY (pre-membership seam; zero Role grant) | 25 | APPROVED DESIGN — ADMISSION-ONLY (zero grants) |
+| 20 | Invitation revoke | `urn:mtmf:iam:actions:system:tenant-invitation:revoke-object` | invitation | exact Tenant | Tenant admin (exact scope) | `urn:mtmf:iam:permissions:system:tenant-invitation:revoke-object` | `tenant-administrator` | 25 | APPROVED DESIGN |
+| 21 | Entitlement grant | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:grant-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:grant-object` | `application-administrator` | 22/23 | APPROVED DESIGN |
+| 22 | Entitlement revoke | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:revoke-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:revoke-object` | `application-administrator` | 22/23 | APPROVED DESIGN |
+| 23 | Entitlement inspect | `urn:mtmf:iam:actions:system:application-onboarding-entitlement:get-object` | entitlement | exact Application | system operator | `urn:mtmf:iam:permissions:system:application-onboarding-entitlement:get-object` | `application-administrator` | 24 | APPROVED DESIGN |
+| 24 | Credential binding add | `urn:mtmf:iam:actions:system:service-credential-binding:add-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:add-object` | `application-credential-administrator` (PR 14 gate) | 24 (gated) | APPROVED DESIGN — IMPLEMENTATION GATED BY PR 14 |
+| 25 | Credential binding revoke | `urn:mtmf:iam:actions:system:service-credential-binding:revoke-object` | credential binding | exact Application | system credential admin | `urn:mtmf:iam:permissions:system:service-credential-binding:revoke-object` | `application-credential-administrator` (PR 14 gate) | 24 (gated) | APPROVED DESIGN — IMPLEMENTATION GATED BY PR 14 |
 
 ## 4. Exact Permission/Role mapping and counts
 
@@ -166,15 +170,20 @@ pre-membership operation pass is forbidden (contract failure S17).
 
 These are **APPROVED** and MUST NOT be re-litigated, mutated, or duplicated.
 
-## 7. Required human decisions (STOP-03 subgate)
+## 7. Human decisions (STOP-03) — APPROVED 2026-10-15
 
-1. Approve or amend every **PROPOSED** literal in §3.
-2. Approve the two new SYSTEM Role definitions and the exact 11/2/7 composition
-   in §4.
-3. Approve the additive, idempotent, fail-closed seed migration(s) that add the
-   Actions/Permissions/Role definitions/grants without mutating `0006`/`0012`.
-4. Approve the admission-only treatment of rows 2 and 19 (zero Role grants).
-5. Approve the operator boundary and the future Role-assignment/privileged
-   execution gate (`PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`).
+1. [x] Approved every literal in §3.
+2. [x] Approved the two new SYSTEM Role definitions and the exact 11/2/7
+   composition in §4.
+3. [x] Approved the additive, idempotent, fail-closed seed migration plan that
+   adds the Actions/Permissions/Role definitions/grants without mutating
+   `0006`/`0012`.
+4. [x] Approved the admission-only treatment of rows 2 and 19 (zero Role
+   grants).
+5. [x] Approved the operator boundary and the future Role-assignment/privileged
+   execution gate as a **deferred implementation prerequisite, NOT IMPLEMENTED**
+   (`PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`).
 
-Until approved, **STOP-03 remains OPEN** and PR 21 remains **NOT DONE**.
+Provenance: [`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md)
+(`PR21-STOP03-APPROVAL-2026-10-15`). **STOP-03 is CLOSED as design; PR 21
+remains NOT IMPLEMENTED and PRs 22–26 own implementation.**

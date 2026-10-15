@@ -1,6 +1,12 @@
 # PR21_AMENDMENT02_STOP03_ACCEPTANCE_REPORT
 
 **PR:** roadmap PR 21 — Amendment 02 STOP-03 Authorization Approval Addendum
+
+> **Historical report (superseded by Amendment 03, 2026-10-15).** This report
+> recorded the state when STOP-03 was `PROPOSED — AWAITING HUMAN APPROVAL`.
+> STOP-03 was subsequently **CLOSED** by `PR21-STOP03-APPROVAL-2026-10-15`; see
+> [`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).
+> The status/verdict text below is historical; retain it as evidence.
 **Status:** **ADDENDUM DOCS PASS; STOP-03 OPEN (PROPOSED — AWAITING HUMAN
 APPROVAL); PR 21 NOT DONE.**
 **Explicit statement:** documentation-only; no runtime behavior implemented.
@@ -101,3 +107,16 @@ PR 26 deployed acceptance.
 - **Push:** not performed (not authorized).
 
 **documentation-only; no runtime behavior implemented.**
+
+
+---
+
+## Amendment 03 closure (2026-10-15) — preserve history
+
+**STOP-03 is CLOSED by recorded human approval** (`PR21-STOP03-APPROVAL-2026-10-15`):
+the exact 25-row manifest, the 11/2/7 Role composition, the two admission-only
+zero-grant identifiers, the additive seed plan, the PR 14 credential-binding
+gate, and the operator boundary (deferred prerequisite). Provenance:
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).
+All earlier `OPEN`/`AWAITING` statements in this file are historical; nothing is
+implemented and PRs 22–26 own implementation.

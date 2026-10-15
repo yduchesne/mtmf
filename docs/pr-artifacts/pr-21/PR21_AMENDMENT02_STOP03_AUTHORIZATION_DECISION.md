@@ -1,8 +1,10 @@
 # PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION
 
-**Status:** **PROPOSED — AWAITING HUMAN APPROVAL.** This is the exact
-approval-ready authorization contract for STOP-03. It is a documentation
-decision only; no Action, Permission, Role, or grant is created.
+**Status:** **APPROVED — HUMAN DECISION RECORDED 2026-10-15.**
+This is the exact authorization contract for STOP-03. It is a documentation
+decision only; no Action, Permission, Role, or grant is created. (Original
+proposal status prior to 2026-10-15 was `PROPOSED — AWAITING HUMAN APPROVAL`;
+that history is retained below.)
 
 ## 1. URN rule
 
@@ -115,17 +117,23 @@ only documents this future contract.
 
 ## 6. Approval checklist (human reviewer)
 
-- [ ] Approve/amend all PROPOSED literals in the manifest §3.
-- [ ] Approve the two new SYSTEM Role URNs and the exact 11/2/7 composition.
-- [ ] Approve the additive seed migration plan (no `0006`/`0012` mutation).
-- [ ] Approve admission-only treatment of rows 2 and 19 (zero grants).
-- [ ] Approve the operator boundary and the Role-assignment/privileged-execution
-      gate (or explicitly defer it to a named prerequisite).
-- [ ] Approve the `application-credential-administrator` PR 14 compatibility
-      gate.
-- [ ] Record reviewer name, date, and decision evidence.
+- [x] Approve/amend all PROPOSED literals in the manifest §3. — **APPROVED 2026-10-15**
+- [x] Approve the two new SYSTEM Role URNs and the exact 11/2/7 composition. — **APPROVED 2026-10-15**
+- [x] Approve the additive seed migration plan (no `0006`/`0012` mutation). — **APPROVED 2026-10-15**
+- [x] Approve admission-only treatment of rows 2 and 19 (zero grants). — **APPROVED 2026-10-15**
+- [x] Approve the operator boundary and the Role-assignment/privileged-execution
+      gate. — **APPROVED 2026-10-15 as a deferred implementation prerequisite,
+      NOT IMPLEMENTED** (PR 24 or a named predecessor).
+- [x] Approve the `application-credential-administrator` PR 14 compatibility
+      gate. — **APPROVED 2026-10-15 (implementation gated by PR 14 review).**
 
-**Reviewer:** __________________  **Date:** __________  **Decision:** __________
-**Evidence / reference:** ______________________________________________
+**Reviewer:** Project owner (user, in ChatGPT conversation)
+**Date:** 2026-10-15
+**Decision:** APPROVED
+**Evidence / reference:** [`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md)
+(`PR21-STOP03-APPROVAL-2026-10-15`); explicit conversational approval, not a
+GitHub review or signature.
 
-**Status until recorded:** `PROPOSED — AWAITING HUMAN APPROVAL`; STOP-03 OPEN.
+**Status now:** `APPROVED — HUMAN DECISION RECORDED 2026-10-15`. The operator
+sign-in, SYSTEM-scope assignment, global-target authorization, and privileged
+execution adapter remain **NOT IMPLEMENTED** future prerequisites.

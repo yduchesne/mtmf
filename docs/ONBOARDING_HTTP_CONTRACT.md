@@ -1,24 +1,26 @@
-# Onboarding HTTP Contract (PROPOSED — NOT IMPLEMENTED)
+# Onboarding HTTP Contract (APPROVED DESIGN — NOT IMPLEMENTED)
 
-> **STATUS: PROPOSED WIRE CONTRACT — NOT IMPLEMENTED.**
+> **STATUS: APPROVED DESIGN WIRE CONTRACT — NOT IMPLEMENTED, NOT DEPLOYED.**
 > This document specifies the future versioned onboarding management API that
 > roadmap PRs 24–25 will implement. **No endpoint below exists.** The only
 > management route on `main` (baseline `455ae7a`) is
 > `POST /v1/management/identity-group-memberships` (PR 19C). Do not advertise
 > any capability here as working.
 >
-> **Amendment 01 (2026-10-15): STOP-01 direction approved (Option B).** The
-> onboarding admission direction is a narrowly scoped pre-Tenant
-> Application-initiated admission.
+> **All PR 21 design STOPs are CLOSED by recorded human decisions**
+> (STOP-01 D8; STOP-02/04/05/06 P02/P04/P05/P06; **STOP-03 by
+> `PR21-STOP03-APPROVAL-2026-10-15`**). The exact Action/Permission/Role
+> literals are approved **as design** and listed in
+> `pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`; provenance is
+> `pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md`. **Nothing here is
+> deployed or implemented.**
 >
-> **Amendment 02 (2026-10-15): STOP-02, STOP-04, STOP-05, STOP-06 closed**
-> (P02/P04/P05/P06; see §16). **STOP-03 — the exact Action/Permission/Role
-> manifest — remains OPEN**; all Action URNs and error codes below are still
-> proposals. An exact STOP-03 approval package (Role partition and operator
-> boundary) is in
-> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md` (status:
-> PROPOSED — AWAITING HUMAN APPROVAL). See
-> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP_REPORT.md`. PR 21 is not DONE.
+> **Operator prerequisite (NOT IMPLEMENTED):** Application/registration/
+> entitlement/credential routes are **OPERATOR-EXECUTION GATED** (see §16.7)
+> until PR 24 (or a named predecessor) implements operator sign-in,
+> SYSTEM-scope assignment, global-target authorization, and a privileged
+> audited execution adapter without `mtmf_runtime` privileged grants. No
+> Tenant-bound Authorizer bypass and no root impersonation.
 
 This document uses the existing `mtmf-api` detached DTO and static
 `ApiErrorResponse` conventions. It introduces no DTO class, route, or code in

@@ -66,3 +66,15 @@ IMPLEMENTED**. Exact Action/Permission/Role literals remain STOP-03 open.
    supports it; otherwise a separately named prerequisite (P06).
 4. Any additive predecessor-reference schema support for replacement audit
    (PR 22/24).
+
+
+---
+
+## Amendment 03 closure (2026-10-15)
+
+The STOP-03 comparisons above (`STOP-03 open; candidate names only` /
+`STOP-03 remains OPEN (conditional)`) are historical. STOP-03 was **CLOSED** by
+`PR21-STOP03-APPROVAL-2026-10-15` — the exact manifest, 11/2/7 composition, and
+two admission-only zero-grant identifiers. See
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).
+Nothing is implemented.

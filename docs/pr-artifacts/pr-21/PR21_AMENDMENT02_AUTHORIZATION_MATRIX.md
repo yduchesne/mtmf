@@ -87,3 +87,16 @@ identifiers with zero Role grants. All literals remain `PROPOSED — AWAITING
 HUMAN APPROVAL`. See
 [PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md](PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md)
 and [PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md](PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md).
+
+---
+
+## STOP-03 closure (2026-10-15)
+
+The candidate Action/Permission/Role literals in this matrix are now **approved
+as design** (STOP-03 CLOSED) per
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md):
+11/2/7 composition plus two admission-only zero-grant identifiers. The
+`(STOP-03)` annotations above are historical; the literals are approved design,
+**NOT IMPLEMENTED**. `tenant-administrator` subscription/invitation authority is
+exact Tenant scope; Application/registration/entitlement/credential authority is
+SYSTEM-scoped design gated on the operator prerequisite.

@@ -65,3 +65,16 @@ D1–D8 remain binding. The narrower STOPs listed in §3 were resolved by
 Amendment 02: STOP-02 (P02), STOP-04 (P04), STOP-05 (P05), STOP-06 (P06) closed;
 STOP-03 (exact Action/Permission/Role manifest) remains open. See
 [PR21_AMENDMENT02_DECISION_RECORD.md](PR21_AMENDMENT02_DECISION_RECORD.md).
+
+
+---
+
+## Amendment 03 closure (2026-10-15) — preserve history
+
+**STOP-03 is CLOSED by recorded human approval** (`PR21-STOP03-APPROVAL-2026-10-15`):
+the exact 25-row manifest, the 11/2/7 Role composition, the two admission-only
+zero-grant identifiers, the additive seed plan, the PR 14 credential-binding
+gate, and the operator boundary (deferred prerequisite). Provenance:
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).
+All earlier `OPEN`/`AWAITING` statements in this file are historical; nothing is
+implemented and PRs 22–26 own implementation.

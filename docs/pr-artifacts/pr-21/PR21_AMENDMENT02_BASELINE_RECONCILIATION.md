@@ -104,3 +104,13 @@
 
 No prerequisite source file is missing and no binding invariant contradicts
 P02–P06. Proceeding is safe.
+
+
+---
+
+## Amendment 03 closure note (2026-10-15)
+
+The N01 row above (`STOP-03 remains conditional-open`) is the baseline state at
+Amendment 02. STOP-03 was subsequently **CLOSED** by
+`PR21-STOP03-APPROVAL-2026-10-15`; see
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).

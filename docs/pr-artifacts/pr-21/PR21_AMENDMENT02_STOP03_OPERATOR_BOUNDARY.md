@@ -1,6 +1,11 @@
 # PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY
 
-**Status:** **PROPOSED — AWAITING HUMAN APPROVAL.** Documents the exact
+**Status:** **APPROVED (deferred implementation prerequisite) — NOT IMPLEMENTED.**
+The operator boundary was approved as design by
+`PR21-STOP03-APPROVAL-2026-10-15` (see
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md));
+its implementation is deferred to PR 24 (or a named predecessor). Documents the
+exact
 system-operator boundary for STOP-03. Documentation only; nothing here is
 implemented.
 

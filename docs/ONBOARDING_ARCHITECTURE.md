@@ -1,39 +1,29 @@
 # Application-Neutral Onboarding Architecture
 
-> **STATUS: PROPOSED DESIGN — DOCUMENTATION ONLY. NOT IMPLEMENTED.**
+> **STATUS: APPROVED SECURITY DESIGN — DOCUMENTATION ONLY. NOT IMPLEMENTED.**
 > This document freezes the v0.1 onboarding security design, state machines,
 > admission rules, and future versioned management contracts so that roadmap
 > PRs 22–26 implement a reviewed design rather than invent one. It does **not**
 > describe shipped behavior. Every future API is **PROPOSED / NOT IMPLEMENTED**.
 > No production readiness is claimed.
 >
-> **Amendment 01 (2026-10-15): STOP-01 CLOSED — Option B direction approved.**
-> A Tenant is application-independent (D1); onboarding uses a single
-> `ResolveOrProvisionTenant` orchestration (D2) with automatic initial creation
-> only for a truly new global Identity (D3), reuse over duplication (D4),
-> explicit multi-Tenant selection (D5), independent subscription approval (D6),
-> planned Application/registration/subscription management (D7), and a narrowly
-> scoped pre-Tenant Application-initiated admission (D8, Option B). See §17 and
-> `pr-artifacts/pr-21/PR21_AMENDMENT01_DECISION_RECORD.md`. **Amendment 02
-> (2026-10-15) closed STOP-02, STOP-04, STOP-05, and STOP-06 (P02/P04/P05/P06).
-> STOP-03 — the exact Action/Permission/Role manifest — remains OPEN pending
-> human approval.** See §18 and
-> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP_REPORT.md`; so PR 21 is still not
-> DONE.
+> **All six PR 21 design STOPs are CLOSED by recorded human decisions:**
+> STOP-01 (D8, Option B); STOP-02/04/05/06 (P02/P04/P05/P06); and **STOP-03 by
+> `PR21-STOP03-APPROVAL-2026-10-15`** — the exact 25-row manifest, the 11/2/7
+> Role composition, the two admission-only zero-grant identifiers, the additive
+> seed plan, the PR 14 credential-binding gate, and the operator boundary
+> (deferred implementation prerequisite). Provenance:
+> `pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md`. See §17–§19. PR 21
+> runtime remains **NOT IMPLEMENTED**; PRs 22–26 own implementation.
 >
-> **STOP-03 approval package (2026-10-15):** an exact proposed Role partition
-> (`application-administrator`, `application-credential-administrator`, additive
-> `tenant-administrator`), admission-only identifiers, and the operator boundary
-> are recorded in §19 and
-> `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`.
-> Status: **PROPOSED — AWAITING HUMAN APPROVAL**; the operator sign-in,
-> SYSTEM-scope assignment, and global-target authorization mechanisms are
-> **NOT IMPLEMENTED** and gated to PR 24 (or a named prerequisite).
+> **Operator prerequisite (NOT IMPLEMENTED):** the operator sign-in,
+> SYSTEM-scope assignment, global-target authorization, and privileged
+> execution adapter do not exist and are gated to PR 24 (or a named
+> predecessor). No privileged `mtmf_runtime` grant; no Tenant-bound Authorizer
+> bypass; no root impersonation.
 >
 > The original STOP-01 record (Option A vs B) is preserved in
 > [`pr-artifacts/pr-21/PR21_STOP_REPORT.md`](pr-artifacts/pr-21/PR21_STOP_REPORT.md).
-> Until the narrower STOPs are resolved, this design is a draft and PR 21 is
-> not DONE.
 >
 > Normative security remains [SECURITY_MODEL.md](SECURITY_MODEL.md); root and
 > stewardship behavior remains [ROOT_AND_STEWARDSHIP.md](ROOT_AND_STEWARDSHIP.md);
@@ -371,26 +361,26 @@ The full adversarial matrix `C01`–`C36` and Amendment 01 `A01`–`A24` are in
 `pr-artifacts/pr-21/PR21_SECURITY_MATRIX.md` and
 `pr-artifacts/pr-21/PR21_AMENDMENT01_SECURITY_CASES.md`.
 
-## 15. Unresolved human decisions
+## 15. Human decisions — all design STOPs closed
 
-**Amendment 01 closed STOP-01** (D8, Option B). **Amendment 02 closed STOP-02,
-STOP-04, STOP-05, and STOP-06** (P02/P04/P05/P06; see §18). The remaining open
-decision is:
+**STOP-01** closed by Amendment 01 (D8, Option B). **STOP-02, STOP-04, STOP-05,
+and STOP-06** closed by Amendment 02 (P02/P04/P05/P06; see §18). **STOP-03**
+closed by recorded human approval `PR21-STOP03-APPROVAL-2026-10-15` — the exact
+25-row manifest, the 11/2/7 Role composition, the two admission-only zero-grant
+identifiers, the additive seed plan, the PR 14 credential-binding gate, and the
+operator boundary (see §19 and
+`pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md`).
 
-1. **STOP-03 — exact Action / Permission / Role manifest.** A complete
-   review-ready candidate manifest exists in
-   `pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`, but no new literal
-   URN, exact Permission, built-in Role grant, or system-management Role is
-   human-approved. **This blocks marking PR 21 DONE.**
-
-Deferred-implementation items (do not reopen the closed STOPs): the exact
-entitlement table/function shape and operator quota defaults (PR 22/23), any
-predecessor-reference schema addition (PR 22/24), and the separately gated
+Remaining **implementation** items (not open design policy; they do not reopen
+any STOP): the operator sign-in / SYSTEM-scope assignment / global-target
+authorization / privileged execution adapter (PR 24 or a named predecessor);
+the entitlement table/function shape and operator quota defaults (PR 22/23);
+any predecessor-reference schema addition (PR 22/24); and the gated
 credential-binding management contract (PR 24, only if the PR 14 trust model
 supports it).
 
-Until STOP-03 is approved, implementations MUST choose the more restrictive
-behavior and MUST NOT invent a design or grant.
+Implementations MUST still choose the more restrictive behavior and MUST NOT
+invent a design or grant beyond the approved manifest.
 
 ## 16. PR 22–26 allocation
 
@@ -651,10 +641,13 @@ resolution).
 
 ## 19. Amendment 02 STOP-03 approval addendum — exact authority partition and operator gate
 
-Normative for PRs 22–26. Status: **PROPOSED — AWAITING HUMAN APPROVAL.** Exact
-literals: `pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`. Decision:
+Normative for PRs 22–26. Status: **APPROVED DESIGN (human decision recorded
+2026-10-15); NOT IMPLEMENTED.** Exact literals:
+`pr-artifacts/pr-21/PR21_AMENDMENT02_ACTION_MANIFEST.md`. Decision:
 `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_AUTHORIZATION_DECISION.md`.
-Operator boundary: `pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`.
+Operator boundary:
+`pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md`. Provenance:
+`pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md`.
 
 ### 19.1 Exact Role partition
 

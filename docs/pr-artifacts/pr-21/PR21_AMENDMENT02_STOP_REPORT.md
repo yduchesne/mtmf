@@ -1,9 +1,7 @@
 # PR21_AMENDMENT02_STOP_REPORT
 
 **PR:** roadmap PR 21 — Amendment 02
-**Status:** **STOP-02, STOP-04, STOP-05, STOP-06 CLOSED by P02/P04/P05/P06.
-STOP-03 remains OPEN (conditional subgate) pending human approval of the exact
-Action/Role manifest.** PR 21 remains **NOT DONE**.
+**Status:** **STOP-02, STOP-03, STOP-04, STOP-05, STOP-06 CLOSED.** STOP-02/04/05/06 were closed by P02/P04/P05/P06; **STOP-03 was closed by the recorded human approval `PR21-STOP03-APPROVAL-2026-10-15`** (see [`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md)). PR 21 runtime remains NOT IMPLEMENTED; PRs 22–26 own implementation.
 
 ## STOP-02 — pre-Tenant onboarding entitlement — CLOSED
 
@@ -26,9 +24,15 @@ branch; no broader bypass exists.
 and operator-policy numeric quota defaults are deferred to PR 22/23. This does
 not reopen STOP-02.
 
-## STOP-03 — exact Action / Role manifest — OPEN (conditional)
+## STOP-03 — exact Action / Role manifest — OPEN at Amendment 02 (historical; CLOSED 2026-10-15)
 
-**Resolution (P03).** The **method** is approved: exact operation-specific
+> **Historical status:** the body below records the state at Amendment 02
+> (2026-10-15) when STOP-03 was still open. It was subsequently **CLOSED** by
+> the recorded human approval `PR21-STOP03-APPROVAL-2026-10-15`; see the
+> closure section at the end of this file and
+> [`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md).
+
+The **method** is approved: exact operation-specific
 Actions, explicit scoped Permissions, additive versioned seeds. A complete
 candidate manifest exists in `PR21_AMENDMENT02_ACTION_MANIFEST.md`, with every
 grammar-valid literal and a per-row status.
@@ -44,7 +48,8 @@ approve the literals. In particular:
 
 **Required human decision.** Approve/amend the manifest table (all rows marked
 NEEDS HUMAN APPROVAL), the system-management Role composition, and the additive
-seed migrations. Until then STOP-03 is **OPEN** and PR 21 is NOT DONE.
+seed migrations. At the time of Amendment 02, STOP-03 was **OPEN** and PR 21 was
+NOT DONE (subsequently closed as recorded above).
 
 **Owner on approval:** PR 22/23 (provision/entitlement), PR 24 (management),
 PR 25 (invitations).
@@ -107,7 +112,7 @@ endpoint.
 | STOP | Resolution | Closure rule | State |
 | --- | --- | --- | --- |
 | 02 | MTMF-owned per-Application entitlement, ACTIVE/REVOKED, system grant/revoke, quotas | token/role/subscription cannot imply entitlement | CLOSED |
-| 03 | Exact Action/Permission/Role manifest | only with human-approved literals | **OPEN** |
+| 03 | Exact Action/Permission/Role manifest | only with human-approved literals | **CLOSED (human approved 2026-10-15)** |
 | 04 | System registration + narrow first-Tenant composite exception | no Tenant-admin registration bypass | CLOSED |
 | 05 | Fresh-UUID terminal replacement with separate authority/audit | PR 13 lifecycle preserved | CLOSED |
 | 06 | Separate credential binding management | no credential issuance via Application CRUD | CLOSED |
@@ -132,3 +137,20 @@ operator boundary are recorded in
 and the updated [PR21_AMENDMENT02_ACTION_MANIFEST.md](PR21_AMENDMENT02_ACTION_MANIFEST.md).
 No human approval is recorded; STOP-02/04/05/06 remain CLOSED and unchanged.
 PR 21 remains NOT DONE.
+
+---
+
+## STOP-03 closure (2026-10-15)
+
+The project owner approved the exact STOP-03 package: the 25-row manifest, the
+11/2/7 Role composition, the two admission-only zero-grant identifiers, the
+additive seed plan, the PR 14 credential-binding gate, and the operator boundary
+as a deferred implementation prerequisite. Provenance:
+[`PR21_AMENDMENT03_HUMAN_APPROVAL.md`](PR21_AMENDMENT03_HUMAN_APPROVAL.md)
+(`PR21-STOP03-APPROVAL-2026-10-15`).
+
+**STOP-03 is CLOSED.** The prior `OPEN` state above is historical. The operator
+sign-in, SYSTEM-scope assignment, global-target authorization, and privileged
+execution adapter remain **NOT IMPLEMENTED** and are future PR 24 (or named
+predecessor) prerequisites. PR 21 runtime is NOT IMPLEMENTED; the PR 21 design
+milestone is closed in Amendment 03.
