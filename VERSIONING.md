@@ -38,7 +38,7 @@ Moving branches (`main`, feature branches) and mutable symbolic references are n
 
 ## 5. Consumer installation with uv
 
-An external application MUST consume MTMF over its authenticated versioned HTTP API. Python consumers install **only** the official `mtmf-client` distribution, not `mtmf-core`, `mtmf-service`, MTMF database adapters, or the private Rust engine. The client package must build/install from its monorepo subdirectory in a clean environment without editable workspace assumptions or runtime dependencies on sibling MTMF distributions.
+An external application MUST consume MTMF over its authenticated versioned HTTP API. Python consumers declare **only** `mtmf-client` as their direct MTMF dependency. The client currently depends transitively on the public contract distribution `mtmf-api`, so Git-only consumers must provide a matching pinned Git source for `mtmf-api` as well. Consumers MUST NOT import or depend on `mtmf-core`, `mtmf-service`, MTMF database adapters, or the private Rust engine. Both client and contract packages must build/install from their respective monorepo subdirectories in a clean environment without editable workspace assumptions.
 
 Illustrative consumer `pyproject.toml` for a published `v0.1.0a1` tag:
 
@@ -54,9 +54,14 @@ mtmf-client = {
     tag = "v0.1.0a1",
     subdirectory = "packages/mtmf-client",
 }
+mtmf-api = {
+    git = "https://github.com/yduchesne/mtmf.git",
+    tag = "v0.1.0a1",
+    subdirectory = "packages/mtmf-api",
+}
 ```
 
-The declared package version MUST match the selected tagged source. The consumer MUST commit both `pyproject.toml` and `uv.lock`. Resolve and verify the lock with:
+The declared package version MUST match the selected tagged source. The `mtmf-api` source is necessary to resolve the client's `mtmf-api==0.1.0a1` transitive requirement; it is not an additional direct dependency in `[project].dependencies`. The consumer MUST commit both `pyproject.toml` and `uv.lock`. Resolve and verify the lock with:
 
 ```bash
 uv lock
