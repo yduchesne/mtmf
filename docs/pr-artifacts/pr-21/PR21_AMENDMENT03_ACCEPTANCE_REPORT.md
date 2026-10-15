@@ -13,7 +13,7 @@ CLOSED. PR 21 DESIGN MILESTONE: DONE — DESIGN ONLY. RUNTIME: NOT IMPLEMENTED.*
 | Branch | `dev/onboarding-foundation` |
 | Base | `455ae7a35d090b2546afa0c78fc9e4750ffee5ec` |
 | Pre-amendment tip | `e2d246a4e9f3b834b4351a95c2d7c10d931ccd66` |
-| Content commit under test | recorded in `PR21_AMENDMENT03_FINAL_SHA.md` |
+| Content commit under test | `7c8ac881050f3eb5d2140d1f5fb3c0f575c761c2` |
 | Migration head | `0013_security_mutation_audit_partitioning` |
 | Push | none (not authorized) |
 
