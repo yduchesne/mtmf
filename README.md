@@ -1,5 +1,7 @@
 # mtmf: Multitenant Management Framework
 
+Release tags, Python package versions, and HTTP API compatibility are governed by [VERSIONING.md](VERSIONING.md).
+
 A Python package implementing an Identity and Access Management framework.
 
 <p align="center">
