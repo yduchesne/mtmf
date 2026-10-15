@@ -100,9 +100,28 @@ These invariants bind PRs 22–26. They restate
 - The existing production root authentication/recovery gate and unscheduled
   multi-IdP work are **not** solved by this design.
 
-## 4. New-Tenant admission
+## 4. Ownership and trust flow
 
-### 4.1 The circular-authentication problem
+The trusted path from an external identity to a consumer's local reference is:
+
+```text
+external IdP → verified service/user proof (outside transaction)
+             → approved operator OR eligible ordinary actor admission
+             → MTMF application use case → EffectiveRoleResolver / Authorizer
+             → one UnitOfWork → typed repositories → versioned PostgreSQL functions
+             → atomic state + audit → detached authoritative UUID response
+             → HTTP mtmf-client → consuming application's local references/PEP
+```
+
+MTMF owns verified actor/application/Tenant context, authorization, security
+state, and authoritative UUIDs. The consuming Application owns its own user
+authentication flow, its local reference projections, and resource/data
+enforcement. The operator/ordinary-actor admission branch is exactly the
+STOP-01 decision below.
+
+## 5. New-Tenant admission
+
+### 5.1 The circular-authentication problem
 
 `AuthenticatedActorContextService.resolve` requires an already existing
 ordinary ACTIVE Tenant, the verified user's persisted Identity/Principal
@@ -111,7 +130,7 @@ equality between the requested and verified Tenant. It therefore **cannot**
 authenticate the first user of a Tenant that does not yet exist. A service
 access token alone must never create a Tenant.
 
-### 4.2 Proposed admission model (UNAPPROVED — STOP-01)
+### 5.2 Proposed admission model (UNAPPROVED — STOP-01)
 
 **Design decision proposed for approval:** v0.1 new-Tenant provisioning uses a
 separately authenticated, approved **operator provisioning authority**, not
@@ -122,7 +141,7 @@ Alternative for the reviewer: an explicitly designed, least-privilege
 **pre-Tenant** self-service admission with abuse/rate/quota and
 operator-delegation controls (STOP-01 Option B). Neither option is approved.
 
-### 4.3 Trusted provisioning sequence
+### 5.3 Trusted provisioning sequence
 
 External identity verification and any remote IdP call occur **outside** the
 UoW. Then, in one serialized transaction:
@@ -144,7 +163,7 @@ implementation MUST STOP; it MUST NOT call the ordinary actor path and pretend
 the recipient is already a member, and MUST NOT use the development initializer
 or root impersonation.
 
-## 5. Existing-Tenant invitation
+## 6. Existing-Tenant invitation
 
 A verified Tenant steward/administrator with the exact invitation-create
 permission issues an invitation to a specific `(issuer, subject)` and approved
@@ -161,7 +180,7 @@ Invitation state machine (PR 25): `PENDING → ACCEPTED / REVOKED / EXPIRED`.
 Terminal states cannot be reopened. Acceptance is one-time and bound to the
 independently verified recipient, the exact Tenant, and the approved Role.
 
-## 6. Application subscription
+## 7. Application subscription
 
 Application **registration** and Tenant **subscription** are distinct.
 Creating a Tenant does **not** automatically subscribe the creating Application.
@@ -175,7 +194,7 @@ decisions. The existing `ApplicationTenantEligibilityService` remains the
 authoritative eligibility gate; a subscription is eligibility, never a
 Permission.
 
-## 7. Global Identity reuse
+## 8. Global Identity reuse
 
 A global Identity is keyed by a trusted `(issuer, subject)` binding
 (`ExternalSubjectBinding`, immutable, `ACTIVE`/`REVOKED`). Its Principal is
@@ -192,7 +211,7 @@ global. Reuse is explicit:
 - `Identity.origin` (`LOCAL`/`FEDERATED`) is not inferred from a name, email,
   or login availability.
 
-## 8. Tenant lifecycle
+## 9. Tenant lifecycle
 
 `ABSENT → PROVISIONING → ACTIVE`; an existing authorized Tenant may
 `ACTIVE ↔ SUSPENDED`. `PROVISIONING` is non-authorizing. There is no automatic
@@ -219,7 +238,7 @@ whitespace, no name fallback. If existing persistence already provides a
 compatible immutable semantic key, reuse it and document its unique constraint;
 otherwise PR 22 owns the migration. Never silently treat `name` as unique.
 
-## 9. Stewardship
+## 10. Stewardship
 
 Stewardship is a separate structural designation, not a Role. A Tenant's first
 steward is established atomically with activation:
@@ -237,7 +256,7 @@ remains installation/operator-only until the trusted invocation boundary
 exists; it is never exposed through the shared runtime login or a
 caller-supplied actor UUID.
 
-## 10. Existing-Tenant join: session-Tenant isolation
+## 11. Existing-Tenant join: session-Tenant isolation
 
 The same verified user may be a member of multiple Tenants. Each session/request
 is bound to exactly one verified Tenant; authorization state is never unioned
@@ -245,7 +264,7 @@ across Tenants, and resolving membership in Tenant A never yields membership or
 Roles in Tenant B. An invitation acceptance is Tenant-specific and grants only
 the invited Tenant's membership and approved Role.
 
-## 11. Idempotency and concurrency
+## 12. Idempotency and concurrency
 
 Idempotency identity is `(verified Application or operator identity, operation
 kind, idempotency_key)` plus a durable canonical request fingerprint:
@@ -264,7 +283,7 @@ conventions; the loser receives a safe replay or a conflict, never a duplicate
 identity. A successful MTMF commit followed by a lost HTTP response retries
 idempotently and returns the same IDs.
 
-## 12. Transaction, audit, and failure contracts
+## 13. Transaction, audit, and failure contracts
 
 External identity verification and any remote IdP calls occur **before** the
 UoW. Within one UoW: lock the relevant records, validate state, resolve effective
@@ -289,7 +308,7 @@ Failure/reconciliation:
 - an infrastructure/IdP failure is a typed failure with no writes, never a
   success or a reusable snapshot.
 
-## 13. Security threats
+## 14. Security threats
 
 | # | Threat | Expected rejection | Owner |
 | --- | --- | --- | --- |
@@ -312,7 +331,7 @@ Failure/reconciliation:
 The full adversarial matrix `C01`–`C36` is
 `../pr-artifacts/pr-21/PR21_SECURITY_MATRIX.md`.
 
-## 14. Unresolved human decisions
+## 15. Unresolved human decisions
 
 1. **STOP-01** — operator-mediated v0.1 provisioning (Option A) or a
    commissioned pre-Tenant self-service admission (Option B). **Blocks DONE.**
@@ -323,7 +342,7 @@ The full adversarial matrix `C01`–`C36` is
 Until resolved, implementations MUST choose the more restrictive behavior and
 MUST NOT invent a design.
 
-## 15. PR 22–26 allocation
+## 16. PR 22–26 allocation
 
 | PR | Deliverable |
 | --- | --- |
