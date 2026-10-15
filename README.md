@@ -15,7 +15,7 @@ Current status: WIP.
 
 For a plain-language explanation of local Keycloak → MTMF → application startup, see the [development setup guide](docs/DEVELOPMENT_SETUP.md) (including the PR 17-B development-user provisioning step).
 
-Project documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
+The proposed first-class administrative CLI is specified in [CLI Architecture](docs/CLI_ARCHITECTURE.md); it is not yet implemented.\n\nProject documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
 
 ## Development
 

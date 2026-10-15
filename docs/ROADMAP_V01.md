@@ -308,6 +308,16 @@ Validate complete new-Tenant and existing-Tenant invitation onboarding against d
 
 **v0.1 onboarding release requirement:** MTMF must let an authorized consuming Application securely onboard a new ordinary Tenant and its initial verified user, or invite a verified user to an existing Tenant, and return authoritative Tenant/Principal/Identity UUIDs for the consumer's local references. MTMF owns security state; consumers retain domain data and enforcement. These PRs do not implement ATI/Digr UI, OIDC login, or local reference-table synchronization, which remain consumer-repository work. No unplanned separate audit/hardening PRs: audit and adversarial tests are acceptance requirements of PRs 22–26. Production root recovery remains the separate release gate below.
 
+### Administrative CLI series — first-class HTTP-only management interface [PLANNED]
+
+MTMF will provide a separately installable Python `mtmf-cli` distribution with a hierarchical Typer/Rich `mtmf` command, named profiles, secure authentication, and human/JSON output. The CLI uses **only** the official `mtmf-client` and authorized, audited versioned HTTP management endpoints; it never uses direct PostgreSQL, privileged initialization, internal service/core, or root recovery pathways. The approved design baseline, proposed command catalog, security constraints, compatibility contract, and acceptance requirements are in [CLI Architecture](CLI_ARCHITECTURE.md).
+
+- **CLI-1 — Foundation [PLANNED]:** Python distribution and workspace wiring, nested command shell, configuration, output/exit-code contracts, supported authentication flows, clean-install and deterministic tests. No fabricated API capabilities.
+- **CLI-2 — Existing management API coverage [PLANNED]:** implement only commands backed by actual authenticated/authorized management endpoints, with deployed authorization and audit tests.
+- **CLI-3 — Expanded management [PLANNED]:** progressively add Tenant, Organization, Group, Role, Application, subscription, and invitation commands as the corresponding approved HTTP APIs become available. In particular, `mtmf tenants add` is **not** a working feature until onboarding/management contracts are implemented.
+
+This series can proceed in parallel with PRs 21–26 and is **not** a prerequisite for onboarding. Each CLI implementation PR owns its security and adversarial acceptance; do not create an open-ended series of separate audit PRs.
+
 ### Production root authentication and recovery — explicit release gate [PLANNED]
 
 PR 10 has implemented the protected canonical root Principal/Tenant/designated LOCAL Identity and the installation/operator-only `recover_root_identity` database primitive. **An operational production root recovery mechanism does not yet exist.** No current root password store, recovery CLI, production IdP binding repair, independent approval/custody, or complete recovery runbook is implied.
