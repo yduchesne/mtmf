@@ -7,10 +7,12 @@
 > `POST /v1/management/identity-group-memberships` (PR 19C). Do not advertise
 > any capability here as working.
 >
-> The admission model is **not approved** (STOP-01 open): see
-> `../pr-artifacts/pr-21/PR21_STOP_REPORT.md` and
-> [ONBOARDING_ARCHITECTURE.md](ONBOARDING_ARCHITECTURE.md). Action URNs and
-> error codes below are proposals, not approved decisions.
+> **Amendment 01 (2026-10-15): STOP-01 direction approved (Option B).** The
+> onboarding admission direction is a narrowly scoped pre-Tenant
+> Application-initiated admission. Narrower STOP-02…STOP-06 remain open; see
+> [ONBOARDING_ARCHITECTURE.md](ONBOARDING_ARCHITECTURE.md) §17 and
+> `pr-artifacts/pr-21/PR21_AMENDMENT01_STOP_REPORT.md`. Action URNs and error
+> codes below are still proposals, not approved decisions.
 
 This document uses the existing `mtmf-api` detached DTO and static
 `ApiErrorResponse` conventions. It introduces no DTO class, route, or code in
@@ -55,13 +57,21 @@ PR 21.
 
 | Method + path | Operation | Owner | Admission | Status |
 | --- | --- | --- | --- | --- |
+| `POST /v1/onboarding/resolve-or-provision` | first-registration resolve-or-provision | PR 24 (+PR 23 seam) | verified service + user proof + pre-Tenant entitlement (Option B) | PROPOSED |
 | `POST /v1/management/tenants/resolve` | resolve authorized key to UUID | PR 24 | already eligible Tenant actor; no global enumeration | PROPOSED |
 | `GET /v1/management/tenants/{tenant_id}` | authorized Tenant metadata | PR 24 | exact Tenant context | PROPOSED |
-| `POST /v1/management/applications/{application_id}/subscriptions` | subscription | PR 24 | separately authorized management actor | PROPOSED |
+| `POST /v1/management/applications` | register global Application | PR 24 | separately authorized system management authority | PROPOSED |
+| `GET /v1/management/applications/{application_id}` | inspect Application | PR 24 | authorized inspect | PROPOSED |
+| `PATCH /v1/management/applications/{application_id}` | Application lifecycle | PR 24 | system management authority | PROPOSED |
+| `POST /v1/management/applications/{application_id}/registrations` | Application–Tenant registration | PR 24 | STOP-04 authority | PROPOSED |
+| `GET`/`PATCH /v1/management/applications/{application_id}/registrations/{registration_id}` | inspect/revoke registration | PR 24 | STOP-04 authority | PROPOSED |
+| `POST /v1/management/applications/{application_id}/subscriptions` | create subscription | PR 24 | exact Tenant authority (D6) | PROPOSED |
+| `GET /v1/management/applications/{application_id}/subscriptions[/{subscription_id}]` | inspect/list subscriptions | PR 24 | exact Tenant authority; bounded; no enumeration | PROPOSED |
+| `PATCH /v1/management/applications/{application_id}/subscriptions/{subscription_id}` | suspend/cancel subscription | PR 24 | exact Tenant authority; CAS | PROPOSED |
 | `POST /v1/management/tenants/{tenant_id}/invitations` | create invitation | PR 25 | exact invitation-create authority | PROPOSED |
 | `POST /v1/management/invitations/accept` | accept invitation | PR 25 | independently verified pre-membership recipient | PROPOSED |
 | `POST /v1/management/invitations/{invitation_id}/revoke` | revoke invitation | PR 25 | exact revoke authority | PROPOSED |
-| `POST /v1/management/tenants` | self-service Tenant create | **DEFERRED** | no approved v0.1 public admission; STOP-01 | DEFERRED |
+| `POST /v1/management/tenants` | self-service Tenant create | **DEFERRED** | no separate public route; superseded by `resolve-or-provision` (Option B) | DEFERRED |
 
 ## 3. `POST /v1/management/tenants/resolve`
 
@@ -114,6 +124,10 @@ PR 21.
   Incompatible existing subscription → `409`; never a silent repair.
 - **Expected errors:** `400`, `401`, `403`, `404`, `409`, `429`, `503`.
 - **Example request:** `{"tenant_id":"...","idempotency_key":"...","requested_state":"ACTIVE"}`.
+- **Amendment 01 refinement:** §14.1 supersedes this sketch with the required
+  `starts_at`/optional `ends_at` window and a stable `subscription_id` response.
+  Registration is a separate fact (§13); an `ACTIVE` subscription without an
+  `ACTIVE` registration is not eligible.
 
 ## 6. `POST /v1/management/tenants/{tenant_id}/invitations`
 
@@ -186,22 +200,172 @@ It MUST NOT be implemented until STOP-01 is resolved and the corresponding
 authoritative documentation change is approved. It is not an operator
 bootstrap path.
 
-## 10. Non-HTTP operator bootstrap
+## 10. Non-HTTP admission and operator management
 
-New-Tenant provisioning under STOP-01 Option A is **not** an HTTP route. It uses
-a separately authenticated, approved operator provisioning authority outside the
-ordinary two-token actor path, invoking the reviewed application use case and
-reviewed stored functions. It MUST NOT:
+### 10.1 Pre-Tenant admission (Option B — approved direction)
 
-- use the privileged development initializer as a production onboarding
-  interface;
-- impersonate root or use a root/root-subscription shortcut;
-- expose privileged database functions through `mtmf_runtime`;
-- accept a caller-supplied actor UUID as authentication.
+First registration is served by the HTTP `ResolveOrProvisionTenant` operation
+(§11), not by ordinary already-member actor resolution. Internally the use case
+independently verifies the Application service token, the user proof, and the
+pre-Tenant onboarding entitlement (STOP-02) **before** the UoW, then performs
+Identity resolution and, only for a truly new global Identity with no eligible
+Tenant, an atomic initial provisioning. It MUST NOT call
+`AuthenticatedActorContextService.resolve` for an unknown Tenant, impersonate
+root, use the privileged development initializer as a production onboarding
+interface, expose privileged database functions through `mtmf_runtime`, or
+accept a caller-supplied actor UUID as authentication.
 
-The exact operator authentication carrier is part of the STOP-01 decision.
+### 10.2 Operator/system management
 
-## 11. Forward compatibility and change control
+Application registration, Application–Tenant registration, and subscription
+mutation remain operator/installation-privileged in PR 13. The future approved
+management authority for those operations is **STOP-04** (registration) and the
+system management authority for Application records; credential bindings are a
+separate boundary (**STOP-06**). These operations are subject to the same
+authentication, exact-Action authorization, and atomic audit requirements, not
+to the pre-Tenant branch.
+
+## 11. `POST /v1/onboarding/resolve-or-provision`
+
+- **Owner:** PR 24 (with the PR 23 verified-subject seam). **Status:** PROPOSED.
+- **Admission:** verified Application service token + independently verified
+  user proof + pre-Tenant onboarding entitlement (STOP-02). This is **not** the
+  ordinary already-member actor path.
+- **Request fields:**
+
+  | Field | Type | Required | Limits |
+  | --- | --- | --- | --- |
+  | `idempotency_key` | canonical UUID | yes | not nil |
+  | `requested_tenant_id` | canonical UUID | no | selection follow-up only; never identity proof |
+  | `requested_tenant_key` | string | no | `tenant_key` grammar; never identity proof |
+  | `requested_display_name` | string | no | bounded; display metadata only, non-unique |
+
+- **Outcomes (stable typed response):** `CREATED`, `REUSED`,
+  `SELECTION_REQUIRED`, `SUBSCRIPTION_REQUIRED`, `ONBOARDING_REQUIRED`; denials
+  use the static error envelope. Every success/reuse body returns authoritative
+  `tenant_id`, `principal_id`, `identity_id`, and the Application eligibility
+  state; `CREATED` additionally returns the initial registration/subscription
+  identifiers.
+- **Follow-up:** `SELECTION_REQUIRED` is completed by repeating the operation
+  with `requested_tenant_id`; the same operation may return a read-only outcome
+  (`REUSED`/`SELECTION_REQUIRED`/`SUBSCRIPTION_REQUIRED`/`ONBOARDING_REQUIRED`)
+  without creating anything.
+- **Idempotency scope:** `(verified Application, verified subject,
+  "onboarding.resolve_or_provision", idempotency_key)` + canonical fingerprint.
+  Same key/different fingerprint → `409`. A replay returns the same IDs and
+  creates nothing new.
+- **Expected errors:** `400`, `401`, `403` (no entitlement / ineligible /
+  ineligible Tenant), `404` (invisible; no enumeration), `409`, `429`, `503`.
+- **Visibility:** never leak inaccessible Tenant names/IDs; a user with an
+  existing Tenant but no calling-Application subscription is
+  `SUBSCRIPTION_REQUIRED`, never `REUSED`.
+- **Example:** `{"idempotency_key":"..."}` → `201`
+  `{"outcome":"CREATED","tenant_id":"...","principal_id":"...","identity_id":"..."}`.
+
+## 12. Application management
+
+All routes below are PROPOSED / NOT IMPLEMENTED and require a separately
+authorized **system management** authority — never self-registration through a
+caller service token.
+
+### 12.1 `POST /v1/management/applications`
+
+- Request: `application_key` (normalized grammar), `name` (bounded),
+  `idempotency_key` (UUID), optional `extension` (JSON object).
+- Response `201`: `{application_id, application_key, lifecycle:"ACTIVE", created:true}`.
+- Idempotency scope: `(verified system actor, "application.create", idempotency_key)`.
+- Errors: `400`, `401`, `403`, `409` (duplicate key/fingerprint), `429`, `503`.
+- **Credential boundary:** creating an Application does **not** create service
+  credentials; binding management is a separate security-sensitive operation
+  (STOP-06).
+
+### 12.2 `GET /v1/management/applications/{application_id}`
+
+- Authorized inspect; response `{application_id, application_key, name,
+  lifecycle}`. Errors `401`, `403`, `404`, `429`, `503`.
+
+### 12.3 `PATCH /v1/management/applications/{application_id}`
+
+- Body: `{lifecycle, version}`; `lifecycle` ∈ `{SUSPENDED, RETIRED, ACTIVE}` and
+  only the **source-permitted** transitions from §17.5 (`ACTIVE↔SUSPENDED`,
+  `ACTIVE/SUSPENDED→RETIRED`). `RETIRED` is terminal.
+- Compare-and-swap on `version`; `409` on stale version or illegal transition.
+- No physical `DELETE` in v0.1. Errors `400`, `401`, `403`, `404`, `409`, `429`, `503`.
+- Audit: one append-only mutation record.
+
+## 13. Application–Tenant registration
+
+- **Owner:** PR 24. Registration `ACTIVE→REVOKED` (`REVOKED` terminal);
+  eligibility requires an `ACTIVE` registration **and** an `ACTIVE` in-window
+  subscription. A subscription row alone is insufficient.
+- **Proposed routes:**
+  - `POST /v1/management/applications/{application_id}/registrations` —
+    `{tenant_id, idempotency_key}` → `201 {registration_id, application_id, tenant_id, lifecycle:"ACTIVE"}`.
+  - `GET /v1/management/applications/{application_id}/registrations/{registration_id}`
+    — authorized inspect.
+  - `PATCH .../registrations/{registration_id}` — `{lifecycle:"REVOKED", version}`
+    only; `REVOKED` terminal.
+- **Authority:** PR 13 registration mutation is operator-only. Whether a Tenant
+  administrator may be delegated registration authority, or whether the initial
+  registration is atomically composed with subscription creation under one
+  reviewed Action, is **STOP-04**. Tenant Administrator privileges are not
+  silently broadened.
+- Registration `REVOKED` is distinct from subscription `CANCELLED`.
+
+## 14. Subscription management
+
+### 14.1 `POST /v1/management/applications/{application_id}/subscriptions`
+
+Existing proposed route, retained. Creates a subscription for an **existing**
+ordinary Tenant under exact Tenant authority (or an approved operator/system
+path). Body: `{tenant_id, idempotency_key, requested_state:"ACTIVE", starts_at,
+ends_at?}`. `starts_at` required, timezone-aware; `ends_at` optional and
+strictly after `starts_at`. Response `201 {subscription_id, application_id,
+ tenant_id, state, starts_at, ends_at, created:true}`; `200 created:false` on
+replay. Idempotency `(verified actor, "subscription.create", idempotency_key)`.
+Errors `400`, `401`, `403`, `404`, `409`, `429`, `503`.
+
+### 14.2 `GET /v1/management/applications/{application_id}/subscriptions` and `.../{subscription_id}`
+
+- Authorized lookup/list with **bounded pagination**; no cross-Tenant
+  enumeration; exact-ID GET supported. Invisible targets return opaque `404`.
+- Errors `401`, `403`, `404`, `429`, `503`.
+
+### 14.3 `PATCH /v1/management/applications/{application_id}/subscriptions/{subscription_id}`
+
+- Body: `{lifecycle, ends_at?, version}`. Only source-permitted transitions
+  from §17.5 (`PENDING→ACTIVE/CANCELLED`; `ACTIVE→SUSPENDED/CANCELLED/EXPIRED`;
+  `SUSPENDED→ACTIVE/CANCELLED/EXPIRED`). `CANCELLED`/`EXPIRED` terminal.
+  `ends_at` is restrictive only (shorten or set on open-ended).
+- Compare-and-swap on `version`; `409` on stale version/illegal transition.
+- No `DELETE`/hard-deletion. Terminal replacement is a **new row with a new
+  UUID**; whether/when replacement is allowed is **STOP-05** and is not
+  implemented.
+- Errors `400`, `401`, `403`, `404`, `409`, `429`, `503`; one atomic audit row.
+
+### 14.4 Registration/subscription composite authority
+
+If a Tenant administrator can authorize a subscription but registration
+requires system authority, the workflow MUST use either a separately authorized
+operator step or an approved composite admission (STOP-04). It MUST NOT silently
+broaden Tenant Administrator privileges.
+
+## 15. Amendment 01 authorization matrix
+
+All Actions below are **UNAPPROVED candidates** (STOP-03). No wildcard and no
+invented built-in Role grant.
+
+| Operation | Verified Application | Verified acting user | Existing Tenant context | Candidate exact Action (UNAPPROVED) | Authority owner | Operator/entitlement | Audit |
+|---|---|---|---|---|---|---|---|
+| `resolve-or-provision` (new Identity, new Tenant) | required | required | none | `urn:mtmf:iam:actions:system:tenant:provision-object` | pre-Tenant entitlement (STOP-02) | entitlement; system grants it | yes |
+| `resolve-or-provision` (existing Identity, existing Tenant) | required | required | required for REUSED/SELECTION | `urn:mtmf:iam:actions:system:tenant:get-object` (reused) | ordinary actor / entitlement for the pre-Tenant branch | entitlement only for the create branch | yes |
+| Application create/inspect/suspend/retire | required (system) | — | none | `urn:mtmf:iam:actions:system:application:create-object` / `update-object` | system management Role (STOP-03) | operator/system | yes |
+| Registration create/revoke | required | — | Tenant exact | `urn:mtmf:iam:actions:system:application-tenant-registration:add-object` / `revoke-object` | STOP-04 | operator/system | yes |
+| Subscription create | required | required | Tenant exact | `urn:mtmf:iam:actions:system:application-subscription:manage-object` | Tenant administrator or operator | independent approval (D6) | yes |
+| Subscription suspend/cancel | required | required | Tenant exact | same as subscribe | Tenant administrator or operator | independent approval (D6) | yes |
+| Invitation acceptance | required | required (pre-membership recipient) | invited Tenant only | `urn:mtmf:iam:actions:system:tenant-invitation:accept-object` | PR 25 pre-membership seam | n/a | yes |
+
+## 16. Forward compatibility and change control
 
 - Response fields are additive within `/v1`; an incompatible change requires a
   new version under `VERSIONING.md`.
@@ -214,6 +378,8 @@ The exact operator authentication carrier is part of the STOP-01 decision.
 ## References
 
 - [ONBOARDING_ARCHITECTURE.md](ONBOARDING_ARCHITECTURE.md)
-- `PR21_SECURITY_MATRIX.md`, `PR21_CONTRACT_REVIEW.md`, `PR21_STOP_REPORT.md`
-  in `../pr-artifacts/pr-21/`
+- `pr-artifacts/pr-21/PR21_SECURITY_MATRIX.md`, `PR21_CONTRACT_REVIEW.md`,
+  `PR21_STOP_REPORT.md`
+- `pr-artifacts/pr-21/PR21_AMENDMENT01_AUTHORIZATION_MATRIX.md`,
+  `PR21_AMENDMENT01_STOP_REPORT.md`, `PR21_AMENDMENT01_DECISION_RECORD.md`
 - [HTTP Integration and Batch Authorization](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md)

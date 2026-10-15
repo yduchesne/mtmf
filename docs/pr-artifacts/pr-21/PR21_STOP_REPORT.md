@@ -1,8 +1,9 @@
 # PR21_STOP_REPORT
 
 **PR:** roadmap PR 21 — Application-neutral onboarding architecture and API contracts
-**Status:** **STOP-01 OPEN — HUMAN DECISION REQUIRED BEFORE PR 21 CAN BE MARKED DONE.**
-**Effect:** PR 21 may deliver the draft architecture and contracts, but must not
+**Status (original, preserved):** **STOP-01 OPEN — HUMAN DECISION REQUIRED BEFORE PR 21 CAN BE MARKED DONE.**
+**Amendment 01 update (2026-10-15): STOP-01 CLOSED — Option B direction approved (D8); narrower STOP-02…STOP-06 open, so PR 21 is still NOT DONE.** See [`PR21_AMENDMENT01_STOP_REPORT.md`](PR21_AMENDMENT01_STOP_REPORT.md).
+**Original effect:** PR 21 may deliver the draft architecture and contracts, but must not
 be marked DONE, and must not claim an approved admission model, until the
 decision below is recorded.
 
@@ -85,5 +86,10 @@ does not invent option B.**
 
 ### Resolution
 
-_No resolution recorded. This STOP remains open until a human reviewer records
-the chosen option and the corresponding authoritative documentation change._
+**2026-10-15 — STOP-01 CLOSED by Amendment 01 (human decision D8):** the
+direction is approved as **Option B, a narrowly scoped pre-Tenant
+Application-initiated admission**. See
+[`PR21_AMENDMENT01_STOP_REPORT.md`](PR21_AMENDMENT01_STOP_REPORT.md) for the
+closure and for the narrower remaining STOP-02…STOP-06. This original STOP is
+preserved as history; it is not erased. The narrower open policies still block
+marking PR 21 DONE.

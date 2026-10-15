@@ -67,7 +67,10 @@ external IdP boundaries may be faked for deterministic tests.
 
 ## Cross-references
 
-- Admission/state/identity rules: `docs/ONBOARDING_ARCHITECTURE.md`.
+- **Amendment 01 adds A01–A24** in `PR21_AMENDMENT01_SECURITY_CASES.md` without
+  renumbering or deleting any C-row.
+- Admission/state/identity rules: `docs/ONBOARDING_ARCHITECTURE.md` (§§3, 17).
 - Wire-level error/visibility expectations: `docs/ONBOARDING_HTTP_CONTRACT.md`.
 - Action-URN mapping proposal (unapproved): `PR21_CONTRACT_REVIEW.md`.
-- Open admission decision: `PR21_STOP_REPORT.md` (STOP-01).
+- Admission decision: STOP-01 closed as Option B (D8); see
+  `PR21_AMENDMENT01_STOP_REPORT.md`.

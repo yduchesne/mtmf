@@ -20,8 +20,12 @@ The proposed first-class administrative CLI is specified in [CLI Architecture](d
 The proposed (design-only, **not implemented**) v0.1 onboarding design and future
 versioned management contracts are in
 [onboarding architecture](docs/ONBOARDING_ARCHITECTURE.md) and the
-[onboarding HTTP contract](docs/ONBOARDING_HTTP_CONTRACT.md); the admission
-model remains blocked on an open human decision.
+[onboarding HTTP contract](docs/ONBOARDING_HTTP_CONTRACT.md). **Amendment 01**
+records user-approved direction: an application-independent Tenant,
+`ResolveOrProvisionTenant`, global Identity reuse, independent subscription
+approval, and a narrowly scoped pre-Tenant admission (STOP-01 Option B).
+Narrower security-policy decisions (STOP-02–STOP-06) remain open; none of this
+is implemented.
 
 ## Development
 

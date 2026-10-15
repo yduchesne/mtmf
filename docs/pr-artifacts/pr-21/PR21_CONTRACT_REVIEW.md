@@ -107,7 +107,7 @@ or its status in place.
 
 | ID | Question | Owner | Blocking? |
 | --- | --- | --- | --- |
-| **STOP-01** | Operator-mediated v0.1 provisioning (Option A) **or** a commissioned pre-Tenant self-service admission (Option B)? | Human reviewer | **Blocks DONE** |
+| ~~**STOP-01**~~ | **CLOSED (Amendment 01, D8): Option B pre-Tenant admission direction approved.** | Human | — (see STOP-02…STOP-06) |
 | Q2 | Approve the exact Action URNs in §1.1 (or amend them) | Human reviewer | Blocks PR 22 seeding |
 | Q3 | Approve the Role/Permission composition for onboarding Actions | Human reviewer | Blocks PR 22–25 seeding |
 | Q4 | Confirm the `tenant_key` grammar and unique scope | PR 22 | No |
@@ -120,4 +120,6 @@ or its status in place.
 ## 5. Cross-references
 
 - `docs/ONBOARDING_ARCHITECTURE.md`, `docs/ONBOARDING_HTTP_CONTRACT.md`.
-- `PR21_SECURITY_MATRIX.md` (C01–C36), `PR21_STOP_REPORT.md` (STOP-01).
+- `PR21_SECURITY_MATRIX.md` (C01–C36) and `PR21_AMENDMENT01_SECURITY_CASES.md` (A01–A24).
+- `PR21_AMENDMENT01_DECISION_RECORD.md` (D1–D8),
+  `PR21_AMENDMENT01_STOP_REPORT.md` (STOP-02…STOP-06).

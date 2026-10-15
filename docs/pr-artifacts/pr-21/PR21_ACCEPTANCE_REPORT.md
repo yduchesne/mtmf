@@ -1,7 +1,11 @@
 # PR21_ACCEPTANCE_REPORT
 
 **PR:** roadmap PR 21 — Application-neutral onboarding architecture and API contracts
-**Status:** **DOCUMENTATION ACCEPTANCE PASSES; STOP-01 OPEN; PR 21 IS NOT DONE.**
+**Status:** **DOCUMENTATION ACCEPTANCE PASSES; STOP-01 CLOSED (Option B direction); narrower STOP-02–STOP-06 OPEN; PR 21 IS NOT DONE.**
+**Amendment 01 (2026-10-15):** this report remains valid for the pre-amendment
+documentation baseline. The amendment's acceptance is recorded in
+`PR21_AMENDMENT01_ACCEPTANCE_REPORT.md`. STOP-01 is closed per D8; the narrower
+open STOPs are in `PR21_AMENDMENT01_STOP_REPORT.md`.
 **Nature of evidence:** documentation/design acceptance only. No runtime
 capability is implemented or claimed. No production behavior is proven.
 

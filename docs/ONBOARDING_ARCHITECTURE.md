@@ -7,10 +7,21 @@
 > describe shipped behavior. Every future API is **PROPOSED / NOT IMPLEMENTED**.
 > No production readiness is claimed.
 >
-> **STOP-01 is OPEN.** The trusted authority that creates the first ordinary
-> Tenant and its first verified user is not settled. See
-> `../pr-artifacts/pr-21/PR21_STOP_REPORT.md`. Until a human reviewer resolves
-> STOP-01, this design is a draft and PR 21 is not DONE.
+> **Amendment 01 (2026-10-15): STOP-01 CLOSED — Option B direction approved.**
+> A Tenant is application-independent (D1); onboarding uses a single
+> `ResolveOrProvisionTenant` orchestration (D2) with automatic initial creation
+> only for a truly new global Identity (D3), reuse over duplication (D4),
+> explicit multi-Tenant selection (D5), independent subscription approval (D6),
+> planned Application/registration/subscription management (D7), and a narrowly
+> scoped pre-Tenant Application-initiated admission (D8, Option B). See §17 and
+> `pr-artifacts/pr-21/PR21_AMENDMENT01_DECISION_RECORD.md`. **Narrower
+> STOP-02…STOP-06 remain open** (`pr-artifacts/pr-21/PR21_AMENDMENT01_STOP_REPORT.md`),
+> so PR 21 is still not DONE.
+>
+> The original STOP-01 record (Option A vs B) is preserved in
+> [`pr-artifacts/pr-21/PR21_STOP_REPORT.md`](pr-artifacts/pr-21/PR21_STOP_REPORT.md).
+> Until the narrower STOPs are resolved, this design is a draft and PR 21 is
+> not DONE.
 >
 > Normative security remains [SECURITY_MODEL.md](SECURITY_MODEL.md); root and
 > stewardship behavior remains [ROOT_AND_STEWARDSHIP.md](ROOT_AND_STEWARDSHIP.md);
@@ -116,8 +127,9 @@ external IdP → verified service/user proof (outside transaction)
 MTMF owns verified actor/application/Tenant context, authorization, security
 state, and authoritative UUIDs. The consuming Application owns its own user
 authentication flow, its local reference projections, and resource/data
-enforcement. The operator/ordinary-actor admission branch is exactly the
-STOP-01 decision below.
+enforcement. The admission branch is Option B (pre-Tenant Application-initiated
+admission) for first registration and the ordinary already-member actor branch
+for everything else; see §17.2–§17.3.
 
 ## 5. New-Tenant admission
 
@@ -130,33 +142,41 @@ equality between the requested and verified Tenant. It therefore **cannot**
 authenticate the first user of a Tenant that does not yet exist. A service
 access token alone must never create a Tenant.
 
-### 5.2 Proposed admission model (UNAPPROVED — STOP-01)
+### 5.2 Approved admission model (Option B — D8)
 
-**Design decision proposed for approval:** v0.1 new-Tenant provisioning uses a
-separately authenticated, approved **operator provisioning authority**, not
-ordinary D1 actor resolution. The existing privileged development initializer
-is not a production onboarding interface.
+**STOP-01 is closed: v0.1 uses a narrowly scoped pre-Tenant Application-initiated
+admission (Option B)**, not operator-only provisioning and not ordinary actor
+resolution for an unknown Tenant. The trusted `ResolveOrProvisionTenant`
+operation independently verifies the Application service token and the user
+proof, then resolves the global Identity and the Tenant-context outcome. The
+existing privileged development initializer is **not** a production onboarding
+interface. The detailed entitlement/authority model is still unapproved
+(STOP-02…STOP-04); see §17 and
+`pr-artifacts/pr-21/PR21_AMENDMENT01_STOP_REPORT.md`.
 
-Alternative for the reviewer: an explicitly designed, least-privilege
-**pre-Tenant** self-service admission with abuse/rate/quota and
-operator-delegation controls (STOP-01 Option B). Neither option is approved.
-
-### 5.3 Trusted provisioning sequence
+### 5.3 Trusted provisioning sequence (Option B)
 
 External identity verification and any remote IdP call occur **outside** the
 UoW. Then, in one serialized transaction:
 
 ```text
-verify external issuer/subject and operator authority OUTSIDE UoW
+verify Application service token + user proof + onboarding entitlement OUTSIDE UoW
     → begin serialized UoW
     → resolve/reuse global Identity and Principal by verified binding
-    → create ordinary PROVISIONING Tenant (unique provisioner+tenant_key)
+    → (new Identity + no eligible Tenant) create ordinary PROVISIONING Tenant
+       (unique provisioning authority + tenant_key)
     → establish Principal+Identity Tenant memberships
     → establish approved Tenant Administrator Role and stewardship
+    → establish the explicitly authorized INITIAL Application registration + subscription
     → verify activation invariant, activate Tenant
     → persist exact mutation provenance and audit atomically
     → commit → return authoritative IDs
 ```
+
+The full decision table (reuse/selection/subscription-required/deny) is §17.2.
+The initial registration/subscription is the only subscription exception in the
+pre-Tenant branch; adding another Application to an existing Tenant always
+requires independent authorization (D6).
 
 If the operator authority cannot be established without a bypass, the
 implementation MUST STOP; it MUST NOT call the ordinary actor path and pretend
@@ -183,10 +203,17 @@ independently verified recipient, the exact Tenant, and the approved Role.
 ## 7. Application subscription
 
 Application **registration** and Tenant **subscription** are distinct.
-Creating a Tenant does **not** automatically subscribe the creating Application.
-A new subscription requires an independently authorized operator or an existing
-eligible Tenant management authority. Existing subscription eligibility cannot
-bootstrap its own creation.
+Creating a Tenant does **not** automatically subscribe the creating Application
+in general. A new subscription for an existing Tenant requires an independently
+authorized operator or existing eligible Tenant management authority. Existing
+subscription eligibility cannot bootstrap its own creation.
+
+**Amendment 01 exception:** the one exception is the explicitly authorized
+**initial** Application registration/subscription committed atomically with a
+first-Tenant pre-Tenant admission for a truly new global Identity (§17.3, D3).
+It is not automatic: it is gated by the Application onboarding entitlement. It
+does not apply to adding another Application to an existing Tenant (D6), which
+still requires independent authorization (STOP-04).
 
 Reject inactive Tenant/Application, SYSTEM/root, unauthorized Application ID,
 and cross-Tenant requests. Never accept caller-supplied authorization
@@ -328,16 +355,23 @@ Failure/reconciliation:
 | T14 | Partial commit (state without steward/audit) | full rollback | 22/23 |
 | T15 | Secret/JWT/capability leaked to audit/logs | security test fails | 22–25 |
 
-The full adversarial matrix `C01`–`C36` is
-`../pr-artifacts/pr-21/PR21_SECURITY_MATRIX.md`.
+The full adversarial matrix `C01`–`C36` and Amendment 01 `A01`–`A24` are in
+`pr-artifacts/pr-21/PR21_SECURITY_MATRIX.md` and
+`pr-artifacts/pr-21/PR21_AMENDMENT01_SECURITY_CASES.md`.
 
 ## 15. Unresolved human decisions
 
-1. **STOP-01** — operator-mediated v0.1 provisioning (Option A) or a
-   commissioned pre-Tenant self-service admission (Option B). **Blocks DONE.**
-2. Exact approved Action URNs and Role/Permission composition
-   (`PR21_CONTRACT_REVIEW.md` §1).
-3. Additive `404`/`409`/`410` error-catalog change ownership (PR 24/25).
+**STOP-01 is closed** (Amendment 01, D8 — Option B direction approved; see
+§17). The narrower decisions below remain open and **block marking PR 21 DONE**:
+
+1. **STOP-02** — pre-Tenant onboarding-entitlement issuer/grant/revoke model and
+   authoritative state. See `pr-artifacts/pr-21/PR21_AMENDMENT01_STOP_REPORT.md`.
+2. **STOP-03** — exact onboarding Action URNs and built-in Role/Permission
+   composition (`pr-artifacts/pr-21/PR21_CONTRACT_REVIEW.md` §1).
+3. **STOP-04** — authority for the initial/subsequent Application–Tenant
+   registration (PR 13 registration mutation is operator-only).
+4. **STOP-05** — terminal re-subscription / re-registration replacement policy.
+5. **STOP-06** — Application service-credential binding management boundary.
 
 Until resolved, implementations MUST choose the more restrictive behavior and
 MUST NOT invent a design.
@@ -346,17 +380,149 @@ MUST NOT invent a design.
 
 | PR | Deliverable |
 | --- | --- |
-| 22 | Transactional Tenant provisioning and subscription foundation: `tenant_key`/idempotency persistence, authorized idempotent provisioning, stable resolution, SYSTEM/root exclusion, atomic audit, real-PostgreSQL retries/races/rollback |
-| 23 | Global Identity/Principal resolution and reuse, Identity/Principal Tenant memberships, strict initial administrator/steward assignments, fail-closed conflicting bindings |
-| 24 | Authenticated versioned onboarding management HTTP API: resolve, authorized Tenant metadata, subscription management, strict DTOs/error envelope, bounded handling |
+| 22 | Transactional Tenant provisioning and subscription foundation: `tenant_key`/idempotency persistence, authorized idempotent provisioning, stable resolution, SYSTEM/root exclusion, atomic initial registration/subscription, atomic audit, real-PostgreSQL retries/races/rollback |
+| 23 | Verified global Identity/Principal resolution and reuse, Identity/Principal Tenant memberships, strict initial administrator/steward assignments, fail-closed conflicting bindings, the pre-Tenant verified-subject seam |
+| 24 | Authenticated versioned onboarding management HTTP API: `ResolveOrProvisionTenant`, Tenant resolution/selection, Application create/inspect/suspend/retire, Application–Tenant registration, subscription create/inspect/list/suspend/cancel, strict DTOs/error envelope |
 | 25 | Invitations, acceptance, and official `mtmf-client` onboarding support: replay protection, expiry, revocation, atomic membership/Role establishment, authoritative UUID retrieval |
-| 26 | Multi-Application onboarding conformance and v0.1 release gate: two independently authenticated Applications, global Identity/Principal reuse, per-Tenant isolation, COLD/REPEAT/RECREATE, concurrency/fault tests |
+| 26 | Multi-Application onboarding conformance and v0.1 release gate: **two independently authenticated Applications sharing one Tenant**, one new Identity creation, second-Application adoption with authorized subscription, repeated login, multi-Tenant selection, suspension/cancellation, cross-Tenant/cross-Application denial, races/retries, no duplicate Tenant, real audit, COLD/REPEAT/RECREATE |
+
+If PR 24 proves too large, the implementation plan MUST name a specific
+prerequisite PR with dependencies and acceptance; no undocumented expansion.
+
+## 17. Amendment 01 — application-neutral Tenant resolution and management lifecycle
+
+This section is normative for PRs 22–26 and is grounded in the actual PR 13
+transition sets (see `pr-artifacts/pr-21/PR21_AMENDMENT01_BASELINE_RECONCILIATION.md`).
+
+### 17.1 Tenant, Identity, and Application cardinality
+
+- A global external `(issuer, subject)` binding maps to a stable global Identity;
+  the Identity belongs to one global Principal. Reuse the Identity/Principal
+  across consuming Applications and Tenant memberships. Never correlate accounts
+  by email alone.
+- Principal/Identity ↔ Tenant membership is **distinct** from Application ↔
+  Tenant registration and subscription, and both are distinct from Role/
+  Permission assignments.
+- A Tenant has 0..N Application subscriptions; an Application has 0..N Tenant
+  subscriptions. The protected SYSTEM/root Tenant is excluded from ordinary
+  onboarding and subscriptions.
+- An Application subscription grants **no** membership and **no** Role/
+  Permission. Existing membership does not imply subscription, and does not
+  authorize creating one.
+- Application registration is global and independent of Tenant creation.
+- Tenant owner/creator provenance and stewardship are **not** inferred from the
+  Application that initiated onboarding.
+
+### 17.2 ResolveOrProvisionTenant decision table (normative)
+
+`ResolveOrProvisionTenant` verifies the Application service token and the user
+proof, then resolves the global Identity and returns one of the outcomes below.
+It is the single registration-facing orchestration (D2).
+
+| Verified global identity | Existing Tenant context | Calling Application eligibility | Required outcome |
+|---|---|---|---|
+| Absent | None | Explicitly entitled for first-Tenant onboarding | `CREATED`: atomically provision Identity, Principal, Tenant, steward/memberships, and the initial approved registration/subscription; return stable IDs |
+| Absent | None | Not entitled | deny; create nothing |
+| Present | Exactly one visible active Tenant with active registration+subscription | Eligible | `REUSED`: return stable IDs; no mutation |
+| Present | Multiple visible eligible Tenants | Eligible for each | `SELECTION_REQUIRED`: authorized Tenant choices only; no mutation |
+| Present | Tenant membership but Application lacks active registration/subscription | Ineligible | `SUBSCRIPTION_REQUIRED`: no automatic subscription, no second Tenant; disclose only what the user is authorized to know |
+| Present | No usable/visible Tenant | Any | `ONBOARDING_REQUIRED` (or explicit non-enumerating denial); **no automatic Tenant creation** |
+| Present | Suspended/inactive Tenant | Any | fail closed / explicit status as visibility permits; no replacement Tenant |
+| Present | Conflicting binding, ambiguity, partial/corrupt state | Any | fail closed; no auto-repair |
+
+Additional rules:
+
+- A user new to an Application may already be an existing MTMF Identity; never
+  create based on absence of Application-local state or an Application
+  subscription.
+- An Identity with an existing Tenant but **no** subscription for the calling
+  Application is `SUBSCRIPTION_REQUIRED`, **not** `REUSED`.
+- Multiple Tenant memberships may have different subscription states; the
+  returned choices are only those the verified user is authorized to know and
+  the Application is eligible for, without leaking inaccessible Tenant names or
+  IDs.
+- `SELECTION_REQUIRED` is completed by a follow-up authorized request bound to a
+  selected Tenant; the same orchestration may safely return a read-only outcome
+  without creating anything.
+
+### 17.3 Pre-Tenant trust boundary and admission (Option B)
+
+- Independently authenticate the Application service token and verify the user
+  proof against the approved issuer, audience/client binding, subject, expiry,
+  and other required claims. Derive identities from verified tokens, never from
+  caller-provided UUID/email. Preserve the existing cross-client verification
+  constraint unless an explicitly reviewed alternative is required.
+- **Pre-Tenant onboarding entitlement** is a separately configured,
+  least-privilege authority bound to the authenticated Application. It is not
+  implied by client credentials, normal subscription eligibility, the Tenant
+  Administrator Role, or root impersonation. **STOP-02** proposes an
+  operator-managed, versioned Application entitlement record (`ACTIVE`/`REVOKED`,
+  immutable grant provenance) evaluated only in the pre-Tenant branch; the exact
+  model and grant/revoke authority require human approval.
+- Abuse controls: per-Application and per-verified-subject rate/quota limits,
+  duplicate throttling, bounded payloads, idempotency, atomic audit, and
+  rejection telemetry. Rate limits do **not** solve Sybil/identity-abuse risk;
+  the entitlement remains the primary control.
+- The narrow pre-Tenant branch is the **only** place that does not require an
+  existing Tenant membership/subscription. Ordinary existing-Tenant mutations
+  continue through the verified actor + exact Action/scope authorization path.
+  There is no implicit global bypass.
+- The initial Application–Tenant registration/subscription must be included in
+  the approved first-Tenant admission transaction; otherwise the Tenant is
+  unusable to the caller. This exception applies only to the **initial**
+  Application during **new Identity + new Tenant** provisioning, never to adding
+  another Application to an existing Tenant (D6/STOP-04).
+- The transaction boundary, serialization/idempotency keys, uniqueness, rollback,
+  and atomic mutation audit follow §12–§13. No network call occurs inside the
+  UoW; no cross-IdP/DB atomicity is claimed.
+
+### 17.4 Existing-Tenant Application adoption
+
+When a second Application (for example, ATI following Digr) onboards the same
+verified user:
+
+- the same global Identity/Principal and the same Tenant are reused;
+- if the second Application has no `ACTIVE` registration/subscription for that
+  Tenant, the outcome is `SUBSCRIPTION_REQUIRED`; the user's existing membership
+  does not authorize the new subscription;
+- an explicitly authorized Tenant administrator (or a separately authorized
+  operator) requests the second Application's registration/subscription through
+  the management API (STOP-04 defines registration authority);
+- eligibility is re-evaluated only after the committed state;
+- an ordinary user cannot cause the subscription merely by signing in.
+
+Billing/subscription commerce is out of scope; MTMF subscription is an
+eligibility fact, not a billing record.
+
+### 17.5 Lifecycle and deletion policy
+
+The actual PR 13 transitions are: Application `ACTIVE↔SUSPENDED` and
+`ACTIVE/SUSPENDED→RETIRED` (`RETIRED` terminal); registration `ACTIVE→REVOKED`
+(`REVOKED` terminal); subscription `PENDING→ACTIVE/CANCELLED`,
+`ACTIVE→SUSPENDED/CANCELLED/EXPIRED`, `SUSPENDED→ACTIVE/CANCELLED/EXPIRED`
+(`CANCELLED`/`EXPIRED` terminal).
+
+- Suspending an Application makes it ineligible; retiring it is terminal.
+- Suspending a subscription makes it ineligible; cancelling/expiring is terminal.
+- Suspension may be lifted (`SUSPENDED → ACTIVE`) for both Application and
+  subscription; terminal states are immutable and are **never** reactivated
+  in place.
+- Physical hard-delete is out of scope for v0.1. Terminal rows are retained as
+  history. A replacement subscription/re-registration is a **new row with a new
+  UUID**; whether/when replacement is allowed is **STOP-05** (not yet approved,
+  not implemented).
+- Registration `REVOKED` and subscription `CANCELLED` are distinct facts.
+- Eligibility changes become effective for the next evaluation; already-issued
+  active authorization snapshots are not retroactively invalidated (§12).
 
 ## References
 
 - [Onboarding HTTP contract (PROPOSED)](ONBOARDING_HTTP_CONTRACT.md)
-- `PR21_SECURITY_MATRIX.md` in `../pr-artifacts/pr-21/`
-- `PR21_CONTRACT_REVIEW.md` in `../pr-artifacts/pr-21/`
-- `PR21_STOP_REPORT.md` in `../pr-artifacts/pr-21/`
+- `pr-artifacts/pr-21/PR21_SECURITY_MATRIX.md`, `PR21_CONTRACT_REVIEW.md`,
+  `PR21_STOP_REPORT.md`
+- `pr-artifacts/pr-21/PR21_AMENDMENT01_DECISION_RECORD.md`,
+  `PR21_AMENDMENT01_STOP_REPORT.md`,
+  `PR21_AMENDMENT01_AUTHORIZATION_MATRIX.md`,
+  `PR21_AMENDMENT01_BASELINE_RECONCILIATION.md`
 - [Security Model](SECURITY_MODEL.md), [Root and Stewardship](ROOT_AND_STEWARDSHIP.md),
   [HTTP Integration](HTTP_INTEGRATION_BATCH_AUTHORIZATION.md), [Roadmap](ROADMAP_V01.md)
