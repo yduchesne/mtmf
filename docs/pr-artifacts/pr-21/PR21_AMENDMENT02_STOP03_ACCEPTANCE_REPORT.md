@@ -12,7 +12,7 @@ APPROVAL); PR 21 NOT DONE.**
 | Branch | `dev/onboarding-foundation` |
 | Base | `455ae7a35d090b2546afa0c78fc9e4750ffee5ec` |
 | Pre-addendum tip | `8c5937d4ea1a3fc5800a103f389abbe3d0daec0c` |
-| Addendum content commit under test | recorded in `PR21_AMENDMENT02_STOP03_FINAL_SHA.md` |
+| Addendum content commit under test | `5baab074ec7bc45a03214f36c7c434b21d443cac` |
 | Migration head | `0013_security_mutation_audit_partitioning` |
 | Push | none (not authorized) |
 
