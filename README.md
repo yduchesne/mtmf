@@ -17,6 +17,12 @@ For a plain-language explanation of local Keycloak → MTMF → application star
 
 The proposed first-class administrative CLI is specified in [CLI Architecture](docs/CLI_ARCHITECTURE.md); it is not yet implemented.\n\nProject documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
 
+The proposed (design-only, **not implemented**) v0.1 onboarding design and future
+versioned management contracts are in
+[onboarding architecture](docs/ONBOARDING_ARCHITECTURE.md) and the
+[onboarding HTTP contract](docs/ONBOARDING_HTTP_CONTRACT.md); the admission
+model remains blocked on an open human decision.
+
 ## Development
 
 - Python **3.14** (managed by `uv`)
