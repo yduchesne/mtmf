@@ -814,6 +814,6 @@ def test_p19_repeated_upgrade_does_not_duplicate_partitions(
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0013"
+    assert manager.current_revision() == "0014"
     assert _partition_name_set(db) == before_partitions
     assert _snapshot(db) == before_rows
