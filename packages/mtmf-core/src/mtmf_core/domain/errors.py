@@ -75,3 +75,13 @@ class ManagementGroupInvariantError(DomainInvariantError):
     scope elevation, or authority; delegated manager-side actor eligibility
     remains unresolved until the PR 11 decision gate is approved.
     """
+
+
+class OnboardingEntitlementInvariantError(DomainInvariantError):
+    """An Application onboarding-entitlement invariant is violated (PR 22).
+
+    Raised only by the pure onboarding-entitlement validators. An
+    entitlement is not a Role, Permission, subscription, or credential and
+    confers no authority; this is structural validation only and never an
+    authentication or authorization decision.
+    """

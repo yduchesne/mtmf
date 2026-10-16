@@ -186,6 +186,13 @@ EXPECTED_FUNCTION_NAMES = {
     "identity_group_membership_add_lock",
     "identity_group_membership_add_verified",
     "ensure_security_mutation_audit_month",
+    "guard_application_onboarding_entitlement",
+    "guard_application_onboarding_entitlement_event",
+    "application_onboarding_entitlement_grant",
+    "application_onboarding_entitlement_revoke",
+    "application_onboarding_entitlement_get",
+    "application_onboarding_entitlement_find_by_application",
+    "application_onboarding_entitlement_event_find_by_entitlement",
 }
 
 _FORBIDDEN_TABLES = (
@@ -217,7 +224,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0013"
+    assert revision == "0014"
     assert revision == manager.head_revision
 
 
