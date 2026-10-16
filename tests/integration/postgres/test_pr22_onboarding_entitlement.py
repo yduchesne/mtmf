@@ -14,10 +14,13 @@ P22-04, P22-05, P22-06, P22-16 and P22-18. The first-Tenant composite
 
 from __future__ import annotations
 
+import threading
 import uuid
 
 import psycopg
 import pytest
+
+from mtmf_core.persistence.postgres import PostgresConfig
 
 _ACTIVE_APPLICATION = 1
 _NOT_DELETED = 2
@@ -311,3 +314,77 @@ def test_p22_17_migration_postflight_and_runtime_allowlist_unchanged(
         "WHERE n.nspname = 'mtmf' AND has_function_privilege('mtmf_runtime', p.oid, 'EXECUTE')"
     ).fetchone()[0]
     assert count == 78
+
+
+# --- PR 22A Step 22A-2: concurrency, no-linkage, and nil-UUID invariants --------
+
+
+def test_p22a_concurrent_duplicate_grant_has_one_active(
+    db: psycopg.Connection, mtmf_config: PostgresConfig
+) -> None:
+    """Two concurrent grants for one Application yield exactly one ACTIVE row."""
+    application_id = _seed_application(db)
+    operator_id = _seed_principal(db)
+    barrier = threading.Barrier(2)
+    results: list[bool] = []
+    lock = threading.Lock()
+
+    def grant() -> None:
+        with psycopg.connect(mtmf_config.psycopg_dsn, autocommit=True) as connection:
+            barrier.wait()
+            granted = connection.execute(
+                "SELECT mtmf.application_onboarding_entitlement_grant(%s, %s, %s, %s, %s, %s)",
+                (_uuid(), application_id, operator_id, "race", 1, _uuid()),
+            ).fetchone()[0]
+            with lock:
+                results.append(bool(granted))
+
+    threads = [threading.Thread(target=grant) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert results.count(True) == 1
+    active = db.execute(
+        "SELECT count(*) FROM mtmf.application_onboarding_entitlement "
+        "WHERE application_id = %s AND state = 1",
+        (application_id,),
+    ).fetchone()[0]
+    assert active == 1
+    events = db.execute(
+        "SELECT count(*) FROM mtmf.application_onboarding_entitlement_event "
+        "WHERE entitlement_id IN ("
+        "  SELECT id FROM mtmf.application_onboarding_entitlement "
+        "  WHERE application_id = %s AND state = 1)",
+        (application_id,),
+    ).fetchone()[0]
+    assert events == 1
+
+
+def test_p22a_entitlement_functions_create_no_tenant_or_linkage(db: psycopg.Connection) -> None:
+    """The entitlement primitives never create a Tenant, registration, or subscription."""
+    application_id = _seed_application(db)
+    operator_id = _seed_principal(db)
+    entitlement_id = _grant(db, application_id, operator_id)
+    db.execute(
+        "SELECT mtmf.application_onboarding_entitlement_revoke(%s, %s, %s, %s)",
+        (entitlement_id, operator_id, "done", _uuid()),
+    )
+    for statement in (
+        "SELECT count(*) FROM mtmf.tenant",
+        "SELECT count(*) FROM mtmf.application_tenant_registration",
+        "SELECT count(*) FROM mtmf.tenant_application_subscription",
+    ):
+        assert db.execute(statement).fetchone()[0] == 0
+
+
+def test_p22a_nil_application_and_operator_uuids_are_denied(db: psycopg.Connection) -> None:
+    """Nil/unknown foreign keys fail closed through the reviewed constraints."""
+    operator_id = _seed_principal(db)
+    nil = "00000000-0000-0000-0000-000000000000"
+    with pytest.raises(psycopg.Error):
+        _grant(db, nil, operator_id)
+    application_id = _seed_application(db)
+    with pytest.raises(psycopg.Error):
+        _grant(db, application_id, nil)
