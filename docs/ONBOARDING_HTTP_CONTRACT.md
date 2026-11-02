@@ -17,10 +17,17 @@
 >
 > **Operator prerequisite (NOT IMPLEMENTED):** Application/registration/
 > entitlement/credential routes are **OPERATOR-EXECUTION GATED** (see §16.7)
-> until PR 24 (or a named predecessor) implements operator sign-in,
+> until the named **PR 24P** prerequisite implements operator sign-in,
 > SYSTEM-scope assignment, global-target authorization, and a privileged
 > audited execution adapter without `mtmf_runtime` privileged grants. No
 > Tenant-bound Authorizer bypass and no root impersonation.
+>
+> **Dependency status:** PR 22A's operator-only entitlement persistence (`0014`)
+> is merged, but its positive quota is not consumed and no onboarding HTTP
+> endpoint is implemented. PR 23 (verified subject/steward participant) and
+> PR 24P (approved privileged execution) must precede PR 22B (atomic composite),
+> which must precede PR 24's onboarding HTTP exposure. The PR 24P topology
+> approval gate remains open.
 
 This document uses the existing `mtmf-api` detached DTO and static
 `ApiErrorResponse` conventions. It introduces no DTO class, route, or code in

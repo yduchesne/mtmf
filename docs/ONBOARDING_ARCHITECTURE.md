@@ -1,10 +1,11 @@
 # Application-Neutral Onboarding Architecture
 
-> **STATUS: APPROVED SECURITY DESIGN — DOCUMENTATION ONLY. NOT IMPLEMENTED.**
+> **STATUS: APPROVED SECURITY DESIGN; PARTIAL PERSISTENCE IMPLEMENTED (PR 22A).**
 > This document freezes the v0.1 onboarding security design, state machines,
-> admission rules, and future versioned management contracts so that roadmap
-> PRs 22–26 implement a reviewed design rather than invent one. It does **not**
-> describe shipped behavior. Every future API is **PROPOSED / NOT IMPLEMENTED**.
+> admission rules, and future versioned management contracts. **PR 22A is merged:**
+> revision `0014` provides operator-only entitlement persistence and append-only
+> history, not quota consumption, replay, first-Tenant provisioning or HTTP.
+> Every onboarding/management API below remains **PROPOSED / NOT IMPLEMENTED**.
 > No production readiness is claimed.
 >
 > **All six PR 21 design STOPs are CLOSED by recorded human decisions:**
@@ -14,12 +15,13 @@
 > seed plan, the PR 14 credential-binding gate, and the operator boundary
 > (deferred implementation prerequisite). Provenance:
 > `pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md`. See §17–§19. PR 21
-> runtime remains **NOT IMPLEMENTED**; PRs 22–26 own implementation.
+> onboarding runtime remains **NOT IMPLEMENTED** beyond PR 22A's isolated
+> operator-only persistence foundation; PRs 23, 24P, 22B, 24–26 own the remainder.
 >
 > **Operator prerequisite (NOT IMPLEMENTED):** the operator sign-in,
 > SYSTEM-scope assignment, global-target authorization, and privileged
-> execution adapter do not exist and are gated to PR 24 (or a named
-> predecessor). No privileged `mtmf_runtime` grant; no Tenant-bound Authorizer
+> execution adapter do not exist and are gated to the named **PR 24P**
+> prerequisite, before PR 22B and PR 24. No privileged `mtmf_runtime` grant; no Tenant-bound Authorizer
 > bypass; no root impersonation.
 >
 > The original STOP-01 record (Option A vs B) is preserved in
@@ -382,13 +384,16 @@ supports it).
 Implementations MUST still choose the more restrictive behavior and MUST NOT
 invent a design or grant beyond the approved manifest.
 
-## 16. PR 22–26 allocation
+## 16. PR 22–26 allocation (reconciled after merged PR 22A)
 
-| PR | Deliverable |
+| PR | Deliverable / status |
 | --- | --- |
-| 22 | Transactional Tenant provisioning and subscription foundation: `tenant_key`/idempotency persistence, authorized idempotent provisioning, stable resolution, SYSTEM/root exclusion, atomic initial registration/subscription, atomic audit, real-PostgreSQL retries/races/rollback |
-| 23 | Verified global Identity/Principal resolution and reuse, Identity/Principal Tenant memberships, strict initial administrator/steward assignments, fail-closed conflicting bindings, the pre-Tenant verified-subject seam |
-| 24 | Authenticated versioned onboarding management HTTP API: `ResolveOrProvisionTenant`, Tenant resolution/selection, Application create/inspect/suspend/retire, Application–Tenant registration, subscription create/inspect/list/suspend/cancel, strict DTOs/error envelope |
+| 22 | **Historical PARTIAL — BLOCKED.** Original composite split into 22A and 22B; do not mark the original composite DONE. |
+| 22A | **MERGED — ENTITLEMENT FOUNDATION ONLY.** Additive revision `0014`: operator-only entitlement grant/revoke/read, immutable grant provenance, terminal revocation, append-only event history, single-ACTIVE-per-Application, positive quota limit. No quota consumption, replay, Tenant commit, runtime grant or HTTP. |
+| 23 | **PLANNED.** Verified global Identity/Principal resolution/reuse, Tenant memberships, strict initial steward/admin transaction participant; caller-owned UnitOfWork, no independent ACTIVE Tenant commit. |
+| 24P | **PLANNED — TOPOLOGY APPROVAL REQUIRED.** Separate operator authorization/privileged audited execution and narrowly scoped pre-Tenant admission execution; no privileged `mtmf_runtime` grants or root impersonation. |
+| 22B | **BLOCKED UNTIL 23 + 24P.** One-transaction first-Tenant composite: entitlement quota consumption, replay/idempotency, initial verified steward, registration, subscription, ACTIVE transition and audit. |
+| 24 | **PLANNED AFTER 22B + 24P.** Authenticated versioned onboarding/management HTTP API: `ResolveOrProvisionTenant`, Tenant resolution/selection, Application lifecycle/registration and Tenant-scoped subscription management, strict DTOs/error envelope |
 | 25 | Invitations, acceptance, and official `mtmf-client` onboarding support: replay protection, expiry, revocation, atomic membership/Role establishment, authoritative UUID retrieval |
 | 26 | Multi-Application onboarding conformance and v0.1 release gate: **two independently authenticated Applications sharing one Tenant**, one new Identity creation, second-Application adoption with authorized subscription, repeated login, multi-Tenant selection, suspension/cancellation, cross-Tenant/cross-Application denial, races/retries, no duplicate Tenant, real audit, COLD/REPEAT/RECREATE |
 
@@ -689,7 +694,7 @@ Creating a broad grant to make a pre-membership operation pass is forbidden.
   permits a cross-Tenant target only via TenantManagementGroup delegation; there
   is no operator sign-in, no global SYSTEM-scope assignment, and no
   Tenant-independent Application target representation. Those are future gates
-  owned by PR 24 (or a named prerequisite). No privileged `mtmf_runtime` grant.
+  owned by **PR 24P**, a named prerequisite to PR 22B and PR 24. Its exact privileged execution topology requires explicit human approval before implementation. No privileged `mtmf_runtime` grant.
 
 ### 19.4 Tenant administrative operations
 
