@@ -180,7 +180,7 @@ or accesses MTMF's database.
 ### Planned implementation PR: CFG-1 — TOML Configuration Foundation
 
 1. Add a shared typed normalized configuration model and strict TOML reader;
-   enforce the complete decision table in §2.
+   enforce the complete decision table in Section 2.
 2. Preserve the legacy environment-only path (including exact PR 17-C
    Keycloak trust, distinct service/user audience and attestation checks).
 3. Support **one** configured OIDC issuer for authentication; explicitly reject
