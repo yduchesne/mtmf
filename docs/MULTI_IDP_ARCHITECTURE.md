@@ -127,12 +127,94 @@ Identity binding changes are a separate privileged recovery problem.
   subscriptions and onboarding. Bootstrap IdP selection does not establish
   normal root authentication or operational recovery.
 
-A future database-backed issuer/tenant association registry is optional and
-**not implemented or specified as a source of truth by this PR**.
-If added later, its relationship to startup-configured immutable trust
-anchors and protected operator actions needs explicit design approval.
-Do not invent a management API, permissions, backing tables, or migration
-from file to database yet.
+### 4.1 Database-backed provider catalog and TenantIdp association — approved direction
+
+**Architectural decision (2026-11-02; NOT IMPLEMENTED):** support BOTH
+file-declared and PostgreSQL-managed IdP configuration. TOML (or legacy
+bootstrap environment fallback) establishes installation/bootstrap trust;
+PostgreSQL is the authoritative administrative store for **dynamically**
+registered IdPs and their ordinary-Tenant associations. A CLI must be able
+to administer DB-managed settings through authenticated, authorized and
+audited versioned HTTP management APIs; no CLI access to server files or
+direct database operations.
+
+The planned persistent model has two distinct concepts:
+
+| Concept / proposed table | Required semantics |
+| --- | --- |
+| `IdentityProvider` / `identity_provider` | Global provider catalog: immutable provider UUID and exact canonical issuer, type (initially OIDC), source/provenance (`FILE_PINNED` or `DB_MANAGED`), approved verification/attestation policy, lifecycle/version and audit metadata. An issuer cannot silently be reused with incompatible trust policy. |
+| `TenantIdp` / `tenant_idp` | Explicit association of target ordinary `tenant_id` with provider UUID; tenant-specific activation and permitted login/admission/assurance policy; source/provenance, lifecycle/version and audit metadata. No implicit association for all tenants and no implicit authorization or membership. |
+
+Each provider may serve multiple Tenants; each Tenant may accept multiple
+providers. Tenant-specific configuration cannot weaken the provider's global
+issuer verification, client binding, signing, TLS or attestation requirements.
+Use stable UUID references, uniqueness and current-row constraints, and
+revocation-aware resolution; mutable names/emails are never keys.
+
+**Source-of-truth and reconciliation rules:**
+
+- File-defined bootstrap/provider trust anchors are protected and **cannot**
+  be overwritten or disabled through ordinary CLI/API/database management.
+  An explicitly privileged install/reconcile operation may materialize their
+  immutable identities/provenance in the provider catalog to support foreign
+  keys, but a mismatch requires operator intervention, not automatic repair.
+- File-declared tenant associations, if supplied, are **file-pinned** and
+  cannot be removed or changed by a delegated DB mutation. DB-managed tenant
+  associations are changed through the authorized API. No file-versus-DB
+  last-writer-wins precedence, silent source merge or deletion on omission.
+- DB-managed additional providers may be registered and attached to covered
+  tenants through separately authorized operations, after exact issuer and
+  trust-policy verification. A manager cannot globally modify a shared
+  provider used by an unrelated tenant; shared provider changes require a
+  separately approved system-level authority or versioned migration.
+- In the absence of the default TOML file, the **environment-sourced
+  bootstrap** still works and the database MAY supply additional IdPs.
+  Unavailability/corruption of the database or its authoritative policy is
+  a fail-closed service/readiness condition, **never** a reason to ignore
+  DB restrictions or fall back to file-only authorization.
+- Database registration does not make a provider eligible for a Tenant:
+  the `TenantIdp` association must be separately active, and existing
+  Application/Tenant/Identity membership and authorization gates still apply.
+  DB credentials and any secret references must remain restricted; no raw
+  private secrets in catalog rows or API responses.
+
+### 4.2 Mandatory separation of duties — managed tenants only
+
+The target Tenant's own Tenant Administrator, Tenant Security Administrator,
+and steward MUST NOT register/replace/disable the IdP trust or `TenantIdp`
+associations for **that** Tenant merely through their local roles. This is a
+management-plane operation, never authorized by ordinary target-Tenant
+`tenant:update-object`, local Role policy or Tenant stewardship.
+
+The allowed actor is either (a) an independently authenticated, authorized
+SYSTEM/root operator exercising its approved management authority or (b)
+an explicitly eligible acting Identity of a **different manager Tenant**
+with an approved `TenantManagementGroup` covering the target ordinary Tenant.
+Existing PR 11 safeguards all apply: no SYSTEM group self-management,
+root-target management, cycles or transitive delegation; verified actor,
+manager-side eligibility, active manager/target Tenants, explicit managed-
+Tenant membership, contextual scope, **and** an exact matching Permission in
+the SYSTEM-defined management Role are separately required.
+
+**Critical implementation prerequisite:** PR 11's currently seeded management
+Roles allow **only** `tenant:get-object`. They do NOT authorize IdP mutation.
+A subsequent policy-design approval must define the exact distinct IdP
+registration, provider trust mutation and `TenantIdp` assignment/revocation
+Actions, management-role grants, target semantics, privileged execution
+adapter and atomic mutation audit before any route is exposed. The
+management relationship or CLI command alone grants nothing. A delegated
+MSP may register a new issuer only through a target-bounded, approved
+workflow and cannot thereby alter trust for other Tenants.
+
+Changes must be serialized/optimistically versioned, audit both successes
+and rejected sensitive attempts, deny self-authorization and unsafe
+last-usable-provider removal, and explicitly provide controlled recovery
+when tenant authentication would otherwise be locked out. External IdP
+network verification happens **outside** a database UnitOfWork; authorized
+MTMF state and its mutation audit are atomic. Database mutation uses the
+existing reviewed least-privilege stored-function boundary, never direct
+`mtmf_runtime` table DML.
+
 
 ## 5. Provider integration and lifecycle
 
@@ -167,9 +249,16 @@ accepted as operational multi-IdP support.
 **IDP-1 — Multi-IdP Authentication** (separate implementation PR; not a
 v0.1 release requirement): add multi-issuer verification, strict issuer
 and audience/client pairing, controlled tenant eligibility policy, and
-trust-provider lifecycle policy. Do not treat this document as authorization
-to implement database writes or new management APIs without approved exact
-Actions, privilege boundaries, concurrency/rollback, and atomic audit.
+trust-provider lifecycle policy using static/file-configured providers first.
+
+**IDP-2 — Database IdP Registry, TenantIdp and Management** (separate
+implementation PR, following IDP-1 and approved management-write gates):
+implement verified DB-managed provider catalog, explicit `TenantIdp`
+association/policy, file-pinned source protection, authorized SYSTEM/root and
+cross-Tenant management APIs, atomic audit and CLI integration. Do not
+implement database writes or HTTP mutations before exact Actions,
+management Role grants, actor eligibility, privileged execution topology,
+concurrency/reconciliation and audit are approved.
 
 Mandatory deterministic and live-provider acceptance includes:
 
@@ -178,6 +267,12 @@ Mandatory deterministic and live-provider acceptance includes:
 | Same issuer/subject, different consuming Applications | Same mapped Identity, only with independent Application eligibility and Tenant membership |
 | Same human, distinct issuer/subject pairs | Distinct Identities; no account merge by email |
 | One Tenant accepting two approved issuers | Both can authenticate only with explicit tenant eligibility and memberships |
+| Own Tenant Administrator/steward attempts IdP mutation | Deny regardless of ordinary Tenant permissions or stewardship |
+| Eligible MSP manager mutates a covered TenantIdp | Permit only with exact management Role grant, identity eligibility, coverage, authoritative trust validation and audit |
+| MSP manager targets an unmanaged tenant, its own manager Tenant, or root Tenant | Deny |
+| DB provider conflicts with file-pinned issuer/association | Fail closed; no shadowing, implicit override or automatic repair |
+| DB unavailable or corrupt during provider policy resolution | Fail closed; do not use an incomplete file-only view to grant authorization |
+| Updating a globally shared provider via one tenant manager | Deny unapproved cross-Tenant effect; require separate system authority or safe versioning |
 | Valid token from globally trusted but tenant-disallowed issuer | Reject before PDP / tenant session |
 | Unknown issuer, duplicate issuer ID, wrong audience or `azp` | Reject; never fallback to bootstrap provider |
 | Service token from issuer A with user token from issuer B | Reject unless an exact reviewed pairing policy explicitly permits it |
@@ -188,9 +283,11 @@ Mandatory deterministic and live-provider acceptance includes:
 | COLD/REPEAT/RECREATE and cross-Tenant/Root attempts | Stable approved bindings; no duplications or privilege escalation |
 
 Required implementation STOPs: security-equivalent non-Keycloak
-attestation; exact trust policies for issuer/client combinations; tenant
-provider assignment mutation authority; safe linking/rebinding semantics;
-production root continuity/recovery; file-versus-registry precedence.
+attestation; exact trust policies for issuer/client combinations; distinct
+SYSTEM management Actions/grants and trusted operator adapter; protected
+file-to-catalog reconciliation and source identity; DB-trust/secret handling;
+last-provider lockout/recovery; safe linking/rebinding semantics; production
+root continuity/recovery.
 Escalate these for explicit review rather than guessing.
 
 ## 7. Current implementation boundary
@@ -201,7 +298,8 @@ Keycloak-specific local topology and trust checks; PR 21 approved global
 Identity reuse by a verified `(issuer, subject)`, and PR 22A supplies only
 the operator-only onboarding entitlement persistence foundation.
 **This documentation does not deliver a second runtime issuer, multi-IdP
-tenant policy, linking API, dynamic registry or root recovery mechanism.**
+tenant policy, linking API, database catalog, `TenantIdp` association,
+CLI management command or root recovery mechanism.**
 
 See also the [Security Model](SECURITY_MODEL.md),
 [Onboarding Architecture](ONBOARDING_ARCHITECTURE.md),
