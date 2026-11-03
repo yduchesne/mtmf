@@ -15,6 +15,20 @@ Current status: WIP.
 
 For a plain-language explanation of local Keycloak → MTMF → application startup, see the [development setup guide](docs/DEVELOPMENT_SETUP.md) (including the PR 17-B development-user provisioning step).
 
+**Future configuration and federation (design only):** MTMF will load
+`/etc/mtmf/config.toml` at startup (or an explicit `MTMF_CONFIG_PATH`) with
+strict validation, falling back to existing environment variables only when
+the default file is absent. It will support an explicitly named bootstrap IdP
+and multiple OIDC providers. The design also includes a protected file-based
+bootstrap source and **PostgreSQL-managed IdPs/`TenantIdp` associations**
+administered through future authorized HTTP/CLI management operations. A
+Tenant's own administrator cannot alter its authentication trust; system or
+eligible cross-Tenant managers may do so only with exact management Permissions.
+See [Configuration Architecture](docs/CONFIGURATION_ARCHITECTURE.md) and
+[Multi-IdP Architecture](docs/MULTI_IDP_ARCHITECTURE.md). **TOML loading,
+multi-issuer runtime and database-managed IdPs are not implemented today**;
+the isolated Keycloak development stack still uses documented environment variables.
+
 The proposed first-class administrative CLI is specified in [CLI Architecture](docs/CLI_ARCHITECTURE.md); it is not yet implemented.\n\nProject documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
 
 The onboarding design is **approved (design-only, not implemented)**. The v0.1
@@ -25,9 +39,11 @@ STOPs are closed by recorded human decisions (Amendment 03,
 [PR21-STOP03-APPROVAL-2026-10-15](docs/pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md)):
 application-independent Tenant, `ResolveOrProvisionTenant`, global Identity
 reuse, independent subscription approval, and pre-Tenant admission (STOP-01
-Option B), with an exact 11/2/7 Role composition. **Nothing is implemented**;
-roadmap PRs 22–26 implement onboarding, and the operator sign-in / privileged
-management execution infrastructure is a future PR 24 prerequisite.
+Option B), with an exact 11/2/7 Role composition. **PR 22A has delivered the
+operator-only entitlement persistence foundation, not the onboarding flow**;
+roadmap PRs 22B, 23, 24P and 24–26 own remaining onboarding work. The operator
+sign-in / privileged management execution infrastructure remains a future
+PR 24P prerequisite.
 
 ## Development
 

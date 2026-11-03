@@ -8,6 +8,8 @@ Before implementing a change, read the relevant authoritative project documents:
 - `docs/DOMAIN_MODEL.md` — domain objects, relationships, lifecycle, and aggregate semantics.
 - `docs/AUTHORIZATION.md` — authorization evaluation and Permission matching.
 - `docs/ARCHITECTURE.md` — package, connector, persistence, transport, and infrastructure boundaries.
+- `docs/CONFIGURATION_ARCHITECTURE.md` — proposed TOML-first configuration and legacy environment fallback (design only).
+- `docs/MULTI_IDP_ARCHITECTURE.md` — proposed external multi-issuer authentication and tenant provider trust (design only).
 - `docs/DATABASE.md` — PostgreSQL design, implemented least-privilege runtime role model, and database security verification.
 - `docs/ROADMAP_V01.md` — current high-level implementation sequence.
 

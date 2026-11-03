@@ -26,7 +26,7 @@ The initial implementation targets:
 - observability and security/audit foundations;
 - deterministic unit, integration, authorization-conformance, and connector-contract testing.
 
-External IdP provider adapters, commercial billing, aggressive authorization caching, and distributed revocation are not required for v0.1; however, a concrete trusted authentication and end-user identity propagation boundary is required. Rust is intentionally included from the PR 8 series onward as a Rust/Python integration showcase and as a deterministic native policy kernel; no profiling evidence claims a performance bottleneck.
+External IdP provider adapters, TOML-first startup configuration, multi-issuer authentication, commercial billing, aggressive authorization caching, and distributed revocation are not required for v0.1; however, a concrete trusted authentication and end-user identity propagation boundary is required. The approved future design baselines are [Configuration Architecture](CONFIGURATION_ARCHITECTURE.md) and [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md), **documentation only**, not current configuration/runtime capabilities. Rust is intentionally included from the PR 8 series onward as a Rust/Python integration showcase and as a deterministic native policy kernel; no profiling evidence claims a performance bottleneck.
 
 ## 3. Planned PR Sequence
 
@@ -328,6 +328,16 @@ Validate complete new-Tenant and existing-Tenant onboarding against deployed MTM
 
 **v0.1 onboarding release requirement:** MTMF must let an authorized consuming Application securely onboard a new ordinary Tenant and its initial verified user (application-independent Tenant; D1), reuse an existing global Identity/Tenant for a second Application (D4), or invite a verified user to an existing Tenant, and return authoritative Tenant/Principal/Identity UUIDs for the consumer's local references. MTMF owns security state; consumers retain domain data and enforcement. These PRs do not implement ATI/Digr UI, OIDC login, or local reference-table synchronization, which remain consumer-repository work. No unplanned separate audit/hardening PRs: audit and adversarial tests are acceptance requirements of PRs 22–26. Production root recovery remains the separate release gate below.
 
+### Future configuration and federation series — separate post-v0.1 implementation tracks [PLANNED; DESIGN APPROVED, NOT IMPLEMENTED]
+
+The user-approved documentation baseline (2026-11-02) is in [Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md) and [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md). It preserves the current v0.1 single-Keycloak development trust boundary, PR 21 issuer/subject onboarding model, and PR 22A/22B/23/24P/24–26 ownership. It **does not** add new prerequisites to those onboarding PRs or claim a production multi-issuer verifier.
+
+- **CFG-1 — TOML Configuration Foundation [PLANNED]:** Load `/etc/mtmf/config.toml` (optional absolute `MTMF_CONFIG_PATH`) as the primary startup configuration. Fall back to legacy environment variables only when the default file is absent; invalid/unreadable files and missing explicit paths fail closed. Add typed normalization, strict schema/secret-reference validation, single-issuer parity, and Keycloak issuer/attestation regression acceptance. Initially **reject**, do not silently accept, a multiple-provider runtime.
+- **IDP-1 — Multi-IdP Authentication [PLANNED; DEPENDS ON CFG-1]:** Support multiple explicitly configured OIDC issuers, a named bootstrap provider, issuer/client pairing, tenant-specific provider eligibility and no-implicit-linking rules. Non-Keycloak attestation equivalence, issuer/client pairing and production root recovery require explicit security gates. No database mutation or CLI management API is delivered by this step.
+- **IDP-2 — Database IdP catalog, `TenantIdp`, management API and CLI [PLANNED; DEPENDS ON IDP-1]:** Support both protected file-pinned issuer/tenant associations and DB-managed additional providers and Tenant-to-IdP policies. Add `identity_provider`/`tenant_idp` persistence, no-shadowing reconciliation, fail-closed policy resolution, exact privileged management Actions and audited HTTP/CLI mutations. Authorize independently verified system/root operators or eligible actors of a different managing Tenant via explicit `TenantManagementGroup` target coverage **and** exact SYSTEM-defined management-Role Permissions. The target Tenant's own administrator/steward cannot alter its authentication trust. Existing PR 11 management Roles currently grant only `tenant:get-object`; new actions/grants and privileged execution topology require explicit approval. Shared global provider changes cannot be authorized by one MSP manager for unrelated tenants. SAML/broker support remains separately deferred.
+
+The canonical root Principal and protected LOCAL root Identity are not the bootstrap IdP. The production root authentication/recovery release gate below remains independent. No changes to the v0.1 delivery claim or conformance scope are implied.
+
 ### Administrative CLI series — first-class HTTP-only management interface [PLANNED]
 
 MTMF will provide a separately installable Python `mtmf-cli` distribution with a hierarchical Typer/Rich `mtmf` command, named profiles, secure authentication, and human/JSON output. The CLI uses **only** the official `mtmf-client` and authorized, audited versioned HTTP management endpoints; it never uses direct PostgreSQL, privileged initialization, internal service/core, or root recovery pathways. The approved design baseline, proposed command catalog, security constraints, compatibility contract, and acceptance requirements are in [CLI Architecture](CLI_ARCHITECTURE.md).
@@ -352,7 +362,7 @@ PR 10 has implemented the protected canonical root Principal/Tenant/designated L
 
 The following should be introduced only when their dependent design questions and use cases justify them:
 
-- concrete external IdP providers and durable cross-boundary IdP workflows;
+- implementation of [CFG-1, IDP-1 and IDP-2](CONFIGURATION_ARCHITECTURE.md), database-managed provider/`TenantIdp` policy and authorized CLI, non-Keycloak provider adapters, and durable cross-boundary IdP workflows (design approved; implementation deferred);
 - distributed authorization-state caching and active invalidation beyond short-lived client snapshots;
 - additional persistence providers;
 - nested Groups;

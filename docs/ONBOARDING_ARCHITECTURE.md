@@ -112,8 +112,19 @@ These invariants bind PRs 22–26. They restate
   No IdP/network call inside a UoW.
 - No partial success on failures; stable authoritative MTMF UUIDs returned after
   commit. No consumer-local transaction is claimed to be atomic with MTMF.
-- The existing production root authentication/recovery gate and unscheduled
-  multi-IdP work are **not** solved by this design.
+- The existing production root authentication/recovery gate and
+  future [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md) are **not** solved
+  by this v0.1 onboarding design. The existing verified `(issuer, subject)`
+  binding remains authoritative. A configured additional issuer must not
+  become implicitly eligible for an ordinary Tenant or its pre-Tenant
+  admission path; those require separately approved tenant provider policy
+  and trust/issuer-pairing implementation. Future DB-backed
+  `TenantIdp` associations and IdP registration are management-plane
+  operations controlled by independently authorized SYSTEM/root or
+  eligible `TenantManagementGroup` managers; an ordinary Tenant's own
+  administrator/steward cannot modify its own provider trust. The current
+  PR 11 management Roles grant only `tenant:get-object`, not IdP mutation.
+  See also [Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md).
 
 ## 4. Ownership and trust flow
 

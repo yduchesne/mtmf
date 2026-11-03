@@ -191,6 +191,16 @@ The development profile MUST run a privileged, one-shot, idempotent initializer 
 
 A service access token authenticates the Application, **not** its end user and **not** its Tenant. PR 14 separately verifies acting-user identity and Tenant membership via the approved T1 trusted external access token or token-exchange mechanism; a service token cannot be treated as proof of a user session. No OAuth refresh token is issued or used in the Client Credentials flow. Interactive end-user refresh tokens, if present, remain entirely under the external IdP/consuming application's control. Keycloak is the **recommended local development issuer**, not a production dependency or a hardcoded requirement of MTMF's OAuth interfaces; production may use another conforming issuer and stronger client authentication such as `private_key_jwt` or workload identity federation.
 
+**Future configuration and Multi-IdP (not implemented):**
+[Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md) defines a
+primary TOML startup file with strict legacy environment fallback; the
+[Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md) extends this trust model
+to explicitly registered OIDC issuers and tenant-specific provider eligibility.
+A signed service token and verified acting-user proof remain independent,
+and an additional issuer is not automatically acceptable to any Tenant or
+service/user issuer pairing. The existing development Keycloak realm/client
+attestation requirements are not waived by new configuration file syntax.
+
 ## 4. Batch request semantics (C05)
 
 Semantics are defined here; exact JSON fields, status codes, reason spellings,

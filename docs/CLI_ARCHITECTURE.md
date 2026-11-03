@@ -48,6 +48,20 @@ Command groups are plural resource nouns; verbs are explicit subcommands (`list`
 
 **API availability rule:** A documented command is not implemented until a corresponding authorized HTTP operation exists in `mtmf-client` and the deployed service. Do not substitute local database writes, privileged scripts, or fake success. Initial implementation must only expose operational commands backed by existing endpoints. Deferred commands remain in this design catalog, not in executable help as functional features. `tenants add` depends on the PR 21–26 onboarding/management contracts.
 
+**Future IdP commands (IDP-2; not implemented):** provide read-only listing
+and approved management commands for DB-backed providers and explicit
+`TenantIdp` associations (for example `mtmf idps list`,
+`mtmf tenants idps list --tenant <UUID>` and, only when separately approved,
+provider registration or association/revocation commands). Every mutation
+uses the versioned management HTTP API with verified human/operator actor,
+exact SYSTEM management-Role Permission and contextual
+`TenantManagementGroup` coverage/Identity eligibility. A target Tenant's own
+administrator/steward cannot change its IdP trust; an eligible MSP manager
+may act only on explicitly managed **other** Tenants. CLI never reads or
+writes `/etc/mtmf/config.toml` or directly accesses provider tables. The
+new provider catalog/association schema, exact command/HTTP contracts and
+Action URNs require separate approval; do not expose fabricated commands.
+
 ## Authentication and credential security
 
 - Interactive human administration: standards-based OIDC Authorization Code + PKCE or Device Authorization **only where the configured IdP and service identity-propagation contract support it**; exact login mechanism is a design/implementation gate, not an assertion that it currently exists.
@@ -77,7 +91,7 @@ Command groups are plural resource nouns; verbs are explicit subcommands (`list`
 
 - **CLI-1 — Foundation:** packaging, Typer hierarchy, Rich output, profile/config resolution, secure authentication integration **only for supported flows**, typed client context, stable errors/exit codes, help/completion, install and unit/contract tests. No invented management APIs.
 - **CLI-2 — Existing management API coverage:** implement commands backed by currently available authenticated HTTP endpoints, with real deployed authorization/audit acceptance. The initial endpoint inventory must be verified against the then-current service and client.
-- **CLI-3 — Expanded management:** Tenant, Organization, Group, Role, Application/subscription, and invitation commands incrementally as PR 21–26 or subsequent authorized management APIs are delivered. This is a staged scope, not a commitment that all APIs already exist.
+- **CLI-3 — Expanded management:** Tenant, Organization, Group, Role, Application/subscription, and invitation commands incrementally as PR 21–26 or subsequent authorized management APIs are delivered. The future database-backed IdP and `TenantIdp` commands depend on IDP-2 and exact management-authorization/HTTP API approval, not CLI-1. This is a staged scope, not a commitment that all APIs already exist.
 
 CLI work is parallel to and **not a prerequisite** for onboarding PRs 21–26. CLI-3's individual commands depend on their HTTP API contracts. No unplanned separate security-audit PRs: each implementing PR owns the relevant adversarial and audit acceptance.
 

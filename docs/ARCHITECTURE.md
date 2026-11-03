@@ -406,6 +406,36 @@ External identity providers are not persistence providers and MUST NOT be obtain
 
 IdP integrations use separate provider/SPI abstractions.
 
+**Future configuration/federation design (not implemented):**
+[Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md) specifies
+TOML-first `/etc/mtmf/config.toml`, optional `MTMF_CONFIG_PATH` and strict
+single-issuer legacy-environment fallback. [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md)
+specifies a named bootstrap provider, multiple OIDC issuers, tenant-specific
+issuer eligibility and the existing `(issuer, subject)` → global Identity
+binding. Configuration is not identity or authorization; bootstrap trust
+cannot create root privileges, tenant membership or application subscriptions.
+The actual PR 14/17/17-C development path is still single-issuer Keycloak,
+with exact issuer, signed client/user token and realm/client attestation.
+
+**Hybrid provider policy (approved future design; not implemented):**
+File/environment-sourced bootstrap providers remain protected installation
+trust anchors. A future PostgreSQL `identity_provider` catalog will hold
+DB-managed provider definitions plus protected provenance for file-pinned
+providers; `tenant_idp` will explicitly bind a target ordinary Tenant to
+one or more providers and tenant-specific acceptance policy. The database
+is authoritative for dynamic associations, and its unavailability or a
+conflicting pinned-provider definition cannot trigger fail-open file-only
+policy. File-defined issuers/associations must not be shadowed by DB records.
+Authorized CLI operations go through management HTTP endpoints and an exact
+SYSTEM-defined management-Role Action, with `TenantManagementGroup`
+coverage/actor eligibility for a **different** managing Tenant. Ordinary
+Tenant Administrators cannot mutate their own Tenant's IdP policy. The
+current PR 11 management Roles provide only `tenant:get-object` and cannot
+perform these mutations without separately approved new exact grants.
+Provider metadata/state persistence may use the regular `MtmfSpi`/UnitOfWork
+and narrowly approved PostgreSQL stored-function path; remote IdP adapters
+continue to be **outside** `MtmfSpi`.
+
 MTMF MUST NOT keep an internal PostgreSQL transaction open while performing remote IdP operations. PostgreSQL and a remote IdP do not participate in a distributed transaction.
 
 Cross-boundary IdP workflows may eventually require durable workflow state, retries, compensation, or outbox-style mechanisms. Those details are deferred.
@@ -467,6 +497,14 @@ maps the canonical port `28443` to Keycloak's internal `8443` without
 terminating TLS, and the loopback-bound `--network=host` launcher
 (`up-host-network`) remains only a documented development fallback. This is
 development-only and not a production design.
+
+**Non-Keycloak issuer gate (future):** The approved provider-neutral contracts
+must not be treated as evidence that the current Keycloak-specific realm/client
+attestation is portable by swapping `MTMF_AUTH_ISSUER`. Each additional issuer
+requires a reviewed equivalent verification/attestation policy and explicit
+service-issuer/user-issuer and Tenant eligibility rules. See
+[Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md). No such adapter or
+multiple-issuer runtime is asserted by this documentation PR.
 
 ## 14. Observability
 
