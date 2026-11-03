@@ -19,10 +19,15 @@ For a plain-language explanation of local Keycloak → MTMF → application star
 `/etc/mtmf/config.toml` at startup (or an explicit `MTMF_CONFIG_PATH`) with
 strict validation, falling back to existing environment variables only when
 the default file is absent. It will support an explicitly named bootstrap IdP
-and multiple OIDC providers. See [Configuration Architecture](docs/CONFIGURATION_ARCHITECTURE.md)
-and [Multi-IdP Architecture](docs/MULTI_IDP_ARCHITECTURE.md). **Neither TOML
-loading nor multi-issuer runtime support is implemented today**; the isolated
-Keycloak development stack still uses its documented environment variables.
+and multiple OIDC providers. The design also includes a protected file-based
+bootstrap source and **PostgreSQL-managed IdPs/`TenantIdp` associations**
+administered through future authorized HTTP/CLI management operations. A
+Tenant's own administrator cannot alter its authentication trust; system or
+eligible cross-Tenant managers may do so only with exact management Permissions.
+See [Configuration Architecture](docs/CONFIGURATION_ARCHITECTURE.md) and
+[Multi-IdP Architecture](docs/MULTI_IDP_ARCHITECTURE.md). **TOML loading,
+multi-issuer runtime and database-managed IdPs are not implemented today**;
+the isolated Keycloak development stack still uses documented environment variables.
 
 The proposed first-class administrative CLI is specified in [CLI Architecture](docs/CLI_ARCHITECTURE.md); it is not yet implemented.\n\nProject documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
 
