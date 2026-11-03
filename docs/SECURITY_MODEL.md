@@ -163,6 +163,20 @@ proof, an explicitly authorized operation with an audit trail, and conflict
 checks; linking does not transfer or union Role assignments, Groups, Tenant
 memberships or stewardship. The existing protected root-Identity and recovery
 requirements continue to govern any root authentication-binding changes.
+**Management separation of duties (future `TenantIdp`):** an ordinary Tenant's
+own administrators, security administrators and steward MUST NOT be able to
+register, replace, disable or remove the external IdP trust configuration or
+Tenant-to-IdP associations **for their own Tenant** merely through local
+Tenant Roles or stewardship. An independently verified eligible actor of a
+different manager Tenant may change such policy for an explicitly covered
+managed Tenant only with the existing `TenantManagementGroup` constraints
+and an exact SYSTEM-defined management-Role Permission for the operation.
+Authorized system/root operators remain subject to independent authentication,
+exact operation authorization and audit; the protected root/bootstrap IdP
+must not be managed through ordinary Tenant APIs. A management-group relationship
+alone grants no Action. Current PR 11 management Roles only grant
+`tenant:get-object` and **do not** authorize these future mutations.
+
 See [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md) (design only; not
 implemented) and [Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md).
 
