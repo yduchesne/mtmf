@@ -406,6 +406,17 @@ External identity providers are not persistence providers and MUST NOT be obtain
 
 IdP integrations use separate provider/SPI abstractions.
 
+**Future configuration/federation design (not implemented):**
+[Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md) specifies
+TOML-first `/etc/mtmf/config.toml`, optional `MTMF_CONFIG_PATH` and strict
+single-issuer legacy-environment fallback. [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md)
+specifies a named bootstrap provider, multiple OIDC issuers, tenant-specific
+issuer eligibility and the existing `(issuer, subject)` → global Identity
+binding. Configuration is not identity or authorization; bootstrap trust
+cannot create root privileges, tenant membership or application subscriptions.
+The actual PR 14/17/17-C development path is still single-issuer Keycloak,
+with exact issuer, signed client/user token and realm/client attestation.
+
 MTMF MUST NOT keep an internal PostgreSQL transaction open while performing remote IdP operations. PostgreSQL and a remote IdP do not participate in a distributed transaction.
 
 Cross-boundary IdP workflows may eventually require durable workflow state, retries, compensation, or outbox-style mechanisms. Those details are deferred.
@@ -467,6 +478,14 @@ maps the canonical port `28443` to Keycloak's internal `8443` without
 terminating TLS, and the loopback-bound `--network=host` launcher
 (`up-host-network`) remains only a documented development fallback. This is
 development-only and not a production design.
+
+**Non-Keycloak issuer gate (future):** The approved provider-neutral contracts
+must not be treated as evidence that the current Keycloak-specific realm/client
+attestation is portable by swapping `MTMF_AUTH_ISSUER`. Each additional issuer
+requires a reviewed equivalent verification/attestation policy and explicit
+service-issuer/user-issuer and Tenant eligibility rules. See
+[Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md). No such adapter or
+multiple-issuer runtime is asserted by this documentation PR.
 
 ## 14. Observability
 
