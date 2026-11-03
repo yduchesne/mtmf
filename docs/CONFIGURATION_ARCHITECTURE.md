@@ -47,6 +47,18 @@
   It MAY contain protected secret-file references or approved secret-manager
   references, resolved at the appropriate privilege boundary. Secret content
   MUST NOT appear in errors, logs, metrics, or configuration diagnostics.
+- **CFG-D09 — Hybrid IdP configuration (future IDP-2):** after the
+  installation/bootstrap trust anchors are loaded from TOML (or legacy
+  environment fallback), PostgreSQL supplies additional DB-managed
+  providers and explicit `TenantIdp` associations. Both sources may coexist.
+  A file-defined provider or association is pinned and cannot be
+  overridden through database administration; conflicts fail closed.
+- **CFG-D10 — Management without file access:** authorized SYSTEM/root or
+  eligible managing-Tenant actors may administer DB-owned provider/tenant
+  policy through versioned HTTP management APIs and `mtmf-cli`, subject to
+  exact management Permissions, separate operator execution boundaries and
+  audit. The ordinary target Tenant's own administrators have no such
+  mutation authority. This is a post-v0.1 design, not available today.
 
 ## 2. Deterministic source-selection procedure
 
@@ -63,7 +75,11 @@
 
 Source selection, parsing, schema validation, normalization, secret-reference
 validation and issuer policy validation occur **before** service readiness,
-authentication, or any configuration-dependent privileged mutation. The
+authentication, or any configuration-dependent privileged mutation. After
+IDP-2, the trusted file/environment bootstrap source and database-managed
+IdP registry are **additive, not fallback substitutes**: database failure
+or an unsafe file-versus-DB conflict must not cause MTMF to ignore DB policy
+and authorize from an incomplete file-only view. The
 initializer and service MUST consume the same normalized meaning, although
 their process privileges and secret visibility remain separate. The
 development launcher must be explicitly adapted before it can use TOML; its
@@ -111,6 +127,13 @@ TLS trust and canonical hostname controls remain in force; merely declaring
 attestation configuration/adapter schema must be reviewed prior to accepting
 non-Keycloak issuers.
 
+A later schema MAY declare pinned Tenant-to-provider associations (e.g.
+`[[authentication.tenant_providers]]` with an authoritative Tenant UUID and
+provider ID), but it must require explicit privileged reconciliation and
+must never silently overwrite DB-managed policy or ordinary tenant
+membership. Such TOML associations are not accepted by the current runtime
+and are not part of CFG-1 implementation.
+
 A production schema SHOULD define validation rules for exact provider IDs,
 issuer URLs, TLS, trusted discovery/JWKS, service/user audiences, approved
 algorithms, lifetime/skew limits, attestation policy, and trust-pairing
@@ -147,6 +170,7 @@ Role, Group membership, or stewardship. Refer to
 | Privileged initializer | Configured/bootstrap issuer verification and narrowly privileged bootstrap; no implicit runtime elevation |
 | Keycloak development launcher | Preserve canonical TLS issuer and its existing controls until explicitly upgraded |
 | `mtmf-client` / administrative CLI | Their own separately defined client/CLI configuration; no implicit reading of the server file |
+| PostgreSQL IdP catalog / `TenantIdp` (IDP-2 only) | DB-managed issuer and Tenant policy; protected file-pinned anchors, explicit source provenance, fail-closed association resolution and audited mutation |
 
 The configuration loader MUST NOT move IdP integrations behind
 `MtmfSpi`, nor introduce remote IdP calls inside a PostgreSQL UnitOfWork.
@@ -156,7 +180,7 @@ or accesses MTMF's database.
 ### Planned implementation PR: CFG-1 — TOML Configuration Foundation
 
 1. Add a shared typed normalized configuration model and strict TOML reader;
-   enforce the complete decision table in `2.
+   enforce the complete decision table in §2.
 2. Preserve the legacy environment-only path (including exact PR 17-C
    Keycloak trust, distinct service/user audience and attestation checks).
 3. Support **one** configured OIDC issuer for authentication; explicitly reject
@@ -176,17 +200,30 @@ authentication tests. Do not claim multi-issuer runtime readiness.
 ### Planned implementation PR: IDP-1 — Multi-IdP Authentication
 
 After CFG-1, support multiple OIDC issuers, bounded per-provider trust,
-service/user issuer-pairing rules, tenant-provider eligibility and conformance
-tests as specified in [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md).
-Do not scope this into PRs 22B, 23, 24P or 24–26 without an explicit separate
+service/user issuer-pairing rules and tenant-provider eligibility for
+file-configured providers as specified in
+[Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md).
+
+### Planned implementation PR: IDP-2 — DB Registry and TenantIdp Management
+
+After IDP-1 and explicit security approval of its write actions and execution
+boundary, persist dynamically managed IdPs and `TenantIdp` associations in
+PostgreSQL. Preserve file-pinned provider trust. Add management-only HTTP APIs
+and CLI commands with exact management-role authorization, reviewed
+stored-function privilege boundaries, atomic audit, conflict/recovery and
+fail-closed DB unavailability behavior.
+
+Do not scope these into PRs 22B, 23, 24P or 24–26 without an explicit separate
 security approval.
 
 ## 6. Deferred decisions / mandatory STOP gates
 
 The current documents do **not** approve or implement:
 
-- database-backed/dynamically managed issuer registry, how file-vs-database
-  source-of-truth conflicts are resolved, or a registration HTTP API;
+- exact persistent catalog/`TenantIdp` DDL, change-version and reconciliation
+  implementation, beyond the approved source precedence and no-shadowing rule;
+- exact management Action URNs, management Role grants, operator-adapter
+  privilege boundaries, HTTP DTOs and CLI commands for IdP mutations;
 - provider-specific attestation equivalence for Entra ID, Okta, or any
   non-Keycloak issuer, including discovery/client binding and revocation;
 - exact client-credential issuer/acting-user issuer pairing beyond the
@@ -202,7 +239,7 @@ implicit default, weakening attestations, or silently migrating subjects.
 ## 7. Documentation status
 
 This document defines future architecture only. No TOML loader, new
-`MTMF_CONFIG_PATH` parser, multiple-issuer verifier, or runtime registry is
-claimed to exist. Existing `.env.example` and
+`MTMF_CONFIG_PATH` parser, multiple-issuer verifier, runtime registry,
+`TenantIdp` table or management CLI is claimed to exist. Existing `.env.example` and
 [Development Setup](DEVELOPMENT_SETUP.md) remain the operational truth for
 the current local Keycloak stack.
