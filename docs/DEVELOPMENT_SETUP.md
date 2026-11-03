@@ -22,6 +22,15 @@ A **Tenant** represents a customer. An **Application** represents a product such
 
 With `scripts/mtmf-dev-stack.py`, these steps are ordered automatically: `keycloak -> initializer -> HTTP service`. The initializer is a one-shot container that exits before the unprivileged service starts; the service is not declared ready unless the initializer exited successfully.
 
+> **Configuration roadmap, not current instructions:** The proposed
+> [TOML-first configuration](CONFIGURATION_ARCHITECTURE.md) will read
+> `/etc/mtmf/config.toml` with an optional `MTMF_CONFIG_PATH` and fall back
+> to existing environment configuration only when the default file is absent.
+> [Multi-IdP support](MULTI_IDP_ARCHITECTURE.md) is likewise planned, not
+> deployed. **Do not remove `MTMF_AUTH_*` or relax this guide's exact
+> Keycloak-issuer preflight:** the current development launcher and service
+> still require the canonical single-issuer Keycloak environment setup.
+
 ## Canonical issuer and development networking (PR 17-C)
 
 The standard development stack uses **one canonical Keycloak authority**:
