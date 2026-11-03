@@ -118,8 +118,13 @@ These invariants bind PRs 22–26. They restate
   binding remains authoritative. A configured additional issuer must not
   become implicitly eligible for an ordinary Tenant or its pre-Tenant
   admission path; those require separately approved tenant provider policy
-  and trust/issuer-pairing implementation. See also
-  [Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md).
+  and trust/issuer-pairing implementation. Future DB-backed
+  `TenantIdp` associations and IdP registration are management-plane
+  operations controlled by independently authorized SYSTEM/root or
+  eligible `TenantManagementGroup` managers; an ordinary Tenant's own
+  administrator/steward cannot modify its own provider trust. The current
+  PR 11 management Roles grant only `tenant:get-object`, not IdP mutation.
+  See also [Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md).
 
 ## 4. Ownership and trust flow
 
