@@ -148,6 +148,24 @@ For example, if one Identity is directly assigned an administrative Role and ano
 
 The Principal relationship establishes that multiple Identities represent the same underlying Principal; it does not collapse their authorization contexts.
 
+### 4.3 External federation and identity linking (future Multi-IdP)
+
+Trusting an external issuer, including a configured bootstrap issuer, MUST NOT
+create a Principal association, Tenant membership, Role, Group membership,
+stewardship privilege, or authority in the protected root Tenant. The exact
+verified `(issuer, subject)` binding identifies one acting Identity; issuer
+trust alone never authorizes a Tenant session.
+
+MTMF MUST NOT automatically merge/link distinct external subjects or
+Principals based on email address, username, domain, display name or another
+mutable profile attribute. A future link/rebind requires independent identity
+proof, an explicitly authorized operation with an audit trail, and conflict
+checks; linking does not transfer or union Role assignments, Groups, Tenant
+memberships or stewardship. The existing protected root-Identity and recovery
+requirements continue to govern any root authentication-binding changes.
+See [Multi-IdP Architecture](MULTI_IDP_ARCHITECTURE.md) (design only; not
+implemented) and [Startup Configuration Architecture](CONFIGURATION_ARCHITECTURE.md).
+
 ---
 
 ## 5. Bootstrap and Root Invariants
