@@ -15,7 +15,8 @@
 - **CFG-D02 — Fallback:** if *and only if* the default file is absent and no
   explicit override path was supplied, MTMF uses the existing environment
   variables to construct a normalized, backward-compatible **single-issuer**
-  configuration. Existing environment-only startup continues to work.
+  configuration with a fixed internal bootstrap-provider ID (no untrusted
+  issuer aliases). Existing environment-only startup continues to work.
 - **CFG-D03 — Fail closed:** an existing but unreadable, nonregular, malformed,
   or invalid TOML file is a startup error, **not** a reason to use environment
   variables. An explicit `MTMF_CONFIG_PATH` pointing to a missing file is also
@@ -117,7 +118,8 @@ restrictions. Unknown security-sensitive fields, duplicate provider IDs,
 duplicate issuers, an absent/disabled bootstrap provider, missing required
 fields, or unsupported provider types must be rejected. No implicit default
 provider, wildcard issuer, issuer alias, or auto-correction of mismatched
-security policy is allowed.
+security policy is allowed. The file-mode `bootstrap_provider` field is mandatory; only the
+legacy environment fallback synthesizes its fixed single-provider designation.
 
 ## 4. Bootstrap and identity semantics
 
