@@ -11,7 +11,7 @@
 | Live fixture selection / Rust / QA-count evidence and first DONE verdict | `32e1060f90ae4d3b960071905a0e36ecb9864efe` |
 | Artifact-only final-SHA follow-up | `227fbcb6981bacb4509d7ecde1bce244f367af96` |
 | **Independent-review F1/F2 fix (content under test)** | **`a68177edddef46a077bf4942fbcd455cdd8a9428`** |
-| Final fixup artifact follow-up (this report and reconciled artifacts) | recorded by the follow-up commit; see `git log -1 -- docs/pr-artifacts/pr-23/PR23_FINAL_SHA.md` |
+| Final fixup artifact follow-up (fixup report and reconciled artifacts) | `4548cab1348c6ca8bbf065c54696251982e52411` |
 
 `a68177e…` is the reviewed state for which the final fixup evidence was
 collected:
