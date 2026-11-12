@@ -2,10 +2,15 @@
 
 **Verdict: `PR23_COMPLETE_INTERNAL_ONLY` — DONE — INTERNAL PARTICIPANT ONLY**
 
+**Fixup content under test:** `a68177edddef46a077bf4942fbcd455cdd8a9428`
+(independent-review F1/F2 corrections on top of `227fbcb`).
+
 The verified pre-Tenant subject seam and the owner-only, non-committing
 initial-stewardship transaction participants are implemented and verified on
 real PostgreSQL, with genuine Keycloak token acceptance and the PR 14 live
-regression passing. This is **not** v0.1 Tenant onboarding completion; PR 24P
+regression passing. The independent-review F1 (fresh-Tenant graph) and F2
+(cross-type canonical root UUID) defects are fixed and covered by new
+real-PostgreSQL negative/positive cases. This is **not** v0.1 Tenant onboarding completion; PR 24P
 (privileged execution topology) and PR 22B (one-transaction Tenant/quota/replay
 composite) remain required.
 
@@ -18,12 +23,15 @@ composite) remain required.
 | Reuse PR 14 token-pair trust unchanged | `_verify_token_pair` extraction; old tests pass | PASS |
 | Pre-Tenant verification requires no Tenant/membership/entitlement and writes nothing | A-U11/A-U12, P23-I04/I05 | PASS |
 | Global subject exact semantics, reuse, conflicts, no email merge/cross-Tenant union | P23-I04…I08, I19 | PASS |
+| F2: all three proposed UUIDs exclude all canonical root Tenant/Principal/Identity UUIDs | 9 parameterized F2 cases + positive control | PASS |
+| F1: fresh Tenant rejects Organizations, Groups, Group memberships/grants, Tenant Roles, management-group state | 7 parameterized F1 cases + cross-Tenant positive F1-08 | PASS |
 | Owner-only non-committing B1+B2 in one transaction; rollback and concurrency | P23-I09/I10/I16 | PASS |
 | Audit extension preserves four operations + `INITIAL_ONBOARDING`; append-only intact | P23-I17, v015 assertions | PASS |
 | Runtime denied both functions and protected table writes; 78-grant allowlist unchanged | P23-I03/I18, postflight, role verifier | PASS |
 | Root/steward guards unchanged; no ACTIVE Tenant committed by PR 23 | P23-I11/I20, all tests | PASS |
 | No new Tenant/activation/quota/replay/registration/HTTP/executor/seed | scope review, diffs | PASS |
-| Canonical QA + security + integration | 2490 passed / 0 skipped / 90.30%; 0 findings; 628 passed / 94 skipped | PASS |
+| Canonical QA + security + integration | 2490 passed / 0 skipped / 90.30%; 0 findings; 646 passed / 94 skipped | PASS |
+| Pre-commit | `uv run --no-sync pre-commit run --all-files` | PASS |
 | Canonical Rust gate | rustup stable 1.99.1; `./build.sh --rust` | PASS |
 | Genuine signed-token live acceptance L01–L04 | 4 passed, 0 skipped | PASS |
 | PR 14 live regression | 22 passed, 0 skipped | PASS |
@@ -46,6 +54,7 @@ composite) remain required.
 
 ## Evidence index
 
+- [PR23_INDEPENDENT_REVIEW_FIXUP_REPORT.md](PR23_INDEPENDENT_REVIEW_FIXUP_REPORT.md)
 - [PR23_ATTESTATION_FIXTURE_DIAGNOSIS.md](PR23_ATTESTATION_FIXTURE_DIAGNOSIS.md)
 - [PR23_INTEGRATION_AND_LIVE_ACCEPTANCE.md](PR23_INTEGRATION_AND_LIVE_ACCEPTANCE.md)
 - [PR23_SECURITY_AND_PRIVILEGE_REPORT.md](PR23_SECURITY_AND_PRIVILEGE_REPORT.md)

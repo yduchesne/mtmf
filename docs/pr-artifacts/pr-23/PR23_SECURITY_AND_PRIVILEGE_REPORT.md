@@ -71,3 +71,23 @@ No runtime grant, table grant, `SECURITY DEFINER` proxy, or privileged
 `MT047`/`MT048` are deterministic fail-closed structural codes and remain
 `PersistenceError` in translation; they never become a successful response or a
 policy ALLOW. No new HTTP error catalog entry was added.
+
+## Independent-review fixup (F1/F2)
+
+The F1/F2 fixup changes only the pre-write validation predicates in
+`v015/02_onboarding_subject_and_steward_functions.sql`. It does not add a
+migration, grant, ownership change, `SECURITY DEFINER` wrapper, table privilege,
+runtime EXECUTE, trigger, seed change, Tenant activation, quota/replay, or
+privileged executor.
+
+Post-fix verification:
+
+- both participants remain owner-owned, `SECURITY INVOKER`, empty
+  `search_path`, PUBLIC revoked, `mtmf_runtime` denied;
+- runtime EXECUTE manifest remains exactly **78**;
+- migration head remains `0015` and postflight passes;
+- append-only audit and root/steward guards remain intact;
+- `--sec` reports 0 findings;
+- F1 negative cases prove zero B2 writes and intact dirty state;
+- F2 negative cases prove zero B1 writes and unchanged root registry;
+- F1-08 proves exact-Tenant filtering for a globally reused Identity.

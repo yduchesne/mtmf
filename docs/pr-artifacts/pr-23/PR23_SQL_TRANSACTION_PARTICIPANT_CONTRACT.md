@@ -34,7 +34,10 @@ mtmf.onboarding_subject_prepare(
 - Exact, case-sensitive opaque issuer/subject; non-null/non-blank/≤512; never
   trimmed or case-folded for matching.
 - Three target UUIDs required, pairwise distinct, unused in their target tables,
-  and never canonical root IDs.
+  and never canonical root IDs. The canonical-root exclusion is a full
+  three-by-three rule: each proposed Principal, Identity, and binding UUID is
+  rejected with `MT047` if it equals **any** of the root Tenant, root Principal,
+  or root Identity UUIDs (not only the same-type root object).
 - Requires exactly one initialized canonical root registry row.
 - Takes
   `pg_advisory_xact_lock(hashtextextended('mtmf.pr23.subject:' || issuer || chr(31) || subject, 0))`
@@ -70,8 +73,13 @@ mtmf.onboarding_initial_steward_attach(
 - Requires the binding to point at the supplied Identity, an active FEDERATED
   Identity of an active Principal, and no canonical root object.
 - Rejects any pre-existing stewardship designation, Principal/Identity Tenant
-  membership, Identity Role assignment, Application registration, or
-  subscription in the supposedly fresh Tenant (`MT048`).
+  membership, Identity Role assignment, Application registration, subscription,
+  Organization, Group, Group–Tenant membership, Group Role assignment,
+  Tenant-defined Role (`role.defining_tenant_id`), management-group manager
+  state (`tenant_management_group.manager_tenant_id`), or managed-target state
+  (`tenant_management_group_membership.tenant_id`) in the supposedly fresh
+  Tenant (`MT048`). The check is exact-Tenant: unrelated state in another Tenant
+  does not make the target Tenant dirty.
 - Requires the protected built-in `urn:mtmf:iam:roles:system:tenant-administrator`
   Role and its `builtin_role` marker; never seeds or modifies them.
 - Inserts both typed memberships via the reviewed v004 functions, exactly one
