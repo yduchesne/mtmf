@@ -2,28 +2,30 @@
 
 **PR:** roadmap **PR 24P** — Operator and Pre-Tenant Privileged Execution Prerequisite
 **Artifact directory:** `docs/pr-artifacts/pr-24p/`
-**Plan version:** 2026-11-12 (rev 2: independent-review Findings A–C) · `DESIGN PROPOSED`
+**Plan version:** 2026-11-12 (rev 3: independent-review Findings A–D) · `DESIGN PROPOSED`
 **Prepared by:** coding agent (Phase 0, documentation only)
 **Baseline reconciled at:** `8712418a3d2de212791ae75a6235d3e00fced450` (= `origin/main`, PR 23 merged)
 **Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`** — `STOP-P24P-TOPOLOGY` is **ACTIVE**
 
 ## 0. Amendment history and independent-review disposition
 
-This revision addresses three findings from independent review while staying
-in documentation-only Phase 0. **No topology field is approved by this
-amendment, and no code, migration, role, grant, socket, or deployment resource
-is created.**
+This revision addresses findings from independent review while staying in
+documentation-only Phase 0. **No topology field is approved by this amendment,
+and no code, migration, role, grant, socket, or deployment resource is
+created.**
 
 | Finding | Defect addressed | Amendment in this document |
 | --- | --- | --- |
 | **A** | The pre-Tenant branch named a “private admission interface” but did not define its exact trust model, wire contract, limits, or response semantics; only the operator socket was frozen. | New **§5A** freezes the second private interface (`admission.prepare`), its separate socket/UID trust contract, framing/limits, exact request/response literals, no-write read path, ingress-compromise bounds, and the fail-closed `PrivilegedOnboardingTransactionPort` contract (§5A.6). Field 3, Field 7, Field 12 and §8 now reference it. |
 | **B** | The authorization snapshot carried only bare IDs plus permission rows, so the control process could not verify persisted Identity/Principal/binding/Role lifecycle, origin, canonical-root exclusion, or builtin/approved marker facts. | New **§6A** replaces the snapshot description with an exact persisted-domain-identity schema (Identity, Principal, ExternalSubjectBinding, Role, PermissionSet, Permission, assignment, target), sufficient to reconstruct the existing internal aggregates and perform every `authorize_global_system` check without a second read. |
 | **C** | “Policy evaluation” and “SQL revalidation” duties overlapped: both Python and SQL appeared to check assignment/target/Action, and the transaction/lock boundary between the snapshot and the mutation wrapper was not pinned. | New **§6B** freezes a non-overlapping responsibility table, the exact check order, the lock order across snapshot + wrapper, the single-transaction boundary, and the rule that SQL never returns ALLOW and Python never trusts stale unlocked state. Field 10 now references it. |
+| **D** | Revoked-only external subject history was indistinguishable from a new subject in the proposed pre-Tenant admission read; §5A also mentioned unsupported entitlement expiration. | Freeze three-argument history-aware read, historical precedence, internal result, handler mapping, and remove unsupported expiry reference; no implementation or approval. See **§5A.7**. |
 
 All other approved architectural invariants and proposals in this record are
-preserved unchanged. The frozen operator protocol (§5), fingerprint (§6) and
-SQL signatures (§7) are preserved verbatim; §5A/§6A/§6B are **additive** and
-must be approved together with the existing twelve fields.
+preserved unchanged. The frozen operator protocol (§5), fingerprint (§6), and
+**four unchanged operator SQL signatures** are preserved verbatim; the fifth
+(pre-Tenant) signature is replaced by §5A.7/§7. §5A/§5A.7/§6A/§6B are
+**additive** and must be approved together with the existing twelve fields.
 
 > **This document is a decision request, not an approval.** Nothing in this
 > repository, in the PR 21 Action approval, in `docs/ROADMAP_V01.md`, in the
@@ -94,6 +96,10 @@ Required decision material (fill in §9 and the per-field blocks):
 - reference or evidence (meeting record, signed file, ticket);
 - any conditions or amendments;
 - the deployment-specific host values in §8.
+
+The pre-Tenant subject-history and entitlement read (§5A.7, the fifth §7
+signature) is part of the frozen contract and must be approved verbatim;
+approving the admission concept without it is not approval.
 
 If **any** field is `REJECTED` or `AMEND`, the agent stops and returns a
 revised plan for further approval. The agent will not reinterpret amendments,
@@ -174,7 +180,9 @@ prevents pre-Tenant exposure.
 The **exact** second-interface trust model, socket/peer-UID separation, framing,
 limits, request/response literals and read path are frozen in **§5A**. They are
 part of this field's approval; approving the concept without the §5A literals
-is not approval.
+is not approval. Amendment D's historical subject-state check and its
+`ACTIVE`/`REVOKED_ONLY`/`NEVER_SEEN`/`CONFLICT` precedence are frozen in
+**§5A.7** and are also part of this field.
 
 **Supporting evidence.** The public service is the only HTTP surface; there is
 no gateway-to-executor transport. `PreTenantSubjectVerificationService` verifies
@@ -319,7 +327,9 @@ return a bounded JSON result, and never accept SQL text, function names, Role
 URNs, `root=true`, Tenant context, or arbitrary Actions. `mtmf_control_exec`
 cannot execute v014/v015 owner-only mutations directly. The runtime allowlist
 stays exactly **78**. Which wrapper performs which check, and the one
-transaction that spans them, are frozen in **§6B**.
+transaction that spans them, are frozen in **§6B**. The fifth entrypoint is the
+pre-Tenant history/entitlement read frozen in **§5A.7**; it is not an operator
+wrapper and cannot return ALLOW.
 
 **Supporting evidence.** `roles.py` (`provision_roles`, role verifiers,
 `expected_runtime_signatures` = 78), `scripts/mtmf-provision-roles.py`;
@@ -649,8 +659,11 @@ failure:
 | --- | --- | --- | --- |
 | `CANDIDATE` | Verified new global subject + ACTIVE entitlement + preliminary quota available (computed from `quota_consumed < quota_total`). **Non-authorizing observation only.** | `true` | the ACTIVE entitlement UUID |
 | `EXISTING_SUBJECT` | Exact `(issuer, subject)` already resolves to an active global Identity/Principal. Existing-Tenant resolution belongs to PR 22B/24. | `false` | `null` |
-| `NO_ENTITLEMENT` | Verified new subject but entitlement absent/REVOKED/expired/exhausted. | `false` | `null` |
+| `NO_ENTITLEMENT` | Verified new subject with no ACTIVE entitlement or an exhausted ACTIVE entitlement; no quota reservation and no authorization. | `false` | `null` |
 | `CONFLICT` (error) | Revoked-only or conflicting subject history; never silently rebind. | — | — |
+
+`REVOKED_ONLY` is an internal historical classification, not a fourth success
+outcome; revoked-only subject history is mapped to opaque `CONFLICT`.
 
 The response never contains a token, subject, Identity/Principal ID, Tenant ID,
 membership, Role, Permission, assignment, registration, subscription, quota
@@ -662,39 +675,72 @@ consumed or reserved by this response.
 
 ```text
 verify SO_PEERCRED == dedicated ingress UID
- -> decode exact request (no DB)
- -> fresh realm/client attestation + verify service AND user tokens (no DB)
- -> PR 23 PreTenantSubjectVerificationService.verify(service_token, user_token)
-      using the restricted-read mtmf_runtime UoW (no Tenant/Role/membership)
- -> if existing valid subject: EXISTING_SUBJECT (no entitlement read)
- -> else control-role-only mtmf.control_pre_tenant_entitlement_read(application_id)
-      read-only, no lock held beyond the statement, no write
- -> CANDIDATE | NO_ENTITLEMENT | CONFLICT
- -> typed VerifiedPreTenantAdmission (candidate only)
- -> response
+  -> strict frame/request decode (only two access tokens + request_id)
+  -> approved fresh attestation + independently verify both tokens
+  -> PR 23 PreTenantSubjectVerificationService.verify(...) on restricted-read UoW
+       (returns verified Application/exact issuer+subject and optional existing IDs;
+        no entitlement/Role/Tenant write; UoW closed)
+  -> control-role-only, read-only mtmf.control_pre_tenant_admission_read(
+       verified.application_id,
+       verified.external_subject.issuer,
+       verified.external_subject.subject)
+       (always called after successful PR 23 verify, including EXISTING)
+  -> strictly validate internal result and map by table R below
+  -> prepare a non-authorizing detached result; emit bounded §5A.4 response
 ```
+
+**Output mapping (R):**
+
+| ID | PR 23 verified result | Privileged read `subject_history` | Entitlement fields | §5A.4 public-facing private-socket result |
+| --- | --- | --- | --- | --- |
+| R01 | New candidate (no existing IDs) | `NEVER_SEEN` | UUID + `quota_available=true` | `CANDIDATE`, `eligible_for_first_tenant=true`, entitlement UUID. |
+| R02 | New candidate | `NEVER_SEEN` | `null` + `false` | `NO_ENTITLEMENT`, eligible false, entitlement null. |
+| R03 | Existing subject | `ACTIVE` | `null` + `false` | `EXISTING_SUBJECT`, eligible false, entitlement null. |
+| R04 | New candidate | `ACTIVE` | `null` + `false` | `EXISTING_SUBJECT` (a valid binding appeared between the two reads), eligible false, entitlement null. Do not claim a new candidate. |
+| R05 | Any successfully verified subject | `REVOKED_ONLY` | `null` + `false` | Error `CONFLICT` (opaque; no history text). |
+| R06 | Any successfully verified subject | `CONFLICT` | `null` + `false` | Error `CONFLICT` (opaque; no history text). |
+| R07 | Existing subject | `NEVER_SEEN` | any | Error `CONFLICT` (inconsistent prior ACTIVE observation; do not fabricate a new candidate). |
+| R08 | Any | Any state | Malformed JSON, unexpected key, impossible UUID/flag pairing, missing fields, incompatible version | Fail closed `UNAVAILABLE` (no candidate); log safe internal diagnostic only. |
+| R09 | PR 23 token/attestation/binding verification failed | **Do not call privileged read** | n/a | Existing typed `INVALID`/`UNAUTHENTICATED`/`FORBIDDEN`/`UNAVAILABLE` mapping; never `CANDIDATE`. |
+| R10 | Any | Database read rejects inactive/missing Application, root-registry inconsistency, or infrastructure fault | n/a | Existing opaque `UNAVAILABLE` error; never success. |
+
+The first read and the privileged read may observe different committed states.
+The `ACTIVE`-after-candidate case must be handled as R04. A candidate is **not**
+an authorization to create or a stable lease; PR 22B **must** recheck all state
+atomically and still rejects revoked-only subject history through B1.
+
+Maintain §5A.4's *external envelope* exactly: `CANDIDATE | EXISTING_SUBJECT |
+NO_ENTITLEMENT` and the existing opaque error enum. **Do not add `REVOKED_ONLY`
+or subject-history fields to the socket response.** Return the verified
+Application UUID only as already authorized by the verified service token, not
+from ingress input.
 
 - All attestation/JWKS/token I/O completes **before any database access**.
 - The PR 23 restricted-read UoW and the control-role read are separate
   credentials/connections and are **never** transactionally mixed; PR 24P opens
   **no** privileged write transaction on this path.
+- The historical/entitlement read is **unconditional** after a successful PR 23
+  verification: it runs for both an existing subject and a new-subject
+  candidate, and is the single authoritative classification and preliminary
+  entitlement check.
 - No Identity/Principal/binding, Tenant, membership, registration,
   subscription, quota, replay, or audit-success row is written. No `COMMIT` of
   any mutation. `request_id` is not a replay ledger.
 - The admission handler **must not read `system_operator_assignment`**, and the
   operator handler **must not use an Application entitlement** to authorize an
   operator Action. The two evidence types never cross.
-- The only entitlement read is the frozen
-  `control_pre_tenant_entitlement_read(application_id)` (§7); the operator
-  `control_entitlement_get(...)` is not callable from this handler.
+- The only pre-Tenant read is the frozen
+  `control_pre_tenant_admission_read(application_id, issuer, subject)` (§5A.7,
+  §7); the operator `control_entitlement_get(...)` is not callable from this
+  handler.
 - `CANDIDATE` cannot invoke the future composite: PR 24P's
   `PrivilegedOnboardingTransactionPort.execute_approved_composite` remains
   unimplemented and fail-closed. PR 22B must repeat every authoritative check
   under its own serialized transaction and owns the quota/replay ledger.
-- Stale entitlement state between the preliminary read and a future PR 22B
-  transaction is acceptable **only** because the candidate is non-authorizing;
-  PR 22B must reject a changed/revoked entitlement during its locked recheck
-  (PT-I07).
+- Stale state between the preliminary read and a future PR 22B transaction is
+  acceptable **only** because the candidate is non-authorizing; PR 22B must
+  reject changed entitlement/subject state during its locked recheck (PT-I07,
+  SH17, SH20).
 
 ### 5A.6 Private executor port (PR 24P: unimplemented, fail-closed)
 
@@ -730,6 +776,199 @@ class PrivilegedOnboardingTransactionPort(Protocol):
 - Neither the operator socket nor the admission handler may call an
   implementation of this port in PR 24P; the operator path is never an
   onboarding executor, and the admission path is never an operator executor.
+
+### 5A.7 Exact subject-history and entitlement read contract (Amendment D — proposed)
+
+This subsection is the contract for the **one fifth** proposed private SQL
+entrypoint in §7. It replaces the rev 2 one-argument entitlement-only read. It
+is a proposal for human approval; PR 24P implements none of it.
+
+#### 5A.7.1 Proposed fifth signature
+
+```sql
+mtmf.control_pre_tenant_admission_read(
+  application_id_value uuid,
+  issuer_value text,
+  subject_value text
+) RETURNS jsonb
+```
+
+The function is **read-only, `STABLE`, `SECURITY DEFINER`, `SET search_path = ''`,
+owner-owned**, and invocable **only** by the future `mtmf_control_exec` role;
+PUBLIC and `mtmf_runtime` EXECUTE are denied. It may read approved underlying
+tables through owner privileges; it may **not** insert/update/delete, lock rows
+for update, reserve quota, call v015 B1/B2, emit mutation audit, perform remote
+I/O, commit, or return an authorization ALLOW. The old
+`control_pre_tenant_entitlement_read(uuid)` signature is superseded and must not
+remain as a second active entrypoint.
+
+The three inputs are derived exclusively inside the trusted worker:
+`application_id_value` comes from PR 23's independently verified service
+credential; `issuer_value` and `subject_value` come from independently verified
+user claims. The §5A.3 ingress protocol **does not gain any fields** and must
+never be allowed to submit these values directly as identity proof.
+
+#### 5A.7.2 Exact internal result schema
+
+The function returns **exactly** this JSON object, with no extra keys:
+
+```json
+{
+  "v": 1,
+  "subject_history": "NEVER_SEEN",
+  "entitlement_id": null,
+  "quota_available": false
+}
+```
+
+The sample illustrates one valid shape, not fixed example values. The contract
+is:
+
+| Field | Type / permitted values | Meaning |
+| --- | --- | --- |
+| `v` | integer literal `1` | Internal read-result schema version. |
+| `subject_history` | exactly `NEVER_SEEN`, `ACTIVE`, `REVOKED_ONLY`, or `CONFLICT` | Historical subject state for the **exact** `(issuer,subject)` key, with definitions below. |
+| `entitlement_id` | canonical nonnil UUID string or `null` | ACTIVE entitlement ID **only if** history is `NEVER_SEEN`, exactly one ACTIVE entitlement exists, and `quota_available=true`. Otherwise `null`. |
+| `quota_available` | JSON boolean | `true` **only if** history is `NEVER_SEEN` and an ACTIVE entitlement has `quota_consumed < quota_total`. Otherwise `false`. |
+
+No `identity_id`, `principal_id`, `binding_id`, historical counts, revoked dates,
+Tenant metadata, Application name, raw issuer/subject, quota counters, Role,
+permission, free-text reason, SQLSTATE, or token may appear. No `approved`,
+`allow`, or `authorized` key. The worker must not expose this internal JSON
+object directly in the admission socket response.
+
+#### 5A.7.3 Authoritative subject-history precedence (H01–H06)
+
+Use **exact** case-sensitive equality on `(issuer_value, subject_value)`; do
+not trim, lowercase, or normalize accepted text. Validate inputs as in B1:
+nonnull text; `length(btrim(value)) > 0`; `length(value) <= 512`; Application
+UUID present/non-nil. An input failing those checks is a fail-closed error,
+never `NEVER_SEEN`.
+
+Count **all** matching binding rows, not just current ACTIVE rows:
+
+```sql
+SELECT count(*) FILTER (WHERE lifecycle = 1),
+       count(*) FILTER (WHERE lifecycle = 2)
+  FROM mtmf.external_subject_identity
+ WHERE issuer = issuer_value AND subject = subject_value;
+```
+
+| Priority | ACTIVE rows | REVOKED rows | Additional condition | `subject_history` | Entitlement read? |
+|---|---:|---:|---|---|---|
+| H01 | >1 | any | Corrupt/ambiguous, despite the ACTIVE partial unique index | `CONFLICT` | No |
+| H02 | 1 | any | Exact active binding resolves to active, FEDERATED, non-root Identity and active, non-root Principal | `ACTIVE` | No |
+| H03 | 1 | any | Identity/Principal missing, deleted, LOCAL, canonical root, or relationship inconsistent | `CONFLICT` | No |
+| H04 | 0 | >=1 | Historical revocation without active successor | `REVOKED_ONLY` | No |
+| H05 | 0 | 0 | No matching binding row in any lifecycle | `NEVER_SEEN` | Yes |
+| H06 | any | any | Unexpected lifecycle/integrity condition not covered by the table or database contract | Fail closed, **no candidate** | No |
+
+**Critical precedence:** an ACTIVE binding plus one or more older REVOKED rows
+is **`ACTIVE`**, not `REVOKED_ONLY` or `CONFLICT`, provided the ACTIVE binding's
+Identity/Principal is eligible. This mirrors the shipped PR 23 B1 order and
+preserves legitimate re-binding only through independently approved existing
+pathways. PR 23 behavior is not changed.
+
+For H02/H03 validate within the privileged read's authoritative snapshot:
+active binding `identity_id` → `mtmf.identity` (`origin=2` FEDERATED,
+`deletion_status=2` NOT_DELETED) → `mtmf.principal` (`deletion_status=2`);
+compare Identity and Principal IDs against the canonical `mtmf.root_registry`
+and reject root. Missing/contradictory root registry fails closed; there is no
+fallback to hardcoded IDs. Do not return those underlying identifiers. This
+validates a newly appeared ACTIVE row even if PR 23's preceding restricted read
+saw no active binding.
+
+The read is a **single, read-only statement-snapshot classification** (one
+invocation of a `STABLE` function; no network I/O inside it). No
+locking/serialization guarantee is claimed. If a future SQL implementation
+cannot provide the specified coherent snapshot, that implementation must STOP
+rather than compose inconsistent separate reads.
+
+#### 5A.7.4 Entitlement eligibility, exhaustion, and no expiration
+
+Check Application existence and `ApplicationLifecycle.ACTIVE` before yielding
+any success result. An unknown/inactive Application is a fail-closed condition,
+**never** `NO_ENTITLEMENT`, `CANDIDATE`, or a new-subject proof. The worker has
+already verified the Application binding, but this privileged read rechecks
+lifecycle. Any SQL exception from this read maps to the existing opaque
+`UNAVAILABLE` error; the worker does not branch on internal SQL exception text
+or expose SQLSTATE. Invalid wire/input values are rejected by the worker as
+`INVALID` **before** calling the SQL function. Historical contradiction is
+represented by the valid internal `subject_history=CONFLICT` value and maps to
+the socket `CONFLICT` error. No new SQLSTATE is introduced.
+
+**Only when** `subject_history=NEVER_SEEN`, query
+`mtmf.application_onboarding_entitlement` by the exact verified Application
+UUID:
+
+| Entitlement rows (same verified Application) | Internal `entitlement_id` | `quota_available` | Admission result |
+| --- | --- | --- | --- |
+| Exactly one ACTIVE (`state=1`), `0 <= quota_consumed < quota_total` | That ACTIVE UUID | `true` | `CANDIDATE` |
+| Exactly one ACTIVE, `quota_consumed = quota_total` | `null` | `false` | `NO_ENTITLEMENT` |
+| No ACTIVE rows (no rows or only REVOKED history) | `null` | `false` | `NO_ENTITLEMENT` |
+| Multiple ACTIVE rows (corrupt/violated unique index), impossible quota values, or another inconsistent lifecycle | No successful result | n/a | Fail-closed `CONFLICT` / infrastructure error; never candidate |
+
+An old REVOKED entitlement coexisting with an ACTIVE replacement is **not** a
+conflict: the ACTIVE one controls quota eligibility. Historical subject
+revocation and historical entitlement revocation are independent concepts and
+must never be conflated.
+
+**No entitlement-expiration column or time-based eligibility condition exists
+in v014.** Do not invent an `expires_at` column, validity window, configuration
+flag, or clock-based shortcut. If a later approved migration adds expiry, that
+future PR must separately amend this contract.
+
+#### 5A.7.5 Trust, privacy, and no-mutation consequences
+
+- `control_pre_tenant_admission_read` is callable only by the separately
+  isolated worker using its restricted control DB role; it is **not** callable
+  with the `mtmf_runtime` credential or a public HTTP path. The worker
+  re-verifies both tokens independently before executing it.
+- The SQL function's exact issuer/subject parameters are **not cryptographic
+  proof in PostgreSQL**; they are trusted process-derived data. The database
+  cannot independently authenticate JWTs. This residual risk is explicit.
+- No subject-history count, raw key, or binding identity leaks into the bounded
+  admission response, logs, metrics, traces, mutation audit, or operator socket.
+- No B1/B2, first-Tenant composite, quota reservation/consumption, Role grant,
+  subscription, or mutation occurs during `admission.prepare`.
+  `PrivilegedOnboardingTransactionPort` stays unimplemented and fail-closed.
+
+#### 5A.7.6 Planned feature acceptance (specified now; NOT EXECUTED)
+
+These are **planned obligations**, not tests written or run in this
+documentation-only amendment. A future approved PR 24P implementation must use
+real PostgreSQL with the intended `mtmf_control_exec` privilege boundary and
+exercise the production read function, not a mock SELECT.
+
+| Test | Historical subject fixture | Entitlement fixture | Expected internal / admission result |
+|---|---|---|---|
+| SH01 | No exact-key history | ACTIVE, quota available | `NEVER_SEEN`, `CANDIDATE`, eligible true. |
+| SH02 | One REVOKED row only | ACTIVE, quota available | `REVOKED_ONLY`, opaque `CONFLICT`, never candidate. |
+| SH03 | Multiple REVOKED rows, no ACTIVE | ACTIVE, quota available | `REVOKED_ONLY`, opaque `CONFLICT`. |
+| SH04 | One valid ACTIVE row only | any | `ACTIVE`, `EXISTING_SUBJECT`, no entitlement query. |
+| SH05 | One valid ACTIVE plus older REVOKED row(s) | any | `ACTIVE`, `EXISTING_SUBJECT` (B1 precedence). |
+| SH06 | ACTIVE row with missing/deleted/LOCAL/root Identity or invalid Principal | any | `CONFLICT`, opaque error. |
+| SH07 | Multiple ACTIVE rows in corruption/constraint-disabled fixture | any | `CONFLICT`; never choose one. |
+| SH08 | No subject history | no entitlement row | `NEVER_SEEN`, `NO_ENTITLEMENT`. |
+| SH09 | No subject history | only REVOKED entitlement history | `NEVER_SEEN`, `NO_ENTITLEMENT`. |
+| SH10 | No subject history | ACTIVE entitlement exhausted | `NEVER_SEEN`, `NO_ENTITLEMENT`. |
+| SH11 | No subject history | revoked entitlement plus ACTIVE replacement, quota available | `NEVER_SEEN`, `CANDIDATE` using replacement UUID. |
+| SH12 | Exact issuer A/subject S has REVOKED-only; different issuer B/subject S has no history | ACTIVE | A → `CONFLICT`; B → `CANDIDATE` (no cross-issuer conflation). |
+| SH13 | PR 23 candidate read, then matching ACTIVE binding appears before history read | any | `EXISTING_SUBJECT`, not candidate; future composite still rechecks. |
+| SH14 | PR 23 candidate read, then matching binding created/revoked before history read | ACTIVE | `REVOKED_ONLY`, `CONFLICT`; no candidate. |
+| SH15 | No history, but Application now inactive when privileged read executes | ACTIVE | Fail-closed opaque error, not `NO_ENTITLEMENT`/`CANDIDATE`. |
+| SH16 | Any eligible case | Worker has only `mtmf_runtime` credential | EXECUTE on new function denied; runtime allowlist remains 78. |
+| SH17 | Revoked-only candidate race, still no unrevoked binding inside future B1 | ACTIVE | B1 `MT048` and zero writes, regardless of prior read classification. |
+| SH18 | Malformed exact-key input (`NULL`, blank, >512), bad/unknown JSON fields | any | Fail closed; no normalized/rebound subject. |
+| SH19 | Subject classification `REVOKED_ONLY` / `CONFLICT` | any | No subject key, history counts, raw issuer/subject, SQLSTATE, or token in socket response/logs. |
+| SH20 | Successful preliminary `CANDIDATE` | entitlement later revoked/quota exhausted | Future PR 22B locked recheck fails without partial Tenant/Identity/Role/audit. |
+
+SH07 may require an isolated controlled database with a deliberately disabled
+unique constraint; the normal development database must never be altered to
+construct corrupt fixtures. If safe isolation cannot be provided, the future
+test must be recorded as blocked, never PASS. SH13–SH14 require deterministic
+barriers to control the two read instants, not timing sleeps. Every real-DB
+mutation fixture must be rolled back/cleaned under the approved test harness.
 
 ## 6. Frozen canonical mutation fingerprint (worker-generated, SHA-256 — proposed, verbatim)
 
@@ -1032,20 +1271,29 @@ mtmf.control_operator_authorization_snapshot(
   entitlement_id_value uuid
 ) RETURNS jsonb
 
-mtmf.control_pre_tenant_entitlement_read(
-  application_id_value uuid
+mtmf.control_pre_tenant_admission_read(
+  application_id_value uuid,
+  issuer_value text,
+  subject_value text
 ) RETURNS jsonb
 ```
 
 Arguments are **data supplied by the trusted control process after JWT
-verification**, not cryptographic DB authentication evidence. The wrapper
-independently checks that the ACTIVE exact `(issuer, subject)` binding resolves
-to `operator_identity_id_value`, that the Identity belongs to
+verification**, not cryptographic DB authentication evidence. The operator
+wrapper independently checks that the ACTIVE exact `(issuer, subject)` binding
+resolves to `operator_identity_id_value`, that the Identity belongs to
 `operator_principal_id_value`, that both are active and non-root, and that a
-still-ACTIVE `system_operator_assignment` grants the exact Role. Its exact-Action
-check is the deny-only equality guard in §6B.1 row 6; it never returns ALLOW.
-The `GET` wrapper is read-only; mutation wrappers reuse v014 and write atomic
-audit/replay.
+still-ACTIVE `system_operator_assignment` grants the exact Role. Its
+exact-Action check is the deny-only equality guard in §6B.1 row 6; it never
+returns ALLOW. The `GET` wrapper is read-only; mutation wrappers reuse v014 and
+write atomic audit/replay.
+
+The fifth, pre-Tenant signature verifies historical subject state and
+preliminary entitlement/quota on one exact verified Application and
+`(issuer, subject)` key (§5A.7), is callable only by the future
+`mtmf_control_exec`, and is **never** operator authorization or an Action
+ALLOW. The other four proposed signatures, their argument ordering, the
+reserved SQLSTATEs and the privilege model are unchanged.
 
 **Reserved SQLSTATEs (proposed):** `MT049` malformed/unacceptable private-control
 input or wrong canonical actor/target; `MT050` denied/missing SYSTEM assignment
@@ -1081,12 +1329,13 @@ portable plan. **Any missing value keeps `STOP-P24P-TOPOLOGY` active.**
 Decision ID:        ______________________________________
 Date (UTC):         ______________________________________
 Approving party:    ______________________________________
-Plan/version approved: MTMF PR 24P detailed execution plan, version 2026-11-12 (rev 2, Findings A–C)
+Plan/version approved: MTMF PR 24P detailed execution plan, version 2026-11-12 (rev 3, Findings A–D)
 Exact approved text reference / evidence: ______________________________________
 Conditions / amendments: ______________________________________
 All 12 fields approved verbatim?   YES / NO
 Operator protocol §5 approved verbatim? YES / NO
-Pre-Tenant admission protocol §5A (including §5A.6 executor port) approved verbatim? YES / NO
+Pre-Tenant admission protocol §5A (including §5A.6 executor port and §5A.7 subject-history read) approved verbatim? YES / NO
+Amendment D subject-history read (§5A.7 and revised §7 fifth signature) approved verbatim? YES / NO
 Fingerprint §6 approved verbatim?  YES / NO
 Authorization snapshot §6A approved verbatim? YES / NO
 Policy/SQL responsibility + transaction boundary §6B approved verbatim? YES / NO
@@ -1106,13 +1355,14 @@ Deployment values §8 complete (including ingress UID + admission socket)? YES /
 ## 11. Consequence of the decision
 
 - **All 12 approved verbatim + operator protocol §5 + admission protocol §5A +
-  fingerprint §6 + snapshot §6A + responsibility/transaction split §6B +
-  signatures §7 approved + deployment values supplied:** the agent resumes
+  subject-history read §5A.7 + fingerprint §6 + snapshot §6A +
+  responsibility/transaction split §6B + signatures §7 approved + deployment
+  values supplied:** the agent resumes
   Parts A–E in order, stopping again at any of the named sub-gates
   (AUTH-PROFILE, POLICY-ENGINE, SEED, ROLE-PROVISIONING, SIGNATURE,
   LOCK-ORDER, AUDIT-POLICY, TRANSACTION, DEPLOYMENT, PRIVILEGE).
-- **Any field rejected/amended, or any frozen literal (including §5A/§6A/§6B)
-  changed:** the agent records the differences, returns a revised plan, and
-  stays blocked. Findings A–C must be approved as frozen text; accepting only
-  the concept is not approval.
+- **Any field rejected/amended, or any frozen literal (including §5A/§5A.7/
+  §6A/§6B) changed:** the agent records the differences, returns a revised plan,
+  and stays blocked. Findings A–D must be approved as frozen text; accepting
+  only the concept is not approval.
 - **No decision recorded:** status remains `PR24P_BLOCKED_TOPOLOGY_APPROVAL`.
