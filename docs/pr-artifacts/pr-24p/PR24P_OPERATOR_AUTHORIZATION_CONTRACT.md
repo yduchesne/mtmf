@@ -13,5 +13,8 @@ Nothing has been implemented. No operator contract, no verification service, no
 global-target authorizer path, and no test exists. This file must not be read as
 an accepted contract.
 
-Prerequisite: a recorded human decision approving all twelve topology fields in
-[PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md).
+Prerequisite: a recorded human decision approving all twelve topology fields and
+the frozen operator contract in
+[PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md),
+including the persisted-domain-identity snapshot (§6A) and the policy-vs-SQL
+transaction boundary (§6B).

@@ -12,6 +12,6 @@ will implement as one closed owner-executed composite.
 Nothing has been implemented or tested. This seam does not provision a Tenant,
 consume quota, write replay state, or grant any Role.
 
-Prerequisite: a recorded human decision approving all twelve topology fields in
-[PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md),
-including the trusted-ingress field.
+Prerequisite: a recorded human decision approving all twelve topology fields,
+the trusted-ingress field, and the frozen pre-Tenant admission protocol §5A in
+[PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md).

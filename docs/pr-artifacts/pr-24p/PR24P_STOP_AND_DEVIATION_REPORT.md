@@ -4,6 +4,7 @@
 **Artifact directory:** `docs/pr-artifacts/pr-24p/`
 **Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`**
 **STOP code:** **`STOP-P24P-TOPOLOGY`** (mandatory Phase-0 STOP)
+**Decision record revision:** **2** (independent-review Findings A–C addressed, documentation only)
 **Baseline SHA:** `8712418a3d2de212791ae75a6235d3e00fced450` (= `origin/main`, PR 23 merged)
 
 ## 1. Stop condition
@@ -31,6 +32,25 @@ See [PR24P_BASELINE_AND_SCOPE_RECONCILIATION.md](PR24P_BASELINE_AND_SCOPE_RECONC
   `--verify`: PASS.
 - No `system_operator`, `control_plane`, `authorize_global`,
   `mtmf_control_exec`, or `operator_contracts` implementation exists anywhere.
+
+## 2A. Amendment record — independent-review Findings A, B, C
+
+**Amendment status:** applied to the decision record; **no approval, no
+implementation, no topology change**. `STOP-P24P-TOPOLOGY` remains active.
+
+| Finding | Required correction | Amendment applied |
+| --- | --- | --- |
+| **A** | Define the second private admission interface and its exact trust/protocol contract. | `PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md` **§5A**: separate admission `AF_UNIX` socket and dedicated ingress UID; `SO_PEERCRED` exact-UID rules; independent double token verification; 32,768-byte frame; exact `admission.prepare` request (`v`, `operation`, `request_id`, service token, user token only); bounded `CANDIDATE|EXISTING_SUBJECT|NO_ENTITLEMENT` / error envelope; no-write read path via PR 23 + control-role-only entitlement read; no callable public socket in PR 24P; ingress-compromise bounds; and the exact fail-closed `PrivilegedOnboardingTransactionPort` contract (§5A.6). Field 3, Field 7, Field 12 and §8 now reference it. |
+| **B** | Correct the authorization snapshot to carry persisted domain identities. | **§6A**: exact snapshot schema carrying persisted `Identity` (id, principal, origin, deletion status, canonical-root flag), `Principal`, `ExternalSubjectBinding` (issuer/subject/lifecycle), `Role` (urn, SYSTEM definition, builtin/approved markers), `PermissionSet` effects, `Permission` URNs/positions, the global assignment, and the typed target — sufficient to reconstruct the internal aggregates and perform every `authorize_global_system` check without a second read. Display names and `extension` excluded. |
+| **C** | Freeze policy-evaluation versus SQL-revalidation responsibilities and the transaction boundary. | **§6B**: non-overlapping responsibility table (Python owns token authenticity and general policy evaluation; SQL owns persisted actor/assignment/role facts, locked target/replay state, audit, and a deny-only exact-Action equality guard; SQL never returns ALLOW); exact 10-step execution order; lock order assignment (snapshot) → identity/principal/binding revalidation (wrapper) → replay → Application → entitlement; snapshot locks only the assignment row; single `BEGIN`/`COMMIT`; no external I/O under transaction; no deadlock retries. |
+
+**Preserved unchanged:** the twelve topology fields' substantive proposals, the
+operator protocol §5, fingerprint §6, five SQL signatures §7, SQLSTATE
+reservations, no-`mtmf_runtime`-grant rule, runtime allowlist 78, root exclusion,
+admission-marker zero grants, and PR 22B composite deferral.
+
+**Findings not implemented as code:** correct. This remains Phase 0; any code
+would violate `STOP-P24P-TOPOLOGY`.
 
 ## 3. Zero unapproved changes
 
@@ -79,10 +99,14 @@ A single recorded human decision that:
 1. approves **all twelve** topology fields in
    [PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md) §4,
    **verbatim or with an explicit revised plan**;
-2. approves the frozen private protocol (§5), canonical fingerprint (§6), and
-   the exact five private SQL signatures plus reserved SQLSTATEs (§7);
-3. supplies the deployment-specific host values in §8 (admin UID, control UID/
-   GID, runtime UID/GID, socket path/owner/mode, secret mount, Podman project,
+2. approves the frozen operator protocol (§5), the **pre-Tenant admission
+   protocol (§5A)**, the canonical fingerprint (§6), the **persisted-domain-
+   identity authorization snapshot (§6A)**, the **policy-vs-SQL responsibility
+   and transaction boundary (§6B)**, and the exact five private SQL signatures
+   plus reserved SQLSTATEs (§7);
+3. supplies the deployment-specific host values in §8 (operator admin UID,
+   control UID/GID, runtime UID/GID, operator socket path/owner/mode, **ingress
+   UID/GID and admission socket path/owner/mode**, secret mount, Podman project,
    control network, host platform confirmation, rotation owner);
 4. records decision ID, date, approving party, exact approved text/version,
    evidence reference, and any conditions in §9.
