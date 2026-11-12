@@ -193,6 +193,8 @@ EXPECTED_FUNCTION_NAMES = {
     "application_onboarding_entitlement_get",
     "application_onboarding_entitlement_find_by_application",
     "application_onboarding_entitlement_event_find_by_entitlement",
+    "onboarding_subject_prepare",
+    "onboarding_initial_steward_attach",
 }
 
 _FORBIDDEN_TABLES = (
@@ -224,7 +226,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0014"
+    assert revision == "0015"
     assert revision == manager.head_revision
 
 

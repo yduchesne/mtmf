@@ -36,6 +36,7 @@ from mtmf_core.application.management_scope import (
     ManagementScopeResolution,
     resolve_management_scope,
 )
+from mtmf_core.application.pre_tenant_subject import PreTenantSubjectVerificationService
 
 __all__ = [
     "ApplicationTenantEligibilityIntegrityError",
@@ -51,6 +52,7 @@ __all__ = [
     "ManagementMembershipService",
     "ManagementScopeCandidate",
     "ManagementScopeResolution",
+    "PreTenantSubjectVerificationService",
     "ResolvedAuthorizationState",
     "build_authorization_context",
     "resolve_management_scope",

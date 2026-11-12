@@ -26,6 +26,7 @@ __all__ = [
     "ServiceCredentialKey",
     "VerifiedAccessToken",
     "VerifiedActorContext",
+    "VerifiedPreTenantSubject",
 ]
 
 
@@ -179,3 +180,43 @@ class VerifiedActorContext:
     tenant_id: DomainId
     service_credential: ServiceCredentialKey
     external_subject: ExternalSubjectKey
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedPreTenantSubject:
+    """A verified Application + external subject with no Tenant context.
+
+    This is an **internal, detached** result of the pre-Tenant subject
+    verification seam (PR 23). It is not an authorization decision, never an
+    ``ALLOW``, and carries no Tenant, Role, Permission, entitlement or trusted
+    operator. Constructing the dataclass confers no authentication or
+    authority: a future privileged executor must independently establish that
+    the value came from the trusted verifier and must revalidate every
+    authoritative database fact inside its own transaction.
+
+    ``(existing_identity_id, existing_principal_id)`` is either
+    ``(None, None)`` (no active global binding) or both populated. It is never
+    serialized as a public DTO.
+
+    ``verified_at`` is the trusted, timezone-aware verification instant.
+    ``user_token_expires_at`` bounds the verified user proof; it is NOT a
+    reusable privilege lease.
+    """
+
+    application_id: DomainId
+    service_credential: ServiceCredentialKey
+    external_subject: ExternalSubjectKey
+    verified_at: datetime
+    user_token_expires_at: datetime
+    existing_identity_id: DomainId | None
+    existing_principal_id: DomainId | None
+
+    def __post_init__(self) -> None:
+        if (self.existing_identity_id is None) != (self.existing_principal_id is None):
+            raise ValueError(
+                "existing_identity_id and existing_principal_id must both be set or both be None"
+            )
+        for name in ("verified_at", "user_token_expires_at"):
+            value = getattr(self, name)
+            if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError(f"{name} must be timezone-aware")

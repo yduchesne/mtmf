@@ -98,34 +98,15 @@ class AuthenticatedActorContextService:
                 "an authentication instant must be timezone-aware",
             )
 
-        # Fresh, zero-cache attestation precedes acceptance of either token.
-        self._attestor.attest(self._service_profile)
-
-        service = self._verify(
-            service_token, self._service_verifier, self._service_profile, slot="service"
+        service, user = _verify_token_pair(
+            attestor=self._attestor,
+            service_token=service_token,
+            service_verifier=self._service_verifier,
+            service_profile=self._service_profile,
+            user_token=user_token,
+            user_verifier=self._user_verifier,
+            user_profile=self._user_profile,
         )
-        user = self._verify(user_token, self._user_verifier, self._user_profile, slot="user")
-        self._require_service_class(service)
-        self._require_user_class(user)
-        if service.azp != user.azp:
-            raise AuthenticationError(
-                AuthenticationFailure.CROSS_CLIENT,
-                "the service and user tokens were issued to different clients",
-            )
-        if (
-            service.issuer != self._service_profile.issuer
-            or user.issuer != self._user_profile.issuer
-        ):
-            raise AuthenticationError(
-                AuthenticationFailure.UNTRUSTED_ISSUER, "issuer did not match the trusted profile"
-            )
-        # Fresh, independently approved per-client expectation, resolved from the
-        # verified signed ``azp`` claims (never from headers or caller input).
-        # Same-client D1 means both tokens resolve to the same client; each is
-        # still attested explicitly so a mismatched claim can never bypass the
-        # approved-client check.
-        self._attestor.attest_client(self._service_profile, service.azp)
-        self._attestor.attest_client(self._user_profile, user.azp)
 
         service_key = ServiceCredentialKey(issuer=service.issuer, client_id=service.azp)
         subject_key = ExternalSubjectKey(issuer=user.issuer, subject=user.subject)
@@ -314,3 +295,56 @@ class AuthenticatedActorContextService:
                 AuthenticationFailure.ROOT_FORBIDDEN,
                 "root context is never available through ordinary D1 authentication",
             )
+
+
+def _verify_token_pair(
+    *,
+    attestor: ConfigurationAttestor,
+    service_token: str,
+    service_verifier: TokenVerifier,
+    service_profile: IssuerProfile,
+    user_token: str,
+    user_verifier: TokenVerifier,
+    user_profile: IssuerProfile,
+) -> tuple[VerifiedAccessToken, VerifiedAccessToken]:
+    """Verify one independently attested service/user token pair.
+
+    This is the single extracted PR 14 verification-pair sequence shared by
+    ordinary actor-context resolution and the PR 23 pre-Tenant subject seam.
+    It performs fresh zero-cache attestation before accepting either token,
+    verifies each token against its own approved profile, requires the
+    service/user token classes, exact same signed ``azp``, exact issuer
+    match, and fresh per-client attestation of both signed identifiers.
+
+    :returns: the verified ``(service, user)`` access tokens.
+    :raises AuthenticationError: on any attestation, trust, class or issuer
+        failure. No fallback or implicit cross-client mapping is performed.
+    """
+    # Fresh, zero-cache attestation precedes acceptance of either token.
+    attestor.attest(service_profile)
+
+    service = AuthenticatedActorContextService._verify(
+        service_token, service_verifier, service_profile, slot="service"
+    )
+    user = AuthenticatedActorContextService._verify(
+        user_token, user_verifier, user_profile, slot="user"
+    )
+    AuthenticatedActorContextService._require_service_class(service)
+    AuthenticatedActorContextService._require_user_class(user)
+    if service.azp != user.azp:
+        raise AuthenticationError(
+            AuthenticationFailure.CROSS_CLIENT,
+            "the service and user tokens were issued to different clients",
+        )
+    if service.issuer != service_profile.issuer or user.issuer != user_profile.issuer:
+        raise AuthenticationError(
+            AuthenticationFailure.UNTRUSTED_ISSUER, "issuer did not match the trusted profile"
+        )
+    # Fresh, independently approved per-client expectation, resolved from the
+    # verified signed ``azp`` claims (never from headers or caller input).
+    # Same-client D1 means both tokens resolve to the same client; each is
+    # still attested explicitly so a mismatched claim can never bypass the
+    # approved-client check.
+    attestor.attest_client(service_profile, service.azp)
+    attestor.attest_client(user_profile, user.azp)
+    return service, user
