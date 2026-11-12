@@ -22,7 +22,7 @@
 | Branch | `dev/pr24-pre-tenant` |
 | Branch tip before Amendment D | `b8dd4a03dd56a6decbd24c8cc0e0b8092922e1fc` (`docs(pr24p): address independent topology review findings`) |
 | Working tree before edits | clean |
-| Amendment D commit | `PENDING_COMMIT_SHA` (see follow-up evidence note below) |
+| Amendment D commit | `2406407` (`docs(pr24p): freeze revoked-subject-history admission read contract`) |
 | Source files inspected | `docs/DETAILED_PR_PLAN_AUTHORING_GUIDE.md`; `docs/ROADMAP_V01.md` §PR 24P; the PR 24P decision record, STOP report and pre-Tenant placeholder; `application/pre_tenant_subject.py`; `persistence/postgres/repositories.py`; `sql/v011/01`–`02`; `sql/v015/02`; `sql/v014/01`–`02`; `docs/ONBOARDING_ARCHITECTURE.md` §19; `PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md` |
 
 **Changed files (exact):**
