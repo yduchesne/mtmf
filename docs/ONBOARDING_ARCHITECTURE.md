@@ -18,6 +18,16 @@
 > onboarding runtime remains **NOT IMPLEMENTED** beyond PR 22A's isolated
 > operator-only persistence foundation; PRs 23, 24P, 22B, 24–26 own the remainder.
 >
+> **PR 23 status (DONE — INTERNAL PARTICIPANT ONLY):** the read-only pre-Tenant
+> subject verifier and the two owner-only, non-committing `0015` transaction
+> participants are implemented and verified on real PostgreSQL (global subject
+> semantics, rollback, concurrency, runtime denial, preserved 78-signature
+> allowlist). Genuine-token live acceptance L01–L04 passed, and the PR 14 live
+> regression passed, against the isolated Keycloak fixture configured with the
+> approved `mtmf-dev` realm and committed baseline/policy. No Tenant
+> creation/activation, quota/replay, registration/subscription, onboarding HTTP
+> or privileged executor is delivered, and PR 24P/22B remain required.
+>
 > **Operator prerequisite (NOT IMPLEMENTED):** the operator sign-in,
 > SYSTEM-scope assignment, global-target authorization, and privileged
 > execution adapter do not exist and are gated to the named **PR 24P**
@@ -401,7 +411,7 @@ invent a design or grant beyond the approved manifest.
 | --- | --- |
 | 22 | **Historical PARTIAL — BLOCKED.** Original composite split into 22A and 22B; do not mark the original composite DONE. |
 | 22A | **MERGED — ENTITLEMENT FOUNDATION ONLY.** Additive revision `0014`: operator-only entitlement grant/revoke/read, immutable grant provenance, terminal revocation, append-only event history, single-ACTIVE-per-Application, positive quota limit. No quota consumption, replay, Tenant commit, runtime grant or HTTP. |
-| 23 | **PLANNED.** Verified global Identity/Principal resolution/reuse, Tenant memberships, strict initial steward/admin transaction participant; caller-owned UnitOfWork, no independent ACTIVE Tenant commit. |
+| 23 | **DONE — INTERNAL PARTICIPANT ONLY.** Verified read-only pre-Tenant subject verifier plus additive revision `0015` owner-only, non-committing global-subject and strict first-steward transaction participants. No Tenant creation/activation, quota/replay, registration/subscription, HTTP, privileged executor, or new runtime grant. Genuine-token live acceptance and the PR 14 live regression passed against the approved `mtmf-dev` fixture. See `docs/pr-artifacts/pr-23/`. |
 | 24P | **PLANNED — TOPOLOGY APPROVAL REQUIRED.** Separate operator authorization/privileged audited execution and narrowly scoped pre-Tenant admission execution; no privileged `mtmf_runtime` grants or root impersonation. |
 | 22B | **BLOCKED UNTIL 23 + 24P.** One-transaction first-Tenant composite: entitlement quota consumption, replay/idempotency, initial verified steward, registration, subscription, ACTIVE transition and audit. |
 | 24 | **PLANNED AFTER 22B + 24P.** Authenticated versioned onboarding/management HTTP API: `ResolveOrProvisionTenant`, Tenant resolution/selection, Application lifecycle/registration and Tenant-scoped subscription management, strict DTOs/error envelope |

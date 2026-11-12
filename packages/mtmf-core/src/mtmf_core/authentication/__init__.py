@@ -10,6 +10,7 @@ from mtmf_core.authentication.contracts import (
     ServiceCredentialKey,
     VerifiedAccessToken,
     VerifiedActorContext,
+    VerifiedPreTenantSubject,
 )
 from mtmf_core.authentication.ports import ConfigurationAttestor, TokenVerifier
 
@@ -23,4 +24,5 @@ __all__ = [
     "TokenVerifier",
     "VerifiedAccessToken",
     "VerifiedActorContext",
+    "VerifiedPreTenantSubject",
 ]
