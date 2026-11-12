@@ -71,8 +71,21 @@ BEGIN
             ERRCODE = 'MT047',
             MESSAGE = 'onboarding_subject_prepare: the canonical root registry is not initialized';
     END IF;
-    IF new_principal_id_value = root_record.root_principal_id
-       OR new_identity_id_value = root_record.root_identity_id THEN
+    IF new_principal_id_value IN (
+           root_record.root_tenant_id,
+           root_record.root_principal_id,
+           root_record.root_identity_id
+       )
+       OR new_identity_id_value IN (
+           root_record.root_tenant_id,
+           root_record.root_principal_id,
+           root_record.root_identity_id
+       )
+       OR new_binding_id_value IN (
+           root_record.root_tenant_id,
+           root_record.root_principal_id,
+           root_record.root_identity_id
+       ) THEN
         RAISE EXCEPTION USING
             ERRCODE = 'MT047',
             MESSAGE = 'onboarding_subject_prepare: target UUIDs must not be the canonical root objects';
@@ -300,10 +313,38 @@ BEGIN
        OR EXISTS (SELECT 1 FROM mtmf.identity_tenant_membership WHERE tenant_id = tenant_id_value)
        OR EXISTS (SELECT 1 FROM mtmf.identity_role_assignment WHERE tenant_id = tenant_id_value)
        OR EXISTS (SELECT 1 FROM mtmf.application_tenant_registration WHERE tenant_id = tenant_id_value)
-       OR EXISTS (SELECT 1 FROM mtmf.tenant_application_subscription WHERE tenant_id = tenant_id_value) THEN
+       OR EXISTS (SELECT 1 FROM mtmf.tenant_application_subscription WHERE tenant_id = tenant_id_value)
+       OR EXISTS (
+           SELECT 1 FROM mtmf.organization
+           WHERE tenant_id = tenant_id_value
+       )
+       OR EXISTS (
+           SELECT 1 FROM mtmf.group
+           WHERE tenant_id = tenant_id_value
+       )
+       OR EXISTS (
+           SELECT 1 FROM mtmf.group_tenant_membership
+           WHERE tenant_id = tenant_id_value
+       )
+       OR EXISTS (
+           SELECT 1 FROM mtmf.group_role_assignment
+           WHERE tenant_id = tenant_id_value
+       )
+       OR EXISTS (
+           SELECT 1 FROM mtmf.role
+           WHERE defining_tenant_id = tenant_id_value
+       )
+       OR EXISTS (
+           SELECT 1 FROM mtmf.tenant_management_group
+           WHERE manager_tenant_id = tenant_id_value
+       )
+       OR EXISTS (
+           SELECT 1 FROM mtmf.tenant_management_group_membership
+           WHERE tenant_id = tenant_id_value
+       ) THEN
         RAISE EXCEPTION USING
             ERRCODE = 'MT048',
-            MESSAGE = 'onboarding_initial_steward_attach: the new Tenant already contains stewardship, membership, Role, registration or subscription state';
+            MESSAGE = 'onboarding_initial_steward_attach: the new Tenant already contains prohibited security or management state';
     END IF;
 
     -- The protected built-in Tenant Administrator Role must already exist in the

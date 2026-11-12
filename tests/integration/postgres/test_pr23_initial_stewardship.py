@@ -1109,3 +1109,359 @@ def test_p23_i22_structural_sqlstates_stay_fail_closed() -> None:
             "PersistenceTransactionError",
             "PersistenceIntegrityError",
         }
+
+
+# --- PR 23 independent-review fixup: F1/F2 acceptance ----------------------
+
+_SYSTEM_TENANT_MANAGEMENT_URN = "urn:mtmf:iam:roles:system:tenant-management"
+
+
+def _tenant_defined_role_urn(tenant: str) -> str:
+    return f"urn:mtmf:iam:roles:tenant:{tenant}:pr23-fixup-dirty"
+
+
+def _seed_dirty_tenant_state(
+    owner: psycopg.Connection,
+    kind: str,
+    tenant: str,
+    identity: str,
+) -> tuple[str, tuple[object, ...]]:
+    """Seed one prohibited current-state category; return its intact-state query."""
+    if kind == "organization":
+        organization = _uuid()
+        owner.execute(
+            "INSERT INTO mtmf.organization "
+            "(id, tenant_id, name, owner_identity_id, deletion_status) "
+            "VALUES (%s, %s, 'Dirty Org', %s, 2)",
+            (organization, tenant, identity),
+        )
+        return "SELECT count(*) FROM mtmf.organization WHERE tenant_id = %s", (tenant,)
+    if kind == "group":
+        group = _uuid()
+        owner.execute(
+            "INSERT INTO mtmf.group (id, tenant_id, name, deletion_status) "
+            "VALUES (%s, %s, 'Dirty Group', 2)",
+            (group, tenant),
+        )
+        return "SELECT count(*) FROM mtmf.group WHERE tenant_id = %s", (tenant,)
+    if kind == "group_tenant_membership":
+        group = _uuid()
+        owner.execute(
+            "INSERT INTO mtmf.group (id, tenant_id, name, deletion_status) "
+            "VALUES (%s, %s, 'Dirty Group', 2)",
+            (group, tenant),
+        )
+        owner.execute(
+            "INSERT INTO mtmf.group_tenant_membership (group_id, tenant_id) VALUES (%s, %s)",
+            (group, tenant),
+        )
+        return "SELECT count(*) FROM mtmf.group_tenant_membership WHERE tenant_id = %s", (tenant,)
+    if kind == "group_role_assignment":
+        group = _uuid()
+        owner.execute(
+            "INSERT INTO mtmf.group (id, tenant_id, name, deletion_status) "
+            "VALUES (%s, %s, 'Dirty Group', 2)",
+            (group, tenant),
+        )
+        owner.execute(
+            "INSERT INTO mtmf.group_tenant_membership (group_id, tenant_id) VALUES (%s, %s)",
+            (group, tenant),
+        )
+        owner.execute(
+            "INSERT INTO mtmf.group_role_assignment "
+            "(id, tenant_id, group_id, role_urn, organization_id) "
+            "VALUES (%s, %s, %s, %s, NULL)",
+            (_uuid(), tenant, group, _TENANT_ADMIN_URN),
+        )
+        return "SELECT count(*) FROM mtmf.group_role_assignment WHERE tenant_id = %s", (tenant,)
+    if kind == "tenant_defined_role":
+        owner.execute(
+            "INSERT INTO mtmf.role (urn, name, defining_tenant_id) "
+            "VALUES (%s, 'Dirty Tenant Role', %s)",
+            (_tenant_defined_role_urn(tenant), tenant),
+        )
+        return "SELECT count(*) FROM mtmf.role WHERE defining_tenant_id = %s", (tenant,)
+    if kind == "tenant_as_manager":
+        owner.execute(
+            "INSERT INTO mtmf.tenant_management_group "
+            "(id, manager_tenant_id, management_role_urn, scope) "
+            "VALUES (%s, %s, %s, 1)",
+            (_uuid(), tenant, _SYSTEM_TENANT_MANAGEMENT_URN),
+        )
+        return (
+            "SELECT count(*) FROM mtmf.tenant_management_group WHERE manager_tenant_id = %s",
+            (tenant,),
+        )
+    if kind == "tenant_as_managed_target":
+        manager_tenant = _insert_provisioning_tenant(owner, identity)
+        management_group = _uuid()
+        owner.execute(
+            "INSERT INTO mtmf.tenant_management_group "
+            "(id, manager_tenant_id, management_role_urn, scope) "
+            "VALUES (%s, %s, %s, 1)",
+            (management_group, manager_tenant, _SYSTEM_TENANT_MANAGEMENT_URN),
+        )
+        owner.execute(
+            "INSERT INTO mtmf.tenant_management_group_membership "
+            "(id, management_group_id, tenant_id) "
+            "VALUES (%s, %s, %s)",
+            (_uuid(), management_group, tenant),
+        )
+        return (
+            "SELECT count(*) FROM mtmf.tenant_management_group_membership WHERE tenant_id = %s",
+            (tenant,),
+        )
+    raise AssertionError(f"unknown F1 category {kind!r}")
+
+
+@pytest.mark.parametrize(
+    "kind",
+    (
+        "organization",
+        "group",
+        "group_tenant_membership",
+        "group_role_assignment",
+        "tenant_defined_role",
+        "tenant_as_manager",
+        "tenant_as_managed_target",
+    ),
+)
+def test_p23_fixup_f1_fresh_tenant_graph_rejected(
+    db: psycopg.Connection, migrator_config: PostgresConfig, kind: str
+) -> None:
+    _bootstrap_root(db)
+    subject = f"f1-{kind}"
+    with _owner(migrator_config) as owner:
+        _, _, identity, _ = _prepare(owner, subject=subject)
+        tenant = _insert_provisioning_tenant(owner, identity)
+        intact_statement, intact_params = _seed_dirty_tenant_state(owner, kind, tenant, identity)
+        assert owner.execute(intact_statement, intact_params).fetchone()[0] >= 1
+
+        with _savepoint(owner):
+            with pytest.raises(psycopg.errors.DatabaseError) as exc:
+                _attach(owner, tenant, identity, subject=subject)
+            assert _raise_sqlstate(exc) == "MT048"
+
+        # The seeded dirty state survives, but no B2 write was staged.
+        assert owner.execute(intact_statement, intact_params).fetchone()[0] >= 1
+        assert owner.execute(
+            "SELECT scope, lifecycle FROM mtmf.tenant WHERE id = %s", (tenant,)
+        ).fetchone() == (2, 0)
+        for statement in (
+            "SELECT count(*) FROM mtmf.principal_tenant_membership WHERE tenant_id = %s",
+            "SELECT count(*) FROM mtmf.identity_tenant_membership WHERE tenant_id = %s",
+            "SELECT count(*) FROM mtmf.identity_role_assignment WHERE tenant_id = %s",
+            "SELECT count(*) FROM mtmf.stewardship_designation WHERE tenant_id = %s",
+            "SELECT count(*) FROM mtmf.stewardship_audit "
+            "WHERE tenant_id = %s AND operation = 'INITIAL_ONBOARDING'",
+        ):
+            assert owner.execute(statement, (tenant,)).fetchone()[0] == 0, statement
+        owner.rollback()
+
+    assert (
+        db.execute("SELECT count(*) FROM mtmf.tenant WHERE id = %s", (tenant,)).fetchone()[0] == 0
+    )
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.external_subject_identity "
+            "WHERE issuer = %s AND subject = %s",
+            (_ISSUER, subject),
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_p23_fixup_f1_cross_tenant_state_is_not_inherited(
+    db: psycopg.Connection, migrator_config: PostgresConfig
+) -> None:
+    _bootstrap_root(db)
+    subject = "f1-cross-tenant-positive"
+    with _owner(migrator_config) as owner:
+        _, _, identity, _ = _prepare(owner, subject=subject)
+        tenant_a = _insert_provisioning_tenant(owner, identity)
+        organization = _uuid()
+        owner.execute(
+            "INSERT INTO mtmf.organization "
+            "(id, tenant_id, name, owner_identity_id, deletion_status) "
+            "VALUES (%s, %s, 'Tenant A Org', %s, 2)",
+            (organization, tenant_a, identity),
+        )
+        group = _uuid()
+        owner.execute(
+            "INSERT INTO mtmf.group (id, tenant_id, name, deletion_status) "
+            "VALUES (%s, %s, 'Tenant A Group', 2)",
+            (group, tenant_a),
+        )
+        owner.execute(
+            "INSERT INTO mtmf.group_tenant_membership (group_id, tenant_id) VALUES (%s, %s)",
+            (group, tenant_a),
+        )
+        owner.execute(
+            "INSERT INTO mtmf.role (urn, name, defining_tenant_id) "
+            "VALUES (%s, 'Tenant A Role', %s)",
+            (_tenant_defined_role_urn(tenant_a), tenant_a),
+        )
+
+        tenant_b = _insert_provisioning_tenant(owner, identity)
+        result = _attach(owner, tenant_b, identity, subject=subject)
+        assert result["tenant_id"] == tenant_b
+
+        # Tenant B received the exact normal first-steward graph.
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.principal_tenant_membership WHERE tenant_id = %s",
+                (tenant_b,),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.identity_tenant_membership WHERE tenant_id = %s",
+                (tenant_b,),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.identity_role_assignment WHERE tenant_id = %s",
+                (tenant_b,),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.stewardship_designation WHERE tenant_id = %s",
+                (tenant_b,),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.stewardship_audit "
+                "WHERE tenant_id = %s AND operation = 'INITIAL_ONBOARDING'",
+                (tenant_b,),
+            ).fetchone()[0]
+            == 1
+        )
+
+        # Tenant A's unrelated current state is untouched and was not inherited.
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.organization WHERE tenant_id = %s", (tenant_a,)
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.group WHERE tenant_id = %s", (tenant_a,)
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.role WHERE defining_tenant_id = %s", (tenant_a,)
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.stewardship_designation WHERE tenant_id = %s",
+                (tenant_a,),
+            ).fetchone()[0]
+            == 0
+        )
+        owner.rollback()
+
+
+_F2_CASES = [
+    (slot, root_key)
+    for slot in ("principal", "identity", "binding")
+    for root_key in ("tenant", "principal", "identity")
+]
+
+
+@pytest.mark.parametrize(("slot", "root_key"), _F2_CASES)
+def test_p23_fixup_f2_canonical_root_uuid_cross_type_rejected(
+    db: psycopg.Connection,
+    migrator_config: PostgresConfig,
+    slot: str,
+    root_key: str,
+) -> None:
+    root = _bootstrap_root(db)
+    subject = f"f2-{slot}-{root_key}"
+    root_values = set(root.values())
+    while True:
+        principal, identity, binding = _uuid(), _uuid(), _uuid()
+        if len({principal, identity, binding}) == 3 and not (
+            {principal, identity, binding} & root_values
+        ):
+            break
+    targets = {"principal": principal, "identity": identity, "binding": binding}
+    targets[slot] = root[root_key]
+
+    with _owner(migrator_config) as owner:
+        with pytest.raises(psycopg.errors.DatabaseError) as exc:
+            _prepare(
+                owner,
+                subject=subject,
+                principal=targets["principal"],
+                identity=targets["identity"],
+                binding=targets["binding"],
+            )
+        assert _raise_sqlstate(exc) == "MT047"
+        owner.rollback()
+
+    # No B1 mutation, no subject row, canonical root unchanged.
+    assert db.execute("SELECT count(*) FROM mtmf.principal").fetchone()[0] == 1
+    assert db.execute("SELECT count(*) FROM mtmf.identity").fetchone()[0] == 1
+    assert db.execute("SELECT count(*) FROM mtmf.tenant").fetchone()[0] == 1
+    assert db.execute("SELECT count(*) FROM mtmf.external_subject_identity").fetchone()[0] == 0
+    assert (
+        db.execute(
+            "SELECT count(*) FROM mtmf.stewardship_audit WHERE operation = 'BOOTSTRAP'"
+        ).fetchone()[0]
+        == 1
+    )
+    assert db.execute(
+        "SELECT root_tenant_id, root_principal_id, root_identity_id FROM mtmf.root_registry"
+    ).fetchone() == (
+        uuid.UUID(root["tenant"]),
+        uuid.UUID(root["principal"]),
+        uuid.UUID(root["identity"]),
+    )
+
+
+def test_p23_fixup_f2_ordinary_non_root_uuids_create_and_reuse(
+    db: psycopg.Connection, migrator_config: PostgresConfig
+) -> None:
+    _bootstrap_root(db)
+    subject = "f2-positive-control"
+    with _owner(migrator_config) as owner:
+        first, principal, identity, _ = _prepare(owner, subject=subject)
+        assert first == {"status": "CREATED", "identity_id": identity, "principal_id": principal}
+        second, other_principal, other_identity, other_binding = _prepare(owner, subject=subject)
+        assert second == {
+            "status": "EXISTING",
+            "identity_id": identity,
+            "principal_id": principal,
+        }
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.principal WHERE id = %s", (other_principal,)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.identity WHERE id = %s", (other_identity,)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM mtmf.external_subject_identity WHERE id = %s",
+                (other_binding,),
+            ).fetchone()[0]
+            == 0
+        )
+        owner.rollback()
