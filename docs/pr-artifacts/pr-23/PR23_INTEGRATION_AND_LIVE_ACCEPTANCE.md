@@ -11,19 +11,38 @@
   - runtime `mtmf_runtime` (denial subject; no `SET ROLE`)
 - Migration head: `0015`
 - Runtime EXECUTE manifest: `78`
+- Rust: rustup stable `1.99.1` (cargo/rustfmt/clippy) installed into the
+  repository-supported `~/.cargo/bin` location.
 
 ## Canonical gates
 
 | Gate | Command | Result |
 | --- | --- | --- |
 | Workspace | `uv sync --locked` | PASS |
-| QA | `./build.sh --qa` | **PASS — 2201 passed, 177 skipped, coverage 90.18%** |
+| QA | `./build.sh --qa` | **PASS — 2490 passed, 0 skipped, coverage 90.30%** |
 | Security | `./build.sh --sec` | **PASS — 0 findings** |
-| Rust | `./build.sh --rust` | **BLOCKED-ENV — `cargo` not installed in this environment** |
+| Rust | `./build.sh --rust` | **PASS** (fmt, clippy `-D warnings`, cargo test, maturin develop, native probe, focused boundary/differential tests, clean wheel, benchmark smoke) |
 | Integration | `./build.sh --integration` | **PASS — 628 passed, 94 skipped** |
 | Role verifier | `uv run python scripts/mtmf-provision-roles.py --verify` | **PASS** |
 | Diff hygiene | `git diff --check` | PASS |
 | Object integrity | `git fsck --full` | PASS |
+
+## QA count reconciliation
+
+The earlier 2201 passed / 177 skipped result was caused by the native
+`_mtmf_permission_engine` module not being installed: the QA gate skipped the
+native/Rust-conditioned unit tests and suppressed their parametrized
+differential cases. The same QA gate was then run on unmodified `main` in the
+same environment with the same toolchain:
+
+| Tree | Command | Result |
+| --- | --- | --- |
+| `main` @ `1bb46af` (clean worktree) | `./build.sh --qa` | **2472 passed, 0 skipped, coverage 90.32%** |
+| PR 23 branch | `./build.sh --qa` | **2490 passed, 0 skipped, coverage 90.30%** |
+
+`2472 + 18 = 2490`; the 18 additional tests are exactly the new PR 23 unit
+cases A-U01…A-U18. The `main` result matches the PR 22A reported 2472 passing
+unit tests. No test was unintentionally excluded.
 
 ## Feature acceptance — unit (executed)
 
@@ -67,25 +86,56 @@ No test commits an ACTIVE Tenant through PR 23. The only ACTIVE Tenant in
 P23-I20 is created by the existing approved PR 10 test helper
 (`designate_steward` + `activate_tenant`), not by the v015 participants.
 
-## Live token acceptance — BLOCKED-LIVE
+## Live token acceptance — executed
 
-`tests/integration/postgres/test_pr23_live_pre_tenant_subject.py` is opt-in
-(`MTMF_PR14_LIVE=1`) and was exercised against the isolated PR 14 Keycloak
-fixture (`dev/keycloak/compose.yaml`, realm `mtmf-pr14-dev`, TLS on
-`https://127.0.0.1:28443`, `setup-realm.py` executed).
+Fixture selection was corrected to the approved `mtmf-dev` realm topology; no
+trust baseline or authentication policy was changed. Diagnosis:
+[PR23_ATTESTATION_FIXTURE_DIAGNOSIS.md](PR23_ATTESTATION_FIXTURE_DIAGNOSIS.md).
 
-Result: **4 failed, 0 skipped** with `AuthenticationFailure.ATTESTATION_DRIFT`
-before token-class evaluation. Root cause is a pre-existing fixture/baseline
-mismatch: the live realm contains `mtmf-attestation-reader` and
-`mtmf-evidence-same-client-b`, which are absent from the committed
-`dev/keycloak/expected-realm-security.json`. The unmodified PR 14 live test
-(`test_pr14_live_actor_context.py::test_dc07_v01_positive_real_tokens_and_postgres`)
-fails with the identical `ATTESTATION_DRIFT` on the baseline commit, proving this
-is not a PR 23 regression.
+Configuration:
 
-No alternative IdP, attestation bypass, or regenerated trust baseline was
-substituted. Per plan STOP-08, genuine-token feature acceptance is therefore
-**not claimed**.
+```text
+Issuer URL:                 https://127.0.0.1:28443/realms/mtmf-dev
+Realm:                      mtmf-dev
+Realm-security baseline:    dev/keycloak/expected-realm-security.json
+Expected-client policy:     dev/keycloak/expected-client-policy.json
+Realm match:                YES
+realmSecurity match:        YES
+clientScopes match:         YES
+same-client policy match:   YES
+same-client-b policy match: YES
+```
 
-Normal `./build.sh --integration` reports the four live cases as skipped
-(documented opt-in), and skipped tests are not feature acceptance evidence.
+Commands (secrets supplied from the uncommitted `/tmp/mtmf-pr14-kc.env`):
+
+```bash
+podman-compose -p mtmf-pr14-keycloak -f dev/keycloak/compose.yaml \
+  --env-file /tmp/mtmf-pr14-kc.env up -d
+uv run --no-sync python scripts/pr14-keycloak-evidence.py wait
+set -a; . /tmp/mtmf-pr14-kc.env; set +a
+uv run --no-sync python dev/keycloak/setup-realm.py --realm mtmf-dev
+
+SSL_CERT_FILE=/tmp/mtmf-pr14-kc-tls/server.crt MTMF_PR14_LIVE=1 \
+  uv run --no-sync pytest \
+  tests/integration/postgres/test_pr23_live_pre_tenant_subject.py -q -rs --no-cov
+
+SSL_CERT_FILE=/tmp/mtmf-pr14-kc-tls/server.crt MTMF_PR14_LIVE=1 \
+MTMF_AUTH_ADMIN_REALM=mtmf-dev \
+  uv run --no-sync pytest \
+  tests/integration/postgres/test_pr14_live_actor_context.py -q -rs --no-cov
+```
+
+Results:
+
+| Suite | Result |
+| --- | --- |
+| PR 23 L01–L04 | **4 passed, 0 skipped** |
+| PR 14 live regression | **22 passed, 0 skipped** |
+
+L01–L04 prove valid service+user tokens with no Identity binding/Tenant,
+existing global binding with exact UUIDs, wrong-class/cross-client rejection
+without mutation, and ordinary actor resolution still requiring an eligible
+Tenant.
+
+The four PR 23 live cases remain opt-in in ordinary `--integration` runs by
+design; when `MTMF_PR14_LIVE=1` they execute with zero skips.

@@ -7,7 +7,10 @@ does not require live Keycloak. With the flag set there are no skips.
 
 The test constructs the pre-Tenant verifier from the SAME approved
 ``IssuerConfig``/attestor/verifier components used by the PR 14 actor-context
-composition. It never fabricates a ``VerifiedAccessToken`` and never uses
+composition. It targets the isolated Keycloak fixture configured with the
+approved ``mtmf-dev`` realm, which reproduces the committed
+``expected-realm-security.json`` / ``expected-client-policy.json`` trust
+configuration. It never fabricates a ``VerifiedAccessToken`` and never uses
 ``decode_unverified`` to authenticate the application; the unverified decode is
 used only to seed a privileged fixture binding for L02.
 """
@@ -46,7 +49,7 @@ pytestmark = pytest.mark.skipif(
     reason="live Keycloak+PostgreSQL acceptance is opt-in (set MTMF_PR14_LIVE=1)",
 )
 
-REALM = os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-pr14-dev")
+REALM = os.environ.get("MTMF_AUTH_ADMIN_REALM", "mtmf-dev")
 SHARED_AUDIENCE = "mtmf-same-client-api"
 SAME_CLIENT = "mtmf-evidence-same-client"
 SAME_SECRET = "mtmf-evidence-same-client-dev-secret"

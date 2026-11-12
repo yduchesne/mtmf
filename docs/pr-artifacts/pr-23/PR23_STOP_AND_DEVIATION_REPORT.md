@@ -1,54 +1,66 @@
 # PR 23 — STOP and Deviation Report
 
-## Triggered STOPs
+**Final status: no active STOP. Verdict `PR23_COMPLETE_INTERNAL_ONLY`
+(“DONE — INTERNAL PARTICIPANT ONLY”).**
 
-| STOP | Trigger | Status and evidence |
-| --- | --- | --- |
-| STOP-08 TEST | Required genuine-token live acceptance could not pass | **FIRED — BLOCKED-LIVE.** The isolated PR 14 Keycloak fixture (`realm mtmf-pr14-dev`) drifts from the committed `dev/keycloak/expected-realm-security.json`: the live realm contains `mtmf-attestation-reader` and `mtmf-evidence-same-client-b`, absent from the baseline. `test_pr23_live_pre_tenant_subject.py` fails 4/4 with `AuthenticationFailure.ATTESTATION_DRIFT` before token-class checks. `test_pr14_live_actor_context.py::test_dc07_v01_positive_real_tokens_and_postgres` fails identically on unmodified baseline `1bb46af`, classified **deterministic pre-existing fixture failure**, not a PR 23 regression. |
-| STOP-08 TEST | Rust canonical gate unavailable | **FIRED — BLOCKED-ENV.** `cargo` is not installed on PATH and no Rust toolchain exists in the environment; `./build.sh --rust` cannot execute. This is an environment/harness limitation; no Rust source or semantics were changed. |
+The two issues that previously blocked acceptance were resolved without changing
+authentication policy, the committed trust baseline, or any security-relevant
+Keycloak setting.
 
-No other STOP fired. In particular:
+## Resolved STOP-08 (live acceptance)
 
-- STOP-00 did not fire: baseline SHA, `git fsck --full`, and migration head
-  matched the plan.
-- STOP-01 did not fire: no owner/migrator credential was added to
-  `PostgresMtmfSpi`, no runtime grant or `SECURITY DEFINER` proxy was added.
-- STOP-02 did not fire: the PR 14 verification policy was reused unchanged.
-- STOP-03 did not fire: conflicting/revoked/inactive/root subjects fail closed.
-- STOP-04 did not fire: `MT047`/`MT048` were unused.
-- STOP-05 did not fire: the v008 constraint name and guards matched.
-- STOP-06 did not fire: both participants are non-committing functions in one
-  caller-owned PostgreSQL transaction.
-- STOP-07 did not fire: concurrency and rollback tests passed; no deadlock,
-  orphan, partial commit, or duplicate ACTIVE binding was observed.
-- STOP-09/10 did not fire: scope remained PR 23.
+- **Original symptom:** PR 23 L01–L04 failed 4/4 with
+  `AuthenticationFailure.ATTESTATION_DRIFT`.
+- **Exact cause:** the committed `dev/keycloak/expected-realm-security.json`
+  baseline names realm `mtmf-dev`; the live fixture was
+  `mtmf-pr14-dev`. Field-by-field comparison showed:
+  - `realm`: `mtmf-dev` vs `mtmf-pr14-dev` — **mismatch**;
+  - `realmSecurity`: identical — no difference;
+  - `clientScopes`: identical — no difference.
+  The attestor intentionally excludes the realm client inventory and verifies
+  admitted clients separately against `expected-client-policy.json`.
+- **Resolution:** fixture selection only. The existing isolated Keycloak was
+  configured with `dev/keycloak/setup-realm.py --realm mtmf-dev`, reproducing the
+  approved realm name, realm-security projection, client scopes, and approved
+  client projections. No baseline file, client policy, issuer-validation rule,
+  attestation rule, or Keycloak security setting was modified.
+- **Evidence:** PR 23 L01–L04 **4 passed, 0 skipped**; PR 14 live regression
+  **22 passed, 0 skipped**. Diagnosis:
+  [PR23_ATTESTATION_FIXTURE_DIAGNOSIS.md](PR23_ATTESTATION_FIXTURE_DIAGNOSIS.md).
 
-## What was completed
+## Resolved environment failure (Rust gate)
 
-All code, SQL, migration, unit tests, real-PostgreSQL feature tests, docs, and
-security/privilege evidence described in
-[PR23_BASELINE_AND_SCOPE_RECONCILIATION.md](PR23_BASELINE_AND_SCOPE_RECONCILIATION.md).
-QA, security, integration, and role-verification gates passed.
+- **Original symptom:** `./build.sh --rust` could not start because `cargo` was
+  absent.
+- **Resolution:** installed the repository-supported Rust toolchain via rustup
+  (stable `1.99.1`, rustfmt, clippy) at the documented `~/.cargo/bin` location.
+- **Evidence:** `./build.sh --rust` passed (fmt, clippy `-D warnings`, cargo test,
+  maturin develop, installed-native probe, focused boundary/differential tests,
+  clean wheel build/install/use, benchmark smoke).
 
-## Exactly what remains blocked
+## QA count reconciliation (no unresolved deviation)
 
-1. Genuine Keycloak signed-token acceptance for L01–L04. The harness runs and
-   genuinely obtains tokens, but the independent attestation baseline for the
-   fixture is stale; no alternative baseline or IdP setup was invented.
-2. The Rust gate in this environment, unrelated to PR 23 source changes.
+The earlier 2201 passed / 177 skipped QA result was caused by the missing native
+`_mtmf_permission_engine` module, which skips native/Rust-conditioned tests and
+suppresses their parametrized differential cases. With the toolchain installed,
+the same QA gate reports:
 
-## Decision required from the human
+- unmodified `main` @ `1bb46af` (clean worktree): **2472 passed, 0 skipped,
+  90.32%**;
+- PR 23 branch: **2490 passed, 0 skipped, 90.30%**.
 
-**D1 — Live fixture baseline reconciliation.** Confirm whether the PR 14
-Keycloak evidence fixture and its committed attestation baseline should be
-reconciled (including whether `mtmf-attestation-reader` and
-`mtmf-evidence-same-client-b` are approved baseline clients), or provide a
-separately approved live fixture/baseline for PR 23 genuine-token acceptance.
-Until that decision, PR 23 must not be reported DONE.
+The delta is exactly the 18 new PR 23 unit cases. The `main` count matches the
+PR 22A reported 2472. No test was unintentionally excluded.
 
-## Safe rollback
+## Other STOPs
 
-No uncommitted privileged work remains. The local PostgreSQL container and the
-isolated PR 14 Keycloak evidence container are development-only and can be
-stopped with their project-scoped tooling; no repository history or protected
-seed was modified.
+STOP-00, STOP-01, STOP-02, STOP-03, STOP-04, STOP-05, STOP-06, STOP-07, STOP-09,
+and STOP-10 did not fire. See
+[PR23_SECURITY_AND_PRIVILEGE_REPORT.md](PR23_SECURITY_AND_PRIVILEGE_REPORT.md)
+for the privilege/root/audit evidence and
+[PR23_FINAL_ACCEPTANCE_REPORT.md](PR23_FINAL_ACCEPTANCE_REPORT.md) for the final
+gate checklist.
+
+## Push status
+
+No push and no pull request. Explicit maintainer authorization is required.

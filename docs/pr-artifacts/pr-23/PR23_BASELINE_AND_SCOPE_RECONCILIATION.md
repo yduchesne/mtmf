@@ -31,7 +31,7 @@ was present.
 
 | # | §4 capability | Baseline classification | After PR 23 |
 | --- | --- | --- | --- |
-| 1 | Provider-neutral immutable pre-Tenant verified-subject result | NOT-STARTED | DONE+VERIFIED (unit/real-PostgreSQL; live token proof BLOCKED-LIVE) |
+| 1 | Provider-neutral immutable pre-Tenant verified-subject result | NOT-STARTED | DONE+VERIFIED (unit, real PostgreSQL, and live genuine-token proof) |
 | 2 | Shared PR 14 token-pair verification reuse | DONE+VERIFIED (inline in `AuthenticatedActorContextService`) | DONE+VERIFIED (extracted `_verify_token_pair`; old tests unchanged) |
 | 3 | Read-only Application + optional global Identity/Principal resolution | NOT-STARTED | DONE+VERIFIED |
 | 4 | Owner-only global subject resolution/creation SQL participant | NOT-STARTED | DONE+VERIFIED |
@@ -40,8 +40,8 @@ was present.
 | 7 | Test-only single-transaction owner harness | NOT-STARTED | DONE+VERIFIED |
 | 8 | Unit acceptance A-U01…A-U18 | NOT-STARTED | DONE+VERIFIED |
 | 9 | Real-PostgreSQL acceptance P23-I01…P23-I22 | NOT-STARTED | DONE+VERIFIED |
-| 10 | Genuine Keycloak L01…L04 | NOT-STARTED | **BLOCKED-LIVE** (pre-existing fixture drift) |
-| 11 | Rust native gate | DONE on prior PRs | **BLOCKED-ENV** (no Rust toolchain) |
+| 10 | Genuine Keycloak L01…L04 | NOT-STARTED | DONE+VERIFIED (4 passed; approved `mtmf-dev` fixture selection) |
+| 11 | Rust native gate | DONE on prior PRs | DONE+VERIFIED (rustup stable 1.99.1; `./build.sh --rust` passed) |
 
 ## Existing assets reused (not recreated)
 
