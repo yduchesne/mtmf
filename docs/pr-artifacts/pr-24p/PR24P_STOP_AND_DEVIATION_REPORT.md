@@ -157,6 +157,30 @@ socket, credential, container, test or benchmark is created or run.
 **All §9 Gate A/B human decisions remain unanswered.**
 `STOP-P24P-TOPOLOGY` remains ACTIVE.
 
+## 2F. PR #77 callback review fixup — four documentation corrections
+
+The review recorded at
+[PR #77 discussion](https://github.com/yduchesne/mtmf/pull/77#issuecomment-6857722638)
+identified four doc-only issues. The revised §5B.6A and development
+profile now freeze: (1) valid `iss`/`session_state` and OAuth error
+responses with duplicate rejection and safe extension handling;
+(2) unavoidable browser delivery of a one-time authorization code,
+with no-store/no-referrer clean completion and no code reflection/logging;
+(3) **no** reuse of historical interactive-login proof—unattended
+startup reports only infrastructure readiness, while each operator
+session requires a genuine new login; and (4) the explicit
+`serviceAccountsEnabled=true` dual-use capability of the
+existing confidential Keycloak client, with service-token
+negative authorization acceptance and restricted CLI secret custody.
+
+The updated CB01–CB08 evidence remains NOT EXECUTED. The four-file
+documentation-only fixup creates no privileged implementation,
+roles, grants, migrations, sockets, secrets, tokens or benchmarks.
+All Gate A/B human approvals and deployment values remain unresolved.
+See
+[PR24P_PR77_OAUTH_CALLBACK_REVIEW_FIXUP_REPORT.md](PR24P_PR77_OAUTH_CALLBACK_REVIEW_FIXUP_REPORT.md).
+`STOP-P24P-TOPOLOGY` remains ACTIVE.
+
 ## 3. Zero unapproved changes
 
 Phase 0 changed **documentation only**, inside `docs/pr-artifacts/pr-24p/`:

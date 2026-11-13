@@ -233,20 +233,40 @@ host-wide binding or persistent worker TCP listener.
 
 The CLI uses one authorization-code request with PKCE S256, random
 256-bit state, OIDC nonce, exact localhost redirect, 120-second timeout,
-and one-use callback. It exchanges the code over canonical HTTPS with
+and one-use callback (including exact Keycloak `iss` verification and
+bounded opaque `session_state`). Ignore safe unknown OAuth extension
+parameters per RFC 6749; reject duplicate names, malformed fields and
+mixed `error`/`code` responses. It exchanges the code over canonical HTTPS with
 confidential-client HTTP Basic and a file-mounted secret; validates
 genuine ID token subject/nonce, then sends the verified user access
 token only over the operator Unix socket for **independent** worker
 JWT and SYSTEM Role authorization. Do not enable direct/password grants,
 device exchange, alternate port/redirect, impersonation, or token logging.
+The transient authorization code must appear in the browser's redirect
+URL under Authorization Code Flow; it must not be reflected, logged,
+stored or forwarded except to the single authorized token exchange.
+A no-store/no-referrer HTTP `303` to a clean same-origin `/complete`
+page clears the visible callback query; no token or secret goes into
+the browser. The Keycloak client is deliberately **dual-use**
+(`serviceAccountsEnabled=true` and `standardFlowEnabled=true`); its
+file-mounted secret can also mint service-credentials tokens. The
+worker must independently reject those service-class tokens, even
+with a valid issuer/audience/azp. Failure is `STOP-AUTH-PROFILE`.
+
 Wrong state/nonce, missing host/VM loopback forwarding, externally
 reachable callback, failed PKCE/Basic, or persistent port is
 `STOP-AUTH-PROFILE`. Callback listener and secret mount are torn down on
 success, failure or timeout. On each claimed platform, a real browser
 login, signed token and negative-control tests must pass before
-privileged deployment readiness. Ordinary unattended `up` never
-opens a browser or automatically logs in; operator login is on demand.
-§5B.6A is normative for the complete wire/secret/lifecycle contract.
+the **current authenticated operator session** is ready.
+No cached/historical interactive-login attestation or environment
+fingerprint is authorized. Every unattended `up` rechecks deployed
+noninteractive UID/socket/mount/grant/issuer conditions, but only
+reports infrastructure readiness, not a verified operator session.
+Ordinary unattended `up` never opens a browser or logs in.
+A fresh genuine interactive operator login is on demand for each
+session. §5B.6A is normative for the exact parser, trust and
+wire/secret/lifecycle contract.
 
 ## Three ordered PR 24P gates (proposed, NOT approved)
 

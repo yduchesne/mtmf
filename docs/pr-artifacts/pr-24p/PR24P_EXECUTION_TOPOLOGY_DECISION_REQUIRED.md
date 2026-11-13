@@ -22,6 +22,13 @@ created.**
 | **D** | Revoked-only external subject history was indistinguishable from a new subject in the proposed pre-Tenant admission read; §5A also mentioned unsupported entitlement expiration. | Freeze three-argument history-aware read, historical precedence, internal result, handler mapping, and remove unsupported expiry reference; no implementation or approval. See **§5A.7**. |
 | **E** | Field 5 prohibited a development initializer from creating a SYSTEM operator; local deterministic bootstrap cannot be automated without an approved narrow exception. | Amend Field 5 only for an opt-in, canonical-development, one-shot **dedicated operator** fixture; new §5B freezes identity/provenance, installation order, idempotency, deployment isolation, negative tests and production exclusion; §8/§9/§11 explicitly require separate human approval. No code or deployment is changed. |
 
+**PR #77 independent OAuth-contract review fixup (documentation only).**
+The four documented callback findings are resolved as proposed text:
+valid Keycloak `iss`/`session_state` handling, achievable browser-code
+secrecy, no reuse of stale interactive-login evidence, and explicit
+dual-use confidential-client risk. This is not an implementation or
+a new approval. See §5B.6A and the PR #77 review-fixup evidence report.
+
 **Amendment E portability independent-review fixup (documentation only).**
 Review of commit `b291315` found two P1 design gaps: a pre-implementation
 approval gate wrongly required post-deployment evidence, and the containerized
@@ -1524,24 +1531,46 @@ Keycloak confidential OIDC client. The committed
    `scope=openid`, `code_challenge_method=S256`, challenge, state and nonce
    authorization request against the canonical HTTPS issuer.
 5. Present the authorization URL for the developer to open in a real
-   browser, completing the existing Keycloak interactive login. The CLI
-   callback listener accepts **one** short-lived `GET /callback` with a
-   matching exact `Host: 127.0.0.1:28400`, the exact unconsumed state and
-   a single authorization code. Reject duplicate/unknown query keys,
-   unexpected method/path/host, malformed input, replay, errors and
-   mismatched state without token exchange. Bound the callback request
-   line/headers to 8 KiB and the entire flow to 120 seconds; one flow
-   per port. Respond with static completion text (or generic error),
-   `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and
-   `Content-Security-Policy: default-src 'none'`; never return tokens,
-   code, state, client secret or verifier to the browser. No CORS.
+   browser, completing existing Keycloak interactive login. Accept one
+   bounded `GET /callback` at exact `Host: 127.0.0.1:28400`, with one
+   matching, unconsumed `state` and **exactly one** nonempty authorization
+   `code` on success. Keycloak may also return `iss` and `session_state`:
+   when present, `iss` must occur once and match the canonical issuer
+   **exactly**; `session_state` must occur at most once and is bounded
+   opaque data (never an identity or authority input). Ignore other
+   non-security extension parameters as OAuth 2.0 §4.1.2 requires, but
+   reject duplicate parameter names, duplicate sensitive fields,
+   malformed percent-encoding, invalid UTF-8, unexpected method/path/host,
+   excessive parameter count/size and replay. The entire raw request
+   line plus headers is at most 8 KiB; at most 16 query parameters and
+   each percent-decoded value at most 2048 UTF-8 bytes; authorization
+   `code` and `state` each must be nonempty and at most 2048 bytes.
+   If `error` appears, require exactly one bounded nonempty OAuth error
+   and the correct one-time `state`, permit only bounded optional
+   `error_description`/`error_uri`/`iss`/`session_state` and ignore
+   unrelated extensions; **do not exchange any code** and return
+   a generic failure. An `error` alongside `code` is invalid. State
+   mismatches, missing/duplicate code on success, or issuer mismatches
+   fail closed; no alternate redirect/client configuration is permitted.
+   Use one 120-second flow deadline, consume the callback only once,
+   and perform exactly one code-to-token exchange only on success.
+   On a valid callback, respond with HTTP `303 See Other` to relative
+   `/complete`, with `Cache-Control: no-store` and
+   `Referrer-Policy: no-referrer`; `/complete` is a static, no-script,
+   no-token/no-code completion page with those headers and
+   `Content-Security-Policy: default-src 'none'`, no CORS and no
+   subresources. Permit at most one subsequent `GET /complete` in the
+   short cleanup window (maximum 3 seconds), then terminate the listener.
+   No response body or `Location` reflects `code`, `state` or any
+   other callback parameter. Authorization codes necessarily transit
+   the browser redirect URL; preventing that is **not** an invariant.
 6. Exchange the code **once**, from inside the CLI, over validated
    HTTPS to the canonical token endpoint using the exact redirect URI,
    original PKCE verifier and the confidential client's **HTTP Basic**
    authentication. The client secret comes only from a separately
    provisioned owner-restricted, read-only CLI secret file
    `/run/secrets/mtmf-operator-oidc-client`, never argv/env/logs/
-   browser/worker/public runtime. If the committed client does not
+   browser/worker/public runtime. The **client secret**, unlike the
    support client-secret Basic and PKCE S256 as specified,
    `STOP-AUTH-PROFILE`; do not substitute a token grant or auth mode.
 7. Require a genuine ID token with valid signature, issuer, client
@@ -1557,6 +1586,41 @@ Keycloak confidential OIDC client. The committed
    state and tokens to the extent the runtime permits. One-shot tokens
    are passed only over the approved private operator `AF_UNIX` request
    and are never stored on disk, printed or sent through public HTTP.
+
+**Callback disclosure boundary.** Because standard Authorization Code
+Flow places the transient code in the browser redirect request, the
+code is **not** required to be absent from that one browser URL.
+Do not persist, log, print, echo in HTML, reflect in the clean
+completion redirect, include in a Referer to another origin, or
+forward the code outside its single approved HTTPS token exchange.
+Prevent HTTP server access logs from recording full query strings;
+do not enable browser analytics or external content on the completion
+page. The one-use code and PKCE verifier are short-lived and
+in-memory only. Browser history/cache behavior is outside the CLI's
+ability to erase reliably; `303` to a clean same-origin URL,
+`Cache-Control: no-store`, `Referrer-Policy: no-referrer` and no
+subresources reduce residual disclosure. This is a bounded
+trust assumption, not a claim that the browser never sees a code.
+
+**Confidential client dual-use risk.** The existing
+`dev/keycloak/expected-client-policy.json` defines
+`mtmf-evidence-same-client` with `serviceAccountsEnabled=true`
+**and** `standardFlowEnabled=true`. Thus the CLI-mounted client
+secret can also authenticate the client-credentials service principal.
+This is a deliberate **development-only residual capability** of
+the existing approved client, not an extra SYSTEM authorization.
+The worker must reject service-only access tokens irrespective of
+their valid signature, issuer, audience or `azp`: only genuine
+user-class tokens with the exact persisted ACTIVE `(issuer, subject)`
+binding, active non-root Identity/Principal and approved SYSTEM
+assignment may perform operator actions. The secret must never
+reach the public service, worker, admission harness, normal
+initializer or other projects. Record an end-to-end negative
+acceptance case in which a genuine Keycloak client-credentials token
+from this exact client is rejected as an operator; if it is
+accepted or the dual-use capability cannot be safely bounded,
+`STOP-AUTH-PROFILE` and seek a separately approved client-policy
+amendment rather than guessing one in the implementation.
 
 **Trust and acceptance.** A loopback-published HTTP callback is allowed
 **only** for interactive OAuth login; it is not an exception to Field 2's
@@ -1575,23 +1639,33 @@ trusted platform actor.
 |---|---|---|
 | CB01 | Native Linux/WSL2/Podman Machine browser redirect to exact `127.0.0.1:28400/callback`, as individually claimed | `STOP-AUTH-PROFILE` |
 | CB02 | Host publish limited to IPv4 loopback; no remote/LAN or unrelated-container callback reachability | `STOP-AUTH-PROFILE` |
-| CB03 | PKCE S256, unpredictable state/nonce, one code, one request, 120-second expiry, replay rejection | `STOP-AUTH-PROFILE` |
-| CB04 | Confidential secret read from CLI-only file; no secret/code/token in argv, logs, browser, service or worker mounts | `STOP-PRIVILEGE` |
-| CB05 | Genuine Keycloak user flow yields signed user access token with expected issuer/audience/azp, exact subject binding and approved Role | `STOP-AUTH-PROFILE` |
-| CB06 | State/nonce mismatch, redirect mismatch, bad Basic/PKCE, occupied port and missing VM forwarding all deny with no fallback | `STOP-AUTH-PROFILE` |
+| CB03 | PKCE S256, unpredictable state/nonce, one code exchange, 120-second expiry, replay rejection; real Keycloak `code`/`state`/`iss`/`session_state` response and OAuth error handled correctly; duplicates/issuer mismatch denied | `STOP-AUTH-PROFILE` |
+| CB04 | Client secret and tokens only in authorized CLI memory/mounts; unavoidable one-time browser URL carries `code` but no code leaks to logs, HTML, clean completion `Location`, Referer, other network paths or persistent storage; redirection strips visible query | `STOP-PRIVILEGE` |
+| CB05 | Genuine Keycloak user flow yields signed access token with issuer/audience/azp, exact subject binding and approved Role; genuine service-credentials token from same dual-use client is denied as operator | `STOP-AUTH-PROFILE` |
+| CB06 | State/nonce/issuer mismatch, duplicate code/state, invalid OAuth error, redirect mismatch, bad Basic/PKCE, occupied port and missing VM forwarding all deny with no fallback | `STOP-AUTH-PROFILE` |
 | CB07 | Session timeout/failure/success removes port publish, container and temporary secret mount | `STOP-AUTH-PROFILE` |
 | CB08 | Standard `up` and opt-out never auto-open a browser, start callback listener or expose port `28400` | `STOP-DEPLOYMENT` |
 
-CB01–CB08 are **feature acceptance to execute after Gate A+B**; they
-are not Gate A/B approval prerequisites. First commissioning of an
-intended platform must include a real interactive browser flow and
-genuine signed token. Ordinary subsequent unattended `up` can repeat
-noninteractive security checks and reuse prior platform sign-in acceptance
-**only** while the approved manifest, client policy, forwarding topology
-and environment fingerprint are unchanged; otherwise re-run CB01–CB08
-before asserting privileged readiness. Actual operator commands always
-require fresh, genuine interactive authorization as needed by token
-validity. Bootstrap does not log in as the operator automatically.
+CB01–CB08 are **future feature acceptance** after Gate A+B, never
+pre-implementation approval evidence. Eliminate cached or historical
+interactive-login **attestation reuse** entirely: there is no
+environment fingerprint, reuse token, or stale CB01–CB08 PASS shortcut.
+Each unattended `up` must independently recheck the deployable Gate C
+properties: actual manifest match, mapped peer IDs, socket/mount
+access restrictions, exact DB privileges, issuer/client attestation,
+and absence of unintended privileged transport. Without an
+operator command it must not open the browser or callback port.
+Report only `development control-plane infrastructure ready; operator
+interactive login not verified on this startup`, **not** the stronger
+`privileged operator ready` state. On every explicitly invoked
+operator session, perform a new genuine browser Authorization Code
+flow with CB01–CB08 applicable negative controls before claiming
+`privileged operator ready` for that authenticated session.
+On failure or token expiration, discard the session and return to
+the infrastructure-only state. No interactive login is required
+simply to run unattended infrastructure startup, and no previous
+session's genuine token/evidence authorizes a new session.
+Bootstrap never logs in as an operator automatically.
 
 ### 5B.7 Production prohibition and residual trust model (E-I08)
 
