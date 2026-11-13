@@ -62,9 +62,12 @@ def decode_frame(frame: bytes, *, admission: bool = False) -> Mapping[str, Any]:
     return value
 
 
-def encode_frame(payload: Mapping[str, Any]) -> bytes:
+def encode_frame(payload: Mapping[str, Any], *, admission: bool = False) -> bytes:
     """Encode one bounded canonical-ish JSON response frame."""
+    limit = MAX_ADMISSION_FRAME if admission else MAX_OPERATOR_FRAME
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if len(body) > limit:
+        raise ProtocolError("response exceeds the private frame limit")
     return struct.pack(">I", len(body)) + body
 
 
@@ -86,7 +89,7 @@ def canonical_uuid(value: object, name: str) -> uuid.UUID:
 def decode_operator_request(payload: Mapping[str, Any]) -> Request:
     """Validate one exact operator request envelope."""
     operation = payload.get("operation")
-    if payload.get("v") != 1 or not isinstance(operation, str):
+    if type(payload.get("v")) is not int or payload.get("v") != 1 or not isinstance(operation, str):
         raise ProtocolError("unsupported operator envelope")
     if operation == "health.private":
         _require_keys(payload, {"v", "operation"})
@@ -139,7 +142,11 @@ def decode_operator_request(payload: Mapping[str, Any]) -> Request:
 
 def decode_admission_request(payload: Mapping[str, Any]) -> Request:
     """Validate the exact admission.prepare request envelope."""
-    if payload.get("v") != 1 or payload.get("operation") != "admission.prepare":
+    if (
+        type(payload.get("v")) is not int
+        or payload.get("v") != 1
+        or payload.get("operation") != "admission.prepare"
+    ):
         raise ProtocolError("unsupported admission envelope")
     _require_keys(
         payload,
