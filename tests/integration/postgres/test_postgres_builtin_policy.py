@@ -125,6 +125,75 @@ _UUID_NAMESPACE = uuid.uuid5(
     uuid.NAMESPACE_URL, "https://github.com/yduchesne/mtmf/pr10/builtin-policy/v1"
 )
 
+PR24P_APPROVED_SEED = (
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "25a2f2f4-f32d-5447-bf39-578b4b4c312c",
+        "urn:mtmf:iam:permissions:system:application:create-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "da26e3bd-b3cb-5232-9910-3bc5b7f7fdda",
+        "urn:mtmf:iam:permissions:system:application:get-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "1ed11804-0a69-5a0f-89eb-3665b7c6cef4",
+        "urn:mtmf:iam:permissions:system:application:suspend-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "84ec050a-8732-51c5-9ca0-304e8347f642",
+        "urn:mtmf:iam:permissions:system:application:resume-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "62ce5487-bbb9-5c3b-ae91-d6fcd560a7bf",
+        "urn:mtmf:iam:permissions:system:application:retire-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "ca253e75-2bb6-58c1-88db-02a191412018",
+        "urn:mtmf:iam:permissions:system:application-tenant-registration:add-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "49b322cf-6b12-5ec2-ae07-71aa541280c8",
+        "urn:mtmf:iam:permissions:system:application-tenant-registration:get-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "ea1a042a-dc5a-5e5c-aab9-a19d995d2e58",
+        "urn:mtmf:iam:permissions:system:application-tenant-registration:revoke-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "909403b6-cb5c-5722-91f6-fac47e86fb15",
+        "urn:mtmf:iam:permissions:system:application-onboarding-entitlement:grant-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "4a07317d-5c71-5118-9b95-899745a404f9",
+        "urn:mtmf:iam:permissions:system:application-onboarding-entitlement:revoke-object",
+    ),
+    (
+        "urn:mtmf:iam:roles:system:application-administrator",
+        "ef895e22-cc8b-53db-a804-7ef11cffcb60",
+        "77915183-0f56-5329-8669-f1958d354cf1",
+        "urn:mtmf:iam:permissions:system:application-onboarding-entitlement:get-object",
+    ),
+)
+
 
 def _role_urn(suffix: str) -> str:
     return f"urn:mtmf:iam:roles:system:{suffix}"
@@ -155,18 +224,28 @@ def test_bp01_exact_approved_seed_is_installed(db: psycopg.Connection) -> None:
     }
     installed = set(_installed_rows(db))
     assert expected <= installed
-    assert len(installed) == 14
-    # The only addition beyond the historical Gate M seed is the PR 19C
-    # membership-add Permission on Tenant Administrator.
-    assert installed - expected == {
-        (
-            _role_urn("tenant-administrator"),
-            "187bc3cd-993d-5660-a226-113411121fed",
-            "allow",
-            "5ad78530-2945-4f66-8ce1-ddbd8794d7b2",
-            _permission_urn("identity-group-membership:add-object"),
-        )
+    pr24p_expected = {
+        (role, set_id, "allow", permission_id, permission)
+        for role, set_id, permission_id, permission in PR24P_APPROVED_SEED
     }
+    assert pr24p_expected <= installed
+    assert len(installed) == 25
+    # The additions beyond the historical Gate M seed are the PR 19C
+    # membership-add Permission and the eleven PR 24P Application Administrator
+    # Permissions.
+    assert (
+        installed - expected
+        == {
+            (
+                _role_urn("tenant-administrator"),
+                "187bc3cd-993d-5660-a226-113411121fed",
+                "allow",
+                "5ad78530-2945-4f66-8ce1-ddbd8794d7b2",
+                _permission_urn("identity-group-membership:add-object"),
+            )
+        }
+        | pr24p_expected
+    )
 
     actions = {
         str(row[0])
@@ -175,9 +254,10 @@ def test_bp01_exact_approved_seed_is_installed(db: psycopg.Connection) -> None:
         ).fetchall()
     }
     assert actions == APPROVED_ACTIONS
-    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 13
-    # Three historical Gate M Actions plus the approved PR 19C membership-add Action.
-    assert db.execute("SELECT count(*) FROM mtmf.action").fetchone()[0] == 4
+    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 14
+    # Three historical Gate M Actions, the PR 19C membership-add Action, and
+    # the eleven PR 24P Application Administrator Actions.
+    assert db.execute("SELECT count(*) FROM mtmf.action").fetchone()[0] == 15
     # No built-in matcher contains a wildcard.
     assert (
         db.execute(
@@ -204,7 +284,7 @@ def test_bp03_identical_replay_is_idempotent(db: psycopg.Connection) -> None:
     before = _installed_rows(db)
     db.execute("SELECT mtmf.install_builtin_policy()")
     assert _installed_rows(db) == before
-    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 13
+    assert db.execute("SELECT count(*) FROM mtmf.builtin_role").fetchone()[0] == 14
 
 
 def test_bp04_conflicting_existing_definition_fails_closed(db: psycopg.Connection) -> None:
@@ -290,5 +370,5 @@ def test_bp08_role_add_cannot_replace_a_builtin_definition(
             "SELECT count(*) FROM mtmf.permission_set ps "
             "JOIN mtmf.builtin_role br ON br.role_urn = ps.role_urn"
         ).fetchone()[0]
-        == 13
+        == 14
     )

@@ -36,3 +36,18 @@ The approved PR 21 manifest documents the Role as approved **design**, not as an
 A separately recorded human-approved path for the PR 21 `application-administrator` builtin Role and its exact manifest (or an explicit reviewed seed migration/PR). PR 24P must not synthesize it.
 
 `STOP-P24P-TOPOLOGY` is **cleared** by Gate B; this is the separate `STOP-SEED` implementation gate.
+
+## 0017 seed closure addendum
+
+The original `STOP-SEED` was valid. The project owner then authorized exactly
+one additive `0017` migration for the already-approved Application Administrator
+Role and its 11 exact Permissions. Migration `0017` and its independent
+assertions now install and protect that exact Role; the fresh/upgrade journeys,
+replay, drift rollback, runtime 78-signature allowlist and separate control
+five-EXECUTE surface pass in the recorded acceptance run. See
+[PR24P_SEED_0017_IMPLEMENTATION_AND_ACCEPTANCE_REPORT.md](PR24P_SEED_0017_IMPLEMENTATION_AND_ACCEPTANCE_REPORT.md).
+
+**Seed gate status:** `SEED_0017_ACCEPTED — PR24P_IMPLEMENTATION_STILL_INCOMPLETE`.
+The original stop evidence and its earlier run numbers remain historical; they
+are not rewritten. Full PR 24P implementation/Gate C remains IN PROGRESS/NOT
+EXECUTED.

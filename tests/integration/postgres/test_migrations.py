@@ -236,7 +236,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0016"
+    assert revision == "0017"
     assert revision == manager.head_revision
 
 

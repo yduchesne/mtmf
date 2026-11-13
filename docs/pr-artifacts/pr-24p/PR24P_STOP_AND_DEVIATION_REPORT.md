@@ -328,3 +328,7 @@ The PR 21-approved `application-administrator` Role is approved **design**, not 
 **Not run/not claimed:** operator fixture installation, real operator grant/revoke/get vertical slice, admission socket/harness live acceptance, Gate C UID/socket/secret/browser proofs, `--integration`/`--sec`/`--rust` final feature gates (to be run at the final feature SHA when the STOP is cleared), and any PR22B composite.
 
 **Smallest human decision needed:** provide/record the separately approved implementation/seed path for the PR 21 `application-administrator` builtin Role and its exact manifest, or explicitly authorize a reviewed seed migration/PR. Do not synthesize it as part of PR 24P without that decision.
+
+### 2026-11-13 STOP-SEED closure — migration 0017
+
+The owner authorized one additive migration (`0017`) limited to the already-approved Application Administrator Role and its 11 exact Permissions. `0017` is installed and protected, and the seed acceptance evidence is recorded in [PR24P_SEED_0017_IMPLEMENTATION_AND_ACCEPTANCE_REPORT.md](PR24P_SEED_0017_IMPLEMENTATION_AND_ACCEPTANCE_REPORT.md). Seed status: **`SEED_0017_ACCEPTED — PR24P_IMPLEMENTATION_STILL_INCOMPLETE`**. Gate C and the remaining PR 24P implementation remain NOT EXECUTED/IN PROGRESS; no full acceptance or roadmap DONE is claimed.
