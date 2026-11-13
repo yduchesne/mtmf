@@ -13,7 +13,7 @@ A Python package implementing an Identity and Access Management framework.
 Current status: WIP.
 
 
-For a plain-language explanation of local Keycloak → MTMF → application startup, see the [development setup guide](docs/DEVELOPMENT_SETUP.md) (including the PR 17-B development-user provisioning step).
+**Start here for administration:** [Bootstrap and Recovery](docs/BOOTSTRAP_AND_RECOVERY.md) explains how MTMF establishes the protected root, separates SYSTEM-operator authority, and handles failed installations and recovery. For runnable local Keycloak → MTMF → application setup, use the [Development Setup guide](docs/DEVELOPMENT_SETUP.md).
 
 **Future configuration and federation (design only):** MTMF will load
 `/etc/mtmf/config.toml` at startup (or an explicit `MTMF_CONFIG_PATH`) with
@@ -31,19 +31,18 @@ the isolated Keycloak development stack still uses documented environment variab
 
 The proposed first-class administrative CLI is specified in [CLI Architecture](docs/CLI_ARCHITECTURE.md); it is not yet implemented.\n\nProject documentation is under [docs/](docs/), including [database architecture and privileges](docs/DATABASE.md), [coding-agent instructions](AGENTS.md), and [benchmark methodology](docs/BENCHMARKS.md).
 
-The onboarding design is **approved (design-only, not implemented)**. The v0.1
-onboarding architecture and future versioned management contracts are in
-[onboarding architecture](docs/ONBOARDING_ARCHITECTURE.md) and the
-[onboarding HTTP contract](docs/ONBOARDING_HTTP_CONTRACT.md). All six design
-STOPs are closed by recorded human decisions (Amendment 03,
-[PR21-STOP03-APPROVAL-2026-10-15](docs/pr-artifacts/pr-21/PR21_AMENDMENT03_HUMAN_APPROVAL.md)):
-application-independent Tenant, `ResolveOrProvisionTenant`, global Identity
-reuse, independent subscription approval, and pre-Tenant admission (STOP-01
-Option B), with an exact 11/2/7 Role composition. **PR 22A has delivered the
-operator-only entitlement persistence foundation, not the onboarding flow**;
-roadmap PRs 22B, 23, 24P and 24–26 own remaining onboarding work. The operator
-sign-in / privileged management execution infrastructure remains a future
-PR 24P prerequisite.
+The [onboarding architecture](docs/ONBOARDING_ARCHITECTURE.md) and
+[onboarding HTTP contract](docs/ONBOARDING_HTTP_CONTRACT.md) describe the
+approved application-independent Tenant-resolution and subscription design.
+The current code includes the onboarding-entitlement persistence foundation
+and internal verified-subject/stewardship participants; it does **not** yet
+provide the atomic first-Tenant provisioning workflow or versioned onboarding
+HTTP API. The dedicated SYSTEM-operator control plane has an approved security
+and installation design but is **still being implemented**. See
+[Bootstrap and Recovery](docs/BOOTSTRAP_AND_RECOVERY.md) for an explanation of
+the separate identities, installation phases, trust boundaries and current
+availability. Approval documentation must not be treated as evidence that a
+privileged operator deployment is ready.
 
 ## Development
 

@@ -1,8 +1,8 @@
 # Root administration and Tenant Stewardship
 
-**Status:** Normative security design for PR 10. The structural foundation is implemented in additive revisions `0006`-`0008`: the approved built-in seed, immutable Identity origin, explicit Tenant lifecycle, the canonical root registry and protected bootstrap, ordinary-Tenant stewardship designation and append-only audit, and database guards across the existing mutation paths. Privileged bootstrap/designation/activation/recovery functions are installation-only (`SECURITY INVOKER`, never granted to `mtmf_runtime`); trusted end-user transfer/recovery exposure and the full concurrency matrix remain deferred. See [PR10 implementation decisions](pr-artifacts/pr-10/PR10_IMPLEMENTATION_DECISIONS.md) and [PR 10 Architecture Decisions](pr-artifacts/pr-10/PR10_ARCHITECTURE_DECISIONS.md).
+**Status:** The protected root/ordinary-Tenant stewardship database foundation is implemented, including the built-in policy seed, Identity origin, Tenant lifecycle, canonical root registry, serialized root bootstrap, designated stewardship, append-only audit, and database guards. Its privileged bootstrap/designation/activation/recovery functions are installation-only (`SECURITY INVOKER`, never granted to `mtmf_runtime`). A general authenticated end-user recovery/transfer interface and production root-login recovery procedure must not be inferred from the existence of these database primitives.
 
-This guide explains how MTMF establishes its first administrator, how each customer Tenant keeps a responsible administrator, and how the system prevents accidental or unauthorized loss of administrative control. It complements the [Security Model](SECURITY_MODEL.md), [Domain Model](DOMAIN_MODEL.md), [Authorization](AUTHORIZATION.md), and [Database Architecture](DATABASE.md). If this explanation conflicts with the Security Model, the Security Model governs.
+This guide explains how MTMF establishes its first administrator, how each customer Tenant keeps a responsible administrator, and how the system prevents accidental or unauthorized loss of administrative control. For the complete installation and recovery sequence—including the distinction between root, Keycloak administrator, SYSTEM operator, and database installer—start with [Bootstrap and Recovery](BOOTSTRAP_AND_RECOVERY.md). This guide complements the [Security Model](SECURITY_MODEL.md), [Domain Model](DOMAIN_MODEL.md), [Authorization](AUTHORIZATION.md), and [Database Architecture](DATABASE.md). If this explanation conflicts with the Security Model, the Security Model governs.
 
 ## The concepts in plain language
 
@@ -29,7 +29,7 @@ These guarantees concern **database state and authorization semantics**. They ca
 
 ## How a steward uses an Identity
 
-**Decision for PR 10:** each active Tenant stewardship designation must identify **one explicitly designated acting Identity** of the steward Principal. This is a separate authorization fact, not a new Role or stewardship enum value.
+Every active Tenant stewardship designation must identify **one explicitly designated acting Identity** of the steward Principal. This is a separate authorization fact, not a new Role or stewardship enum value.
 
 To exercise stewardship-derived authority, MTMF must verify all of the following:
 
@@ -54,10 +54,10 @@ A successful bootstrap transaction:
 2. Confirms the database is uninitialized or matches one complete canonical bootstrap record.
 3. Creates the single ROOT Tenant and ROOT Principal, with immutable creator/owner provenance.
 4. Creates the required local root Identity and the Principal/Identity Tenant memberships.
-5. Establishes the protected ROOT-scope Principal membership, root stewardship, designated root acting Identity, and built-in system administration Role/policy and applicable explicit assignment(s).
+5. Establishes the protected ROOT-scope Principal membership and the designated LOCAL root acting Identity. Protected built-in Role definitions are installed separately by the approved database seed; root bootstrap does **not** enroll a human SYSTEM operator or assign that operator global Permissions.
 6. Stores canonical identifiers in a protected singleton **bootstrap registry** and validates all root invariants before commit.
 
-The exact schema is PR 10 implementation work; the registry must identify canonical objects by stable IDs, never by display names. Built-in Role permissions must be explicitly reviewed and must not be invented as an unrestricted wildcard.
+The installed `mtmf.root_registry` identifies canonical objects by stable IDs, never by display names. Approved built-in Role definitions belong to the separate protected policy seed; no bootstrap process may invent broader wildcard Permissions.
 
 **Retry semantics:** a retry against a fully valid completed bootstrap is read-only/idempotent and returns the canonical identifiers. An empty database may bootstrap once. A partial, contradictory, or corrupted state raises an integrity error and requires an explicit privileged recovery procedure. No automatic root recreation, reassignment, or privilege broadening is allowed.
 
@@ -81,7 +81,7 @@ A delegated Tenant Administrator cannot self-promote to steward. A duly authoriz
 ## What happens when someone removes or disables something?
 
 - Removing a membership, Role assignment, Principal, or Identity that would invalidate the current steward or protected root chain must fail **before** the change commits, unless an explicitly authorized transaction establishes a valid replacement atomically.
-- Existing membership-removal and Role-assignment stored functions are included in this protection. A new guard on only the new PR 10 function is insufficient.
+- Existing membership-removal and Role-assignment stored functions must also enforce these protections. Guarding a bootstrap-only function is insufficient.
 - A failed membership removal must roll back its cascade and compact removal-audit row, preserving PR 6B/PR 9 semantics.
 - Role removal/revocation and lifecycle changes must not silently revoke the final steward's mandatory Tenant Administrator authority.
 - A Tenant's lifecycle transition may not be used to bypass root protections; activating a Tenant requires a valid steward.
@@ -92,9 +92,9 @@ Example: if an administrator tries to remove the current steward's Tenant member
 
 **Application authorization** determines *who may request an operation*. It verifies the actual authenticated acting Identity, effective Roles, Permission, target Tenant, scope/dominance, and stewardship designation. A Principal UUID or `actor_identity_id` passed by a caller is not proof of authentication.
 
-**PostgreSQL enforcement** determines *whether the resulting data state is structurally legal*, even when a permitted stored function is called incorrectly. PR 10 must use reviewed constraints, guards/triggers and/or stored functions, transaction-level locking, and privilege restrictions to prevent invalid root/stewardship state. Runtime connections remain restricted to exact reviewed `SECURITY DEFINER` function signatures; no direct table access is introduced. All new and existing write paths capable of invalidating the invariants must be covered.
+**PostgreSQL enforcement** determines *whether the resulting data state is structurally legal*, even when a permitted stored function is called incorrectly. The root/stewardship foundation uses reviewed constraints, guards/triggers, stored functions, transaction-level locking, and privilege restrictions to protect this state. Runtime connections remain restricted to exact reviewed `SECURITY DEFINER` function signatures; no direct table access is introduced. All new and existing write paths capable of invalidating the invariants must be covered.
 
-**Important current limitation:** MTMF's shared `mtmf_runtime` database login is not an end-user authentication boundary. A holder of those credentials can call its granted functions; the database cannot independently verify a caller-supplied acting Identity. Until the trusted service/API identity boundary exists, do not expose privileged bootstrap, stewardship-transfer, or recovery operations as broadly runtime-granted functions. Privileged functions must be reachable only through an explicitly trusted and authorized orchestration boundary. The HTTP service and identity propagation are later work; PR 10 must not claim they already exist.
+**Important current limitation:** MTMF's shared `mtmf_runtime` database login is not an end-user authentication boundary. A holder of those credentials can call its granted functions; the database cannot independently verify a caller-supplied acting Identity. Privileged bootstrap, stewardship-transfer, or recovery operations must never be broadly runtime-granted. Their existence as installation-owned functions does not establish an accessible, authenticated public recovery API or an independently verified SYSTEM-operator session.
 
 PostgreSQL superusers and deployment administrators remain an operational trust boundary: they can bypass database protections. Access to those credentials must be separately controlled and audited.
 
@@ -107,9 +107,9 @@ PostgreSQL superusers and deployment administrators remain an operational trust 
 
 The precise operator approval mechanism (for example, dual control), credential custody and incident runbook are deployment policy and must be documented before a production rollout. They are not claimed as already implemented.
 
-## PR 10 implementation and test checklist
+## Verification expectations and feature availability
 
-PR 10 must define the exact schema, authorized application operations, privilege allowlist and transaction boundaries **before writing migrations**. At minimum, tests must demonstrate:
+Any claim that the protected root/stewardship boundaries—or a future authenticated recovery interface—are production-ready requires evidence of the applicable cases:
 
 - concurrent bootstrap yields one root; retries are idempotent; partial/corrupt bootstrap fails closed;
 - root Principal/Tenant uniqueness, ROOT scope, immutable membership and designated local Identity survive attempted deletion, deactivation, reassignment and demotion;
@@ -122,7 +122,7 @@ PR 10 must define the exact schema, authorized application operations, privilege
 - real `mtmf_runtime` tests prove direct DML is denied and the exact stored-function allowlist remains enforced;
 - local and PostgreSQL persistence semantics agree wherever their contracts overlap; CI runs QA, security, Rust regression and real PostgreSQL integration gates.
 
-**PR 10 is not complete solely because the data constraints work:** the trusted acting-Identity boundary for sensitive operations must be explicitly implemented or those operations must remain inaccessible until the service boundary can provide it.
+**Structural database protection is not the same as a completed human recovery workflow.** A public or operator-facing transfer/recovery operation must be implemented and independently verified at the trusted acting-Identity boundary before it can be claimed available. The implemented owner-only `mtmf.recover_root_identity` database primitive is not itself a production recovery CLI, a password reset procedure, or root login.
 
 ## Further reading
 
@@ -130,4 +130,4 @@ PR 10 must define the exact schema, authorized application operations, privilege
 - [Domain Model](DOMAIN_MODEL.md) §§7, 14, 18 — entities, memberships, atomicity.
 - [Authorization](AUTHORIZATION.md) — acting Identity, Permissions and dominance.
 - [Database Architecture](DATABASE.md) — runtime privileges, stored functions, trust boundaries.
-- [Roadmap](ROADMAP_V01.md) — PR 10 scope and later HTTP/service work.
+- [Bootstrap and Recovery](BOOTSTRAP_AND_RECOVERY.md) — reader-oriented installation, SYSTEM-operator distinction, recovery and current availability.

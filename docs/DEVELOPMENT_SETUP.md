@@ -1,6 +1,6 @@
 # Development environment setup: Keycloak, MTMF, and consuming applications
 
-This guide explains how to initialize a **local development environment** for MTMF and an application such as Agentic Threat Investigator (ATI). You do not need to know MTMF's internal database schema to understand the sequence. The **PR 17-B development user provisioning step is implemented**; the running MTMF HTTP service and ATI never hold privileged setup credentials.
+This guide explains how to initialize a **local development environment** for MTMF and a consuming application such as Agentic Threat Investigator (ATI). You do not need to know MTMF's internal database schema to understand the sequence. Ordinary development-user provisioning is implemented; the running MTMF HTTP service and consuming applications never hold privileged setup credentials. For a broader explanation of the protected root, the separate SYSTEM operator, approved-but-pending operator installation, and recovery, see [Bootstrap and Recovery](BOOTSTRAP_AND_RECOVERY.md).
 
 ## What each system does
 
@@ -22,6 +22,14 @@ A **Tenant** represents a customer. An **Application** represents a product such
 
 With `scripts/mtmf-dev-stack.py`, these steps are ordered automatically: `keycloak -> initializer -> HTTP service`. The initializer is a one-shot container that exits before the unprivileged service starts; the service is not declared ready unless the initializer exited successfully.
 
+### Dedicated SYSTEM operator is a separate, not-yet-implemented workflow
+
+The existing `up` procedure above initializes the **ordinary** development fixture. It does **not** install an independently authorized SYSTEM operator. The approved future development operator is `mtmf-dev-operator` in the `mtmf-dev` realm, separate from both the `mtmf-admin` Keycloak master-realm administrator and `MTMF_DEV_USER_USERNAME`.
+
+The approved design reserves `MTMF_DEV_CONTROL_BOOTSTRAP_ENABLED=true` as an explicit, **development-only** opt-in. **This setting is not implemented in the current launcher and must not be treated as a working command-line feature.** When implemented, the installer will require exact canonical issuer/project settings, restricted secret files, separately provisioned control-role privileges, audited SYSTEM assignment, and real Linux/Podman isolation verification. Unset/`false` will retain the ordinary setup behavior; opting out after a prior installation will not silently revoke its persisted role or grants. Production automatic operator installation remains forbidden.
+
+Operator sign-in will require a separate, explicitly invoked interactive Authorization Code + PKCE flow through an ephemeral loopback callback. Normal `up` must not launch a browser or listen on the callback port. A successfully started HTTP service is **not** proof that SYSTEM-operator access or production root-login recovery is available. See [Bootstrap and Recovery](BOOTSTRAP_AND_RECOVERY.md#4-dedicated-system-operator-installation-approved-design-not-yet-implemented) for the trust and installation sequence.
+
 > **Configuration roadmap, not current instructions:** The proposed
 > [TOML-first configuration](CONFIGURATION_ARCHITECTURE.md) will read
 > `/etc/mtmf/config.toml` with an optional `MTMF_CONFIG_PATH` and fall back
@@ -31,7 +39,7 @@ With `scripts/mtmf-dev-stack.py`, these steps are ordered automatically: `keyclo
 > Keycloak-issuer preflight:** the current development launcher and service
 > still require the canonical single-issuer Keycloak environment setup.
 
-## Canonical issuer and development networking (PR 17-C)
+## Canonical issuer and development networking
 
 The standard development stack uses **one canonical Keycloak authority**:
 
@@ -143,7 +151,7 @@ once, then starts the restricted service and waits for
 `http://127.0.0.1:28001/health/ready`. `up` refuses a non-canonical
 `MTMF_AUTH_ISSUER` with literal string equality (no substring/prefix acceptance).
 
-**Stable lifecycle (PR 17-C Amendment 2).** The Compose model contains no
+**Stable lifecycle.** The Compose model contains no
 dynamic container address, so the configuration hash is invariant across the
 phases of one `up` and across repeated `up` runs. Once PostgreSQL, Keycloak and
 the forwarder have started, a normal `up` does not recreate or restart them:
@@ -199,6 +207,7 @@ identity and is distinct from every other actor:
 | Development end user | `MTMF_DEV_USER_USERNAME` (e.g. `ati-admin`) in realm `mtmf-dev` |
 | Keycloak development realm | `mtmf-dev` |
 | MTMF root identity | the protected canonical root Principal/Identity (not a Keycloak admin) |
+| Dedicated development SYSTEM operator (approved design, not yet installed) | `mtmf-dev-operator` (user in `mtmf-dev`; distinct from all rows above) |
 | Read-only service attestation credential | least-privilege client `mtmf-attestation-reader` (no admin password) |
 
 Configuration:
@@ -455,6 +464,7 @@ The initializer is **development-only**, short-lived, and privileged. The long-r
 
 ## Related documentation
 
+- [Bootstrap and Recovery](BOOTSTRAP_AND_RECOVERY.md) — initial root, SYSTEM-operator enrollment, secrets, failure and recovery distinctions.
 - [Architecture](ARCHITECTURE.md) — why the components are separate and how authorization flows.
 - [Roadmap](ROADMAP_V01.md) — PR 17-B status and acceptance expectations.
 - [Keycloak development fixture](../dev/keycloak/README.md) — isolated local issuer used by existing tests and development setup.
