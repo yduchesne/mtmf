@@ -4,7 +4,7 @@
 **Artifact directory:** `docs/pr-artifacts/pr-24p/`
 **Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`**
 **STOP code:** **`STOP-P24P-TOPOLOGY`** (mandatory Phase-0 STOP)
-**Decision record revision:** **4** (independent-review Findings A–D preserved; Amendment E proposed, documentation only)
+**Decision record revision:** **4** (Findings A–D retained; Amendment E with portability review callback/approval-gate fixup proposed, documentation only)
 **Baseline SHA:** `28d5de85ccf63c9ffb5bdc8298156e6038cbdadd` (= `origin/main`, rev 3 merged via PR #76); historical Phase 0 baseline `8712418a3d2de212791ae75a6235d3e00fced450`
 
 ## 1. Stop condition
@@ -126,6 +126,37 @@ This update modifies only PR 24P documentation. No service, migration,
 role, grant, secret, socket, container, test or benchmark is run or created.
 `STOP-P24P-TOPOLOGY` remains active.
 
+## 2E. Portable topology independent-review P1 fixup — approval and OAuth
+
+Documentation-only correction of the two P1 findings recorded in
+[PR24P_PORTABLE_TOPOLOGY_INDEPENDENT_REVIEW_REPORT.md](PR24P_PORTABLE_TOPOLOGY_INDEPENDENT_REVIEW_REPORT.md):
+
+1. **Circular approval:** §3, §8, §8A, §9 and §11 now separate
+   Gate A architecture approval, Gate B human-approved reusable static
+   deployment manifest/implementation authorization, and Gate C
+   post-implementation real deployment tests. Gate C is never a
+   pre-implementation YES/NO approval condition. An unchanged approved
+   manifest can be reused on another developer machine after automated
+   actual-machine Gate C attestation, without another human decision.
+   Any changed static trust policy or failed attestation STOPs.
+2. **Portable Keycloak callback:** Field 4 and §5B.6A freeze the
+   ephemeral Linux operator-CLI Authorization Code + PKCE S256 flow;
+   approved confidential client, exact registered redirect
+   `http://127.0.0.1:28400/callback`, temporary Podman host-loopback
+   port forward, genuine browser flow, CLI-only client-secret file,
+   state/nonce/timeout/cleanup and strict STOP conditions. No TCP
+   operator/control-worker endpoint is added. §5B.6A specifies CB01–CB08
+   as future tests; none has executed.
+
+The development profile repeats these frozen facts, and the new
+[PR24P_PORTABLE_TOPOLOGY_CALLBACK_AND_APPROVAL_FIXUP_REPORT.md](PR24P_PORTABLE_TOPOLOGY_CALLBACK_AND_APPROVAL_FIXUP_REPORT.md)
+records their documentation reconciliation. The source still lacks the
+worker, operator CLI, control role, migration `0016` and real
+Podman/Keycloak acceptance. No code, role, grant, database operation,
+socket, credential, container, test or benchmark is created or run.
+**All §9 Gate A/B human decisions remain unanswered.**
+`STOP-P24P-TOPOLOGY` remains ACTIVE.
+
 ## 3. Zero unapproved changes
 
 Phase 0 changed **documentation only**, inside `docs/pr-artifacts/pr-24p/`:
@@ -216,15 +247,17 @@ A single recorded human decision that:
    fixed **role-independent migration `0016` followed by separate
    post-migration control-role provisioning, exact five-grant installation and
    effective-privilege verification**;
-3. supplies the deployment-specific host values in §8 (operator admin UID,
-   control UID/GID, runtime UID/GID, operator socket path/owner/mode, **ingress
-   UID/GID and admission socket path/owner/mode**, secret mount, Podman project,
-   control network, Linux execution mode, worker-observed peer/namespace
-   evidence, rotation owner) **and all §8A
-   development-profile values** (password file, UIDs/GIDs, namespaces, sockets,
-   control secret, fixture decision ID);
-4. records decision ID, date, approving party, exact approved text/version,
-   evidence reference, and any conditions in §9.
+3. **Gate B:** approves complete static §8/§8A target manifest values:
+   container/peer identities, socket paths and access modes, secret custody,
+   project networks, dedicated operator-auth network and loopback OAuth
+   callback (no registered client policy change), and fixture decision ID;
+4. records the named human Gate A+B decision ID(s), date, approving party,
+   exact approved version/manifest and any conditions in §9.
+
+Actual mapped-peer, secret access, deployed permissions, browser callback
+and signed-token evidence belong to **Gate C after implementation**.
+An unchanged approved manifest can be automatically attested on a new
+machine; there is no per-machine human approval in that conforming case.
 
 Until that exists, the correct response to a request to "implement PR 24P" is
 `PR24P_BLOCKED_TOPOLOGY_APPROVAL`, not code.

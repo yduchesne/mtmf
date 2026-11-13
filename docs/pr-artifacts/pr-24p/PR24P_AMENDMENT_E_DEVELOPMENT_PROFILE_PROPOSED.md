@@ -183,6 +183,9 @@ Unix sockets and identity checks execute *only inside* native Linux/WSL2 or
 a Podman-managed Linux VM. The operator CLI is an ephemeral non-root
 MTMF-owned container, never a Windows/macOS host-side direct socket client.
 The approved OIDC Authorization Code verification remains mandatory.
+The exact ephemeral host-browser callback bridge and credential custody
+are frozen in decision record §5B.6A; no privileged worker TCP endpoint
+is permitted.
 
 | Role | Candidate Linux-container UID | Socket/secret access |
 |---|---:|---|
@@ -209,9 +212,54 @@ Failure or unmeasurable mapping triggers `STOP-DEPLOYMENT`; no TCP,
 shared UID, `0777`, Podman-socket proxy, or automatic mapping substitution.
 Passing on one Linux environment does not certify another.
 
-§5B.6 in the topology decision record is authoritative. All original
-§8/§8A host choices and §9 approval questions remain unresolved.
-No code, deployment, role, socket or test is authorized by this profile.
+§5B.6 (container boundary), §5B.6A (OAuth callback) and §9 (Gate A/B/C)
+in the decision record are authoritative. All §8/§8A static choices and
+human Gate A/B approval answers remain unresolved. Gate C measurements
+and genuine-token tests remain NOT EXECUTED. No code, deployment, role,
+socket, client-secret or test is authorized by this proposal.
+
+## Portable browser-to-container operator login (proposal, NOT implemented)
+
+Preserve the committed confidential client `mtmf-evidence-same-client`,
+audience `mtmf-same-client-api`, issuer
+`https://keycloak.mtmf.test:28443/realms/mtmf-dev` and registered redirect
+`http://127.0.0.1:28400/callback`. The operator CLI runs as an ephemeral
+Linux container on an isolated MTMF operator-auth network, with only the
+operator socket and a read-only CLI-only secret at
+`/run/secrets/mtmf-operator-oidc-client`. On a genuine interactive command,
+publish exactly the temporary rootless Podman host mapping
+`127.0.0.1:28400:28400` (browser host→VM/WSL→CLI listener), never a
+host-wide binding or persistent worker TCP listener.
+
+The CLI uses one authorization-code request with PKCE S256, random
+256-bit state, OIDC nonce, exact localhost redirect, 120-second timeout,
+and one-use callback. It exchanges the code over canonical HTTPS with
+confidential-client HTTP Basic and a file-mounted secret; validates
+genuine ID token subject/nonce, then sends the verified user access
+token only over the operator Unix socket for **independent** worker
+JWT and SYSTEM Role authorization. Do not enable direct/password grants,
+device exchange, alternate port/redirect, impersonation, or token logging.
+Wrong state/nonce, missing host/VM loopback forwarding, externally
+reachable callback, failed PKCE/Basic, or persistent port is
+`STOP-AUTH-PROFILE`. Callback listener and secret mount are torn down on
+success, failure or timeout. On each claimed platform, a real browser
+login, signed token and negative-control tests must pass before
+privileged deployment readiness. Ordinary unattended `up` never
+opens a browser or automatically logs in; operator login is on demand.
+§5B.6A is normative for the complete wire/secret/lifecycle contract.
+
+## Three ordered PR 24P gates (proposed, NOT approved)
+
+| Gate | Decision/evidence | May proceed to |
+|---|---|---|
+| A — architecture | Human approves twelve fields, §5B.6A callback, static manifest schema and security tests | Gate B manifest selection |
+| B — reusable deployment manifest | Human approves static IDs/modes/mounts/networks/credentials/loopback policy and records implementation authorization | Implement Parts A–E only |
+| C — actual deployment | After implementation, machine-specific peer/mount/role/OIDC checks pass; unchanged manifest may be reused without a new human decision | Privileged-ready status only |
+
+No live Gate C evidence or manually chosen machine mappings are required
+to *approve architecture*; no privileged-ready claim is allowed until
+Gate C genuinely passes. If an approved manifest is modified or fails
+its security predicates, STOP and request a new human decision.
 
 ## Forbidden deployment modes and emergency stop
 
@@ -267,6 +315,9 @@ negative-control harness. Benchmarking is out of scope until separately approved
 - Operator and admission socket absolute paths, owners, groups, and modes.
 - Control DB secret path, ownership, rotation owner, and Podman network attachment.
 - Human-approved fixture decision ID/provenance reference.
+- Human-approved ephemeral loopback callback manifest, operator-auth network,
+  client-secret file ownership and confidential-client custody. Actual
+  browser/VM forwarding proof belongs to future Gate C.
 - Runtime/image versions and hardware when benchmarking is eventually approved.
 
 Until these are approved with all §5B fields, the status remains

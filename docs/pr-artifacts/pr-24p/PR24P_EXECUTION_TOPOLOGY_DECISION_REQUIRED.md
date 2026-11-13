@@ -22,6 +22,13 @@ created.**
 | **D** | Revoked-only external subject history was indistinguishable from a new subject in the proposed pre-Tenant admission read; §5A also mentioned unsupported entitlement expiration. | Freeze three-argument history-aware read, historical precedence, internal result, handler mapping, and remove unsupported expiry reference; no implementation or approval. See **§5A.7**. |
 | **E** | Field 5 prohibited a development initializer from creating a SYSTEM operator; local deterministic bootstrap cannot be automated without an approved narrow exception. | Amend Field 5 only for an opt-in, canonical-development, one-shot **dedicated operator** fixture; new §5B freezes identity/provenance, installation order, idempotency, deployment isolation, negative tests and production exclusion; §8/§9/§11 explicitly require separate human approval. No code or deployment is changed. |
 
+**Amendment E portability independent-review fixup (documentation only).**
+Review of commit `b291315` found two P1 design gaps: a pre-implementation
+approval gate wrongly required post-deployment evidence, and the containerized
+operator had no portable host-browser OAuth callback path. This revision freezes
+the ordered Gate A/B/C boundary (§3/§9/§11) and exact on-demand callback
+contract (§5B.6A), without implementation, host certification or approval.
+
 **Amendment E portable-development clarification (documentation proposal; no approval).**
 Native Linux, WSL2 Linux, and Podman-managed Linux VMs on Windows/macOS are
 candidate execution environments under ONE Linux socket/UID security contract.
@@ -109,7 +116,10 @@ Required decision material (fill in §9 and the per-field blocks):
 - exact approved text / document version;
 - reference or evidence (meeting record, signed file, ticket);
 - any conditions or amendments;
-- the deployment-specific host values in §8.
+- the portable deployment-manifest *contract* in §8, and the separately
+  approved static target manifest values required by Gate B. Live peer,
+  socket, and credential-attestation results are **Gate C**, not a
+  pre-implementation §9 prerequisite.
 
 The pre-Tenant subject-history and entitlement read (§5A.7, the fifth §7
 signature) is part of the frozen contract and must be approved verbatim;
@@ -120,6 +130,30 @@ approval must explicitly cover its operator identity, one-shot provenance,
 opt-in conditions, fixture lifecycle, isolation proofs, and the required §8 host
 values. Approval of the production topology alone does not imply approval of the
 development fixture, and vice versa.
+
+**Ordered approval and acceptance gates (no implicit authorizations):**
+
+- **Gate A — architecture decision:** a named human approves all twelve
+  fields, §§5/5A/5A.7/5B/5B.6A/6/6A/6B/7, the portable manifest schema,
+  and the required future acceptance controls. An agreement with a design
+  direction or a GitHub merge is not Gate A.
+- **Gate B — target deployment manifest / implementation authorization:**
+  following Gate A, a named human approves a complete static, versioned
+  deployment profile containing required Linux container IDs/GIDs, socket
+  paths/ownership/modes, secret mounts, OIDC callback forwarding contract,
+  networks and trust boundaries. An A+B record authorizes implementation
+  **only**, not a claim of deployed privilege isolation or readiness.
+- **Gate C — deployment acceptance:** after authorized implementation, the
+  actual worker, sockets, mapped peers, secrets, database grants and genuine
+  browser-based operator login pass the independent deployed tests. Gate C
+  permits privileged readiness only if every mandatory probe passes.
+
+Once A+B approves a reusable profile, a new developer machine may reuse
+the *same exact static manifest* without another discretionary human
+approval, provided fresh automatic Gate C attestation proves the profile's
+effective-ID, mount, socket, callback and privilege predicates. A changed
+manifest, different security constraints or failed proof requires STOP and
+an explicit human amendment. This is not automatic authority selection.
 
 If **any** field is `REJECTED` or `AMEND`, the agent stops and returns a
 revised plan for further approval. The agent will not reinterpret amendments,
@@ -258,7 +292,9 @@ interactive-user token for an operator subject with a persisted binding, and
 that the verifier is safe to use outside a Tenant session.
 
 **Required deployment.** Existing `mtmf-dev` Keycloak + committed baselines;
-no regeneration.
+no regeneration. The only proposed portable browser-to-ephemeral-operator
+Authorization Code callback transport and secret-custody path is frozen in
+§5B.6A; it is a development-only login transport, not a control TCP endpoint.
 
 **Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
 **Approved text / amendment / conditions:** ______________________________________
@@ -1099,7 +1135,9 @@ after an uncertain remote result, **STOP**, no second POST. A supplied password
 file does not authorize takeover of an existing user.
 
 Existing standard Authorization Code user sign-in (using the approved client)
-remains mandatory for executing real operator requests. The installer may use
+remains mandatory for executing real operator requests. The precise on-demand
+operator CLI callback/PKCE/client-secret procedure is frozen in §5B.6A;
+bootstrap itself must not synthesize or require an interactive token. The installer may use
 privileged Keycloak Admin REST to validate/create the fixture, but may not mint
 an impersonated operator user token, use password grant, or bypass signed-token
 verification during control-plane execution. Automated isolated genuine-token
@@ -1414,7 +1452,7 @@ control network with no published worker port. Worker and required database/
 Keycloak TLS-forwarder dependencies may attach to it; public `mtmf-service`
 must not. Normal loopback-published dev service ports remain unchanged.
 
-**Per-installation measured evidence, not implied by architecture approval:**
+**Gate C per-installation measured evidence, not Gate A/B prerequisites:**
 record the Linux environment/kernel, rootless Podman version, actual
 namespace UID/GID maps, socket owner/group/mode, exact mounts, secret
 permissions, network attachments and worker-observed `SO_PEERCRED` values.
@@ -1425,10 +1463,135 @@ Record real signed-token checks before privileged readiness. Passing on one
 environment does not certify another. A host owner with Podman/VM control
 remains outside the compromised-runtime containment claim.
 
-Human approval of a portable profile does not approve a machine with
-unmeasured or mismatched values. The §8/§8A manifest/UID/mount/secret
-values must be recorded, approved and independently attested. No deployment
-resource, migration, role, grant, socket or test is authorized by this text.
+Human architecture approval (Gate A) and target manifest approval (Gate B)
+do not assert a tested machine. A portable Gate B manifest may be reused on
+other machines *without a new human decision* only when its static profile
+and security predicates are unchanged and Gate C per-machine evidence proves
+exact socket/UID mappings, mounts, grants and §5B.6A callback forwarding.
+On drift or failed proof, STOP and require human revision, not automatic
+fallback. No deployment resource, migration, role, grant, socket or test is
+authorized by this proposed text.
+
+### 5B.6A. On-demand portable operator Authorization Code callback (proposed — frozen for approval)
+
+**Only development sign-in path.** The dedicated ephemeral Linux
+`mtmf-operator-cli` (UID from the approved manifest) obtains a real
+`mtmf-dev-operator` **user-class access token** through the already-approved
+Keycloak confidential OIDC client. The committed
+`dev/keycloak/expected-client-policy.json` is unchanged:
+
+| Frozen item | Required exact value |
+|---|---|
+| Client | `mtmf-evidence-same-client` (confidential; `client-secret`) |
+| Audience on user access token | `mtmf-same-client-api` |
+| Public issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-dev` |
+| Registered redirect URI | `http://127.0.0.1:28400/callback` |
+| Browser flow | Authorization Code + PKCE S256; `scope=openid`; no implicit, direct password, impersonation, device-code or exchange fallback |
+| Callback host port | Host IPv4 loopback `127.0.0.1:28400` only, temporary |
+| Callback container listener | Port `28400` in ephemeral CLI container; separate from operator `AF_UNIX` socket |
+
+**Exact transport boundary and lifecycle (one interactive CLI invocation):**
+
+1. The MTMF launcher creates a separate *ephemeral* non-root operator CLI
+   container only upon an explicit operator command, **not on ordinary `up`**.
+   It mounts only the operator Unix-socket volume, the public development
+   CA trust and its own client-secret file (never the worker DB credential,
+   Keycloak master-admin password, owner/migrator password or admission socket).
+   An isolated project-scoped operator-auth network connects the CLI only
+   to the canonical Keycloak TLS forwarder; no shared general application
+   network, host network, Podman admin socket or permanent callback service.
+2. Before opening a browser, ensure local port `28400` is free. Create a
+   **single-use** callback listener on TCP port `28400` inside the ephemeral
+   CLI container; for rootless Podman forwarding it may bind the container's
+   private interface (`0.0.0.0:28400`), **never a host-wide interface**.
+   Publish **only** `127.0.0.1:28400:28400` on the developer host via
+   the approved project-scoped rootless Podman forwarding mechanism.
+   This is a temporary browser login endpoint, **not** a control-worker
+   TCP listener. No control-worker or admission port is published.
+3. Verify from the developer-host browser context that the exact HTTP
+   loopback redirect reaches this one-time CLI listener. On Windows/macOS
+   Podman Machine and Windows/WSL2, forwarding across the VM/WSL boundary
+   is **not assumed**; it must work on the actual environment, map only the
+   exact IPv4 loopback port and have no LAN/external listener. On native
+   Linux, perform the same check. Any absent, remapped or externally exposed
+   forwarding path is `STOP-AUTH-PROFILE`; do not change registered URI,
+   publish `0.0.0.0` on host, enable host networking or install SSH tunnels.
+4. Generate fresh cryptographically random per-invocation `state` (at least
+   256 bits), PKCE `code_verifier` (RFC 7636-compliant, at least 256 bits
+   of entropy), S256 `code_challenge`, and OIDC `nonce` (at least 128 bits).
+   Retain verifier/state/nonce in the CLI process memory only. Build an
+   `response_type=code`, exact client ID, exact redirect URI,
+   `scope=openid`, `code_challenge_method=S256`, challenge, state and nonce
+   authorization request against the canonical HTTPS issuer.
+5. Present the authorization URL for the developer to open in a real
+   browser, completing the existing Keycloak interactive login. The CLI
+   callback listener accepts **one** short-lived `GET /callback` with a
+   matching exact `Host: 127.0.0.1:28400`, the exact unconsumed state and
+   a single authorization code. Reject duplicate/unknown query keys,
+   unexpected method/path/host, malformed input, replay, errors and
+   mismatched state without token exchange. Bound the callback request
+   line/headers to 8 KiB and the entire flow to 120 seconds; one flow
+   per port. Respond with static completion text (or generic error),
+   `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and
+   `Content-Security-Policy: default-src 'none'`; never return tokens,
+   code, state, client secret or verifier to the browser. No CORS.
+6. Exchange the code **once**, from inside the CLI, over validated
+   HTTPS to the canonical token endpoint using the exact redirect URI,
+   original PKCE verifier and the confidential client's **HTTP Basic**
+   authentication. The client secret comes only from a separately
+   provisioned owner-restricted, read-only CLI secret file
+   `/run/secrets/mtmf-operator-oidc-client`, never argv/env/logs/
+   browser/worker/public runtime. If the committed client does not
+   support client-secret Basic and PKCE S256 as specified,
+   `STOP-AUTH-PROFILE`; do not substitute a token grant or auth mode.
+7. Require a genuine ID token with valid signature, issuer, client
+   audience, temporal claims, exact nonce and subject corresponding to
+   the obtained access-token subject. Never use the ID token as an
+   operator access token. The control worker independently validates
+   the genuine **access token**, signed `azp`, audience, subject binding,
+   user class and SYSTEM Role under Field 4 and §§5/6A/6B before
+   authorizing any control action.
+8. On success, timeout, user cancellation, conflict, malformed callback,
+   denied token, or any error: terminate the listener and container,
+   unpublish `28400`, release the secret mount and zero/discard transient
+   state and tokens to the extent the runtime permits. One-shot tokens
+   are passed only over the approved private operator `AF_UNIX` request
+   and are never stored on disk, printed or sent through public HTTP.
+
+**Trust and acceptance.** A loopback-published HTTP callback is allowed
+**only** for interactive OAuth login; it is not an exception to Field 2's
+no-TCP privileged worker boundary. It must be shown unreachable from
+LAN/external interfaces and unrelated containers; no unauthenticated
+token/log disclosure or persistent socket/port is allowed. The CLI's
+callback listener is short-lived and restricted to the approved
+operator-auth network; if a separate network/forwarder cannot be
+constructed without exposing the callback, STOP rather than share the
+ordinary runtime network. The rootless Podman/VM host owner remains a
+trusted platform actor.
+
+**Future tests, NOT EXECUTED:**
+
+| ID | Required actual-platform acceptance | Failure |
+|---|---|---|
+| CB01 | Native Linux/WSL2/Podman Machine browser redirect to exact `127.0.0.1:28400/callback`, as individually claimed | `STOP-AUTH-PROFILE` |
+| CB02 | Host publish limited to IPv4 loopback; no remote/LAN or unrelated-container callback reachability | `STOP-AUTH-PROFILE` |
+| CB03 | PKCE S256, unpredictable state/nonce, one code, one request, 120-second expiry, replay rejection | `STOP-AUTH-PROFILE` |
+| CB04 | Confidential secret read from CLI-only file; no secret/code/token in argv, logs, browser, service or worker mounts | `STOP-PRIVILEGE` |
+| CB05 | Genuine Keycloak user flow yields signed user access token with expected issuer/audience/azp, exact subject binding and approved Role | `STOP-AUTH-PROFILE` |
+| CB06 | State/nonce mismatch, redirect mismatch, bad Basic/PKCE, occupied port and missing VM forwarding all deny with no fallback | `STOP-AUTH-PROFILE` |
+| CB07 | Session timeout/failure/success removes port publish, container and temporary secret mount | `STOP-AUTH-PROFILE` |
+| CB08 | Standard `up` and opt-out never auto-open a browser, start callback listener or expose port `28400` | `STOP-DEPLOYMENT` |
+
+CB01–CB08 are **feature acceptance to execute after Gate A+B**; they
+are not Gate A/B approval prerequisites. First commissioning of an
+intended platform must include a real interactive browser flow and
+genuine signed token. Ordinary subsequent unattended `up` can repeat
+noninteractive security checks and reuse prior platform sign-in acceptance
+**only** while the approved manifest, client policy, forwarding topology
+and environment fingerprint are unchanged; otherwise re-run CB01–CB08
+before asserting privileged readiness. Actual operator commands always
+require fresh, genuine interactive authorization as needed by token
+validity. Bootstrap does not log in as the operator automatically.
 
 ### 5B.7 Production prohibition and residual trust model (E-I08)
 
@@ -1832,11 +1995,16 @@ protocol. If these are already allocated on the branch, the agent stops
 
 ## 8. Deployment-specific values the approving human must record (not agent-selectable)
 
-These are factual resources of the Linux execution environment, not
-assumptions about a developer host OS. A human-approved deployment manifest
-must describe the selected execution environment and UID/mount/socket/security
-values; each installation must also measure its actual peer/namespace behavior.
-**Any missing human-approved value keeps `STOP-P24P-TOPOLOGY` active.**
+These are **Gate B static deployment-manifest choices**, not claims about
+an already deployed Linux host. Gate A approves the fields and their policy;
+Gate B records a concrete reusable deployment manifest (including approved
+UID/GID identities, socket paths/modes, network and secrets) before
+implementation authorization. Live mapped-peer, kernel/Podman observations,
+socket/mount outcomes and signed-token tests are **Gate C evidence** after
+authorized implementation. A fresh machine may reuse the same approved
+manifest if Gate C verifies it conforms; machine-specific evidence is not
+a new discretionary approval. Any absent Gate A/B human decision still
+keeps `STOP-P24P-TOPOLOGY` active.
 
 | Value | Required decision / recorded value |
 | --- | --- |
@@ -1851,14 +2019,17 @@ values; each installation must also measure its actual peer/namespace behavior.
 | Isolated control DB secret mount path + permissions | ______________________________ |
 | Podman/Compose project name for the control plane | ______________________________ |
 | Control-network attachment (and absence of published ports) | ______________________________ |
-| Linux execution mode, kernel/rootless Podman versions, user-namespace map and worker-observed `SO_PEERCRED` behavior | ______________________________ |
+| Approved Linux execution modes, rootless Podman version constraints, user-namespace/peer-ID *acceptance predicates* (actual kernel/version/maps/observed peer behavior recorded later at Gate C) | ______________________________ |
 | Rotation/runbook owner | ______________________________ |
+| Operator OAuth callback manifest: exact host loopback publish `127.0.0.1:28400:28400`, operator-auth network, CLI-only OIDC client-secret file, expiry and teardown controls (§5B.6A) | ______________________________ |
 
 ### 8A. Development-profile approval items (Amendment E)
 
-These fixed non-secret values are **architecture candidates, not permission to
-proceed**. The human must approve measured values later; do not substitute
-locally discovered numbers or `id -u` guesses.
+These fixed non-secret values are **Gate A/B architecture and static-manifest
+candidates, not permission to proceed**. A human selects/approves one
+versioned static profile at Gate B. Real machine-specific mapping and
+callback reachability are automatically measured at Gate C, never guessed
+from `id -u` or accepted from the host OS label.
 
 | Development-profile approval item | Value/state |
 |---|---|
@@ -1874,6 +2045,7 @@ locally discovered numbers or `id -u` guesses.
 | Operator/admission socket absolute paths/UID owners/modes | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
 | Control DB secret path, file ownership, rotation owner, Podman network attachment | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
 | Human-approved fixture decision ID/provenance reference | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
+| Operator CLI callback profile, client-secret file custody, isolated auth network and temporary host-loopback publish (§5B.6A) | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
 
 **Portable candidate profile (NOT APPROVED / NOT MEASURED):** Linux-container
 UIDs `24501` (worker), `24502` (operator CLI), `24503` (admission harness),
@@ -1885,36 +2057,75 @@ private control network without published worker ports. Exact GIDs,
 effective maps, socket ownership, secret mount custody, platform and
 human decision ID remain **UNRESOLVED — HUMAN APPROVAL REQUIRED**.
 
-Portable architecture may be approved once, but each installation must
-attest worker-observed peers, mounts and effective privileges against its
-human-approved manifest. A candidate number is not an approved host value.
+Portable architecture (Gate A) and one reusable static manifest (Gate B)
+may be approved once. Each installation must then prove worker-observed
+peers, mounts, callback routing and effective privileges (Gate C); a
+passing instance never authorizes a nonconforming one. A candidate number
+is not an approved host value and a fresh machine does not require
+human reapproval when it passes the unchanged manifest predicates.
 
-## 9. Top-level decision record (to be completed by the human)
+**Callback candidate, NOT approved:** one ephemeral operator CLI container
+and dedicated operator-auth network, temporary host-loopback mapping
+`127.0.0.1:28400:28400`, registered redirect
+`http://127.0.0.1:28400/callback`, restricted client secret at
+`/run/secrets/mtmf-operator-oidc-client`, PKCE S256, state and nonce,
+120-second maximum flow. No persistent callback port and no worker TCP
+listener. §5B.6A is authoritative; browser-to-container VM forwarding
+must be verified independently for each claimed execution platform.
+
+## 9. Human architecture/manifest decision (Gate A+B) and later deployment acceptance (Gate C)
+
+**Do not fill this record without explicit human authorization.** Gate A is
+architecture approval; Gate B approves a static, versioned target manifest
+and authorizes implementation. The post-implementation Gate C evidence
+belongs to the acceptance report, not to a pre-implementation YES/NO
+question. Neither an accepted documentation fixup nor a GitHub PR merge
+automatically completes either human gate.
 
 ```text
+GATE A — HUMAN ARCHITECTURE DECISION (required before Gate B)
 Decision ID:        ______________________________________
 Date (UTC):         ______________________________________
 Approving party:    ______________________________________
-Plan/version approved: MTMF PR 24P detailed execution plan, version 2026-11-12 (rev 4, Findings A–D + Amendment E)
+Approved document/revision/commit: ______________________________________
 Exact approved text reference / evidence: ______________________________________
 Conditions / amendments: ______________________________________
-All 12 fields approved verbatim?   YES / NO
+All 12 topology fields approved verbatim? YES / NO
 Operator protocol §5 approved verbatim? YES / NO
-Pre-Tenant admission protocol §5A (including §5A.6 executor port and §5A.7 subject-history read) approved verbatim? YES / NO
-Amendment D subject-history read (§5A.7 and revised §7 fifth signature) approved verbatim? YES / NO
-Fingerprint §6 approved verbatim?  YES / NO
+Pre-Tenant admission protocol §5A, §5A.6 and §5A.7 approved verbatim? YES / NO
+Amendment D historical-subject read and fifth §7 signature approved? YES / NO
+Fingerprint §6 approved verbatim? YES / NO
 Authorization snapshot §6A approved verbatim? YES / NO
-Policy/SQL responsibility + transaction boundary §6B approved verbatim? YES / NO
-SQL signatures §7 approved verbatim? YES / NO
-Deployment values §8 complete (including ingress UID + admission socket)? YES / NO
-Development-only bootstrap exception Field 5 + §5B approved verbatim? YES / NO
-Dedicated dev operator fixture, SYSTEM Role, provenance + no-regrant rule approved? YES / NO
-§8A development-profile values complete, verified and approved? YES / NO
-Portable Linux execution contract (§5B.6) approved verbatim? YES / NO
-Target Linux deployment manifest with exact UIDs/GIDs/mounts/sockets/secrets/network human approved? YES / NO
-Target installation conformance evidence recorded? YES / NO (NOT EXECUTED)
-Production auto-bootstrap forbidden independently of dev exception? YES / NO
+Policy/SQL split §6B approved verbatim? YES / NO
+All five private SQL signatures and reserved SQLSTATEs §7 approved? YES / NO
+Development-only fixture Field 5/§5B, no-regrant, exact Role/provenance approved? YES / NO
+Portable Linux execution boundary §5B.6 approved? YES / NO
+Portable OAuth callback §5B.6A (exact existing redirect and no worker TCP) approved? YES / NO
+Manifest schema/static constraints in §8/§8A + Gate C test obligations approved? YES / NO
+Production automatic bootstrap independently prohibited? YES / NO
+
+GATE B — HUMAN STATIC DEPLOYMENT MANIFEST / IMPLEMENTATION AUTHORIZATION
+Decision ID and approving party/date: ______________________________________
+Gate A decision ID referenced: ______________________________________
+Static manifest version/hash and exact approved values: _______________________
+§8 operator/ingress/worker/runtime IDs, socket ownership/modes, secrets, networks approved? YES / NO
+§8A dedicated dev operator, password-file custody, fixture decision reference approved? YES / NO
+Callback manifest (loopback forwarding, CLI OIDC secret and ephemeral auth network) approved? YES / NO
+Manifest reuse policy (same static values; Gate C required for each machine) approved? YES / NO
+Implementation of PR 24P Parts A–E authorized, subject to STOP sub-gates? YES / NO
 ```
+
+**GATE C — NOT EXECUTED; post-implementation deployed acceptance, not a
+pre-implementation human checkbox.** The future acceptance report must
+record actual target environment, kernel/Podman/user-namespace maps, worker
+`SO_PEERCRED`, both socket and mount/access probes, the five control grants,
+78 runtime signatures, genuine browser→loopback→CLI Authorization Code flow,
+correct token handling, and negative controls. Only a passing Gate C allows
+the privileged-ready claim. On failure remain `STOP-DEPLOYMENT`,
+`STOP-PRIVILEGE` or `STOP-AUTH-PROFILE` as applicable. An approved and
+unchanged static manifest may be reused by another machine after its own
+successful Gate C evidence; no additional human decision is required unless
+the manifest or security predicates need to change.
 
 ## 10. What this document is not
 
@@ -1927,24 +2138,31 @@ Production auto-bootstrap forbidden independently of dev exception? YES / NO
 
 ## 11. Consequence of the decision
 
-- **All 12 approved verbatim + operator protocol §5 + admission protocol §5A +
-  subject-history read §5A.7 + §5B development bootstrap exception and its
-  approved §8A development values + fingerprint §6 + snapshot §6A +
+- **Gate A+B recorded by a human**: all 12 approved verbatim + operator
+  protocol §5 + admission protocol §5A +
+  subject-history read §5A.7 + §5B development bootstrap exception and
+  §5B.6A portable OAuth callback + approved static §8/§8A manifest values
+  + fingerprint §6 + snapshot §6A +
   responsibility/transaction split §6B + signatures §7 approved + deployment
   values supplied:** the agent resumes
   Parts A–E in order, stopping again at any of the named sub-gates
   (AUTH-PROFILE, POLICY-ENGINE, SEED, ROLE-PROVISIONING, SIGNATURE,
   LOCK-ORDER, AUDIT-POLICY, TRANSACTION, DEPLOYMENT, PRIVILEGE).
-- Portable §5B.6/§8A approval is separate from each machine's measured
-  `SO_PEERCRED`, user-namespace, socket/mount and privilege evidence. No
-  unverified platform can claim privileged readiness or automatically select
-  another UID/mapping when the candidate fails.
+- **Gate C is distinct from implementation authorization:** only after
+  approved implementation exists can real worker-observed `SO_PEERCRED`,
+  user-namespace, socket/mount, control/runtime privilege, signed-token
+  and on-demand browser callback tests be executed. No unverified platform
+  can claim privileged readiness. A developer machine may reuse an
+  unchanged Gate B manifest with fresh automated Gate C verification;
+  no manual per-machine approval is required for a matching deployment.
+  A different static design or failed mapping requires human review.
 - The staged boundary is mandatory: role-independent migration `0016` runs and
   passes runtime postflight first; control-role provisioning and the exact five
   owner grants occur only in the separately approved installation phase; the
   fixture follows; the worker starts only after effective-privilege
   verification.
-- **Any field rejected/amended, missing deployment value, or any frozen literal
+- **Any Gate A/B decision missing or rejected, any static §8/§8A manifest
+  value missing, any Gate C failure, or any frozen literal
   (including §5A/§5A.7/§5B/§6A/§6B) changed:** the agent records the
   differences, returns a revised plan, and stays blocked. Findings A–E must be
   approved as frozen text; accepting only the concept is not approval.
