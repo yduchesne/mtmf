@@ -18,3 +18,8 @@ the frozen operator contract in
 [PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md),
 including the persisted-domain-identity snapshot (§6A) and the policy-vs-SQL
 transaction boundary (§6B).
+
+Amendment E note: decision-record **§5B** is a proposed *installation-only development
+fixture*, not an operator authentication/authorization bypass. User tokens remain
+genuine and the standard signed-token flow is still required; no capability, role,
+or assignment exists yet.
