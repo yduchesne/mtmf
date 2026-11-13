@@ -45,7 +45,7 @@ lieu of container/worker-observed credentials.
 | One-shot dev fixture initializer | `24505:24505` | None of the above | Short-lived Keycloak/owner fixture credentials only |
 | One-shot role provisioner | `24506:24506` | None of the above | Short-lived cluster-admin credential for `mtmf_control_exec` provisioning |
 
-These are **approved static numeric IDs**, not measured host/VM mappings. Each
+These are **candidate numeric IDs**, not measured host/VM mappings. Each
 container must have a distinct worker-observed effective identity. The
 provisioning code must not use a root or privileged long-lived worker to
 circumvent failed group ownership. Invalid/unmapped/collapsed identities:
