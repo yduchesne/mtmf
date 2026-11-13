@@ -2,9 +2,9 @@
 
 **PR:** roadmap **PR 24P** — Operator and Pre-Tenant Privileged Execution Prerequisite
 **Artifact directory:** `docs/pr-artifacts/pr-24p/`
-**Plan version:** 2026-11-12 (rev 3: independent-review Findings A–D) · `DESIGN PROPOSED`
+**Plan version:** 2026-11-12 (rev 4: independent-review Findings A–D + Amendment E development bootstrap) · `DESIGN PROPOSED`
 **Prepared by:** coding agent (Phase 0, documentation only)
-**Baseline reconciled at:** `8712418a3d2de212791ae75a6235d3e00fced450` (= `origin/main`, PR 23 merged)
+**Baseline reconciled at:** `28d5de85ccf63c9ffb5bdc8298156e6038cbdadd` (= `origin/main`, rev 3 merged via PR #76); original Phase 0 baseline `8712418a3d2de212791ae75a6235d3e00fced450`
 **Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`** — `STOP-P24P-TOPOLOGY` is **ACTIVE**
 
 ## 0. Amendment history and independent-review disposition
@@ -20,11 +20,39 @@ created.**
 | **B** | The authorization snapshot carried only bare IDs plus permission rows, so the control process could not verify persisted Identity/Principal/binding/Role lifecycle, origin, canonical-root exclusion, or builtin/approved marker facts. | New **§6A** replaces the snapshot description with an exact persisted-domain-identity schema (Identity, Principal, ExternalSubjectBinding, Role, PermissionSet, Permission, assignment, target), sufficient to reconstruct the existing internal aggregates and perform every `authorize_global_system` check without a second read. |
 | **C** | “Policy evaluation” and “SQL revalidation” duties overlapped: both Python and SQL appeared to check assignment/target/Action, and the transaction/lock boundary between the snapshot and the mutation wrapper was not pinned. | New **§6B** freezes a non-overlapping responsibility table, the exact check order, the lock order across snapshot + wrapper, the single-transaction boundary, and the rule that SQL never returns ALLOW and Python never trusts stale unlocked state. Field 10 now references it. |
 | **D** | Revoked-only external subject history was indistinguishable from a new subject in the proposed pre-Tenant admission read; §5A also mentioned unsupported entitlement expiration. | Freeze three-argument history-aware read, historical precedence, internal result, handler mapping, and remove unsupported expiry reference; no implementation or approval. See **§5A.7**. |
+| **E** | Field 5 prohibited a development initializer from creating a SYSTEM operator; local deterministic bootstrap cannot be automated without an approved narrow exception. | Amend Field 5 only for an opt-in, canonical-development, one-shot **dedicated operator** fixture; new §5B freezes identity/provenance, installation order, idempotency, deployment isolation, negative tests and production exclusion; §8/§9/§11 explicitly require separate human approval. No code or deployment is changed. |
+
+**PR #77 independent OAuth-contract review fixup (documentation only).**
+The four documented callback findings are resolved as proposed text:
+valid Keycloak `iss`/`session_state` handling, achievable browser-code
+secrecy, no reuse of stale interactive-login evidence, and explicit
+dual-use confidential-client risk. This is not an implementation or
+a new approval. See §5B.6A and the PR #77 review-fixup evidence report.
+
+**Amendment E portability independent-review fixup (documentation only).**
+Review of commit `b291315` found two P1 design gaps: a pre-implementation
+approval gate wrongly required post-deployment evidence, and the containerized
+operator had no portable host-browser OAuth callback path. This revision freezes
+the ordered Gate A/B/C boundary (§3/§9/§11) and exact on-demand callback
+contract (§5B.6A), without implementation, host certification or approval.
+
+**Amendment E portable-development clarification (documentation proposal; no approval).**
+Native Linux, WSL2 Linux, and Podman-managed Linux VMs on Windows/macOS are
+candidate execution environments under ONE Linux socket/UID security contract.
+Worker-observed peer credentials, mounts and privilege verification are
+required for each deployment; example UIDs are neither host facts nor approval.
+`STOP-P24P-TOPOLOGY` remains active.
+
+**Amendment E targeted fixup (documentation): role/migration order + §8A reference.**
+This fixup corrects two review defects without creating a new amendment: it makes
+future migration `0016` explicitly role-independent and stages control-role
+creation/grants after migration, and it corrects the §9 development-profile
+approval reference from §8 to §8A. No implementation or approval is added.
 
 All other approved architectural invariants and proposals in this record are
 preserved unchanged. The frozen operator protocol (§5), fingerprint (§6), and
 **four unchanged operator SQL signatures** are preserved verbatim; the fifth
-(pre-Tenant) signature is replaced by §5A.7/§7. §5A/§5A.7/§6A/§6B are
+(pre-Tenant) signature is replaced by §5A.7/§7. §5A/§5A.7/§5B/§6A/§6B are
 **additive** and must be approved together with the existing twelve fields.
 
 > **This document is a decision request, not an approval.** Nothing in this
@@ -95,11 +123,44 @@ Required decision material (fill in §9 and the per-field blocks):
 - exact approved text / document version;
 - reference or evidence (meeting record, signed file, ticket);
 - any conditions or amendments;
-- the deployment-specific host values in §8.
+- the portable deployment-manifest *contract* in §8, and the separately
+  approved static target manifest values required by Gate B. Live peer,
+  socket, and credential-attestation results are **Gate C**, not a
+  pre-implementation §9 prerequisite.
 
 The pre-Tenant subject-history and entitlement read (§5A.7, the fifth §7
 signature) is part of the frozen contract and must be approved verbatim;
 approving the admission concept without it is not approval.
+
+The development-only installer exception is separately frozen in §5B. Human
+approval must explicitly cover its operator identity, one-shot provenance,
+opt-in conditions, fixture lifecycle, isolation proofs, and the required §8 host
+values. Approval of the production topology alone does not imply approval of the
+development fixture, and vice versa.
+
+**Ordered approval and acceptance gates (no implicit authorizations):**
+
+- **Gate A — architecture decision:** a named human approves all twelve
+  fields, §§5/5A/5A.7/5B/5B.6A/6/6A/6B/7, the portable manifest schema,
+  and the required future acceptance controls. An agreement with a design
+  direction or a GitHub merge is not Gate A.
+- **Gate B — target deployment manifest / implementation authorization:**
+  following Gate A, a named human approves a complete static, versioned
+  deployment profile containing required Linux container IDs/GIDs, socket
+  paths/ownership/modes, secret mounts, OIDC callback forwarding contract,
+  networks and trust boundaries. An A+B record authorizes implementation
+  **only**, not a claim of deployed privilege isolation or readiness.
+- **Gate C — deployment acceptance:** after authorized implementation, the
+  actual worker, sockets, mapped peers, secrets, database grants and genuine
+  browser-based operator login pass the independent deployed tests. Gate C
+  permits privileged readiness only if every mandatory probe passes.
+
+Once A+B approves a reusable profile, a new developer machine may reuse
+the *same exact static manifest* without another discretionary human
+approval, provided fresh automatic Gate C attestation proves the profile's
+effective-ID, mount, socket, callback and privilege predicates. A changed
+manifest, different security constraints or failed proof requires STOP and
+an explicit human amendment. This is not automatic authority selection.
 
 If **any** field is `REJECTED` or `AMEND`, the agent stops and returns a
 revised plan for further approval. The agent will not reinterpret amendments,
@@ -124,12 +185,16 @@ builds the public HTTP service; no `packages/mtmf-control-plane/` exists.
 
 **Threat assumptions.** Assumes the deployment can give the control process a
 *distinct* process identity and filesystem/network namespace from the public
-service. If both run as the same host UID with mutually readable secrets and
-socket paths, the compromised-runtime model fails and the agent must STOP.
+service. If the public runtime and worker are indistinguishable at the actual Linux
+security boundary, or their protected sockets/secrets are mutually readable,
+the compromised-runtime model fails and the agent must STOP. One rootless
+Podman host owner is a residual trusted host actor, not proof of isolation.
 
 **Required deployment.** A new workspace distribution and a dedicated
 non-root container/UID, no public ports, no shared service env file, no shared
-secret volume. Exact UID/GID in §8.
+secret volume. Exact UID/GID in §8. The proposed one-shot development
+installation in §5B is a separate short-lived process and must never be part of
+`mtmf-service` startup or the persistent worker.
 
 **Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
 **Approved text / amendment / conditions:** ______________________________________
@@ -152,9 +217,11 @@ the boundary.
 **Supporting evidence.** No socket or listener exists today; no client
 transport contract enumerates a peer-credential model.
 
-**Threat assumptions.** Assumes rootless Podman/WSL2 preserves distinct peer
-UIDs across the mount boundary. If peer mapping collapses identities, the agent
-must STOP (`STOP-DEPLOYMENT`).
+**Threat assumptions.** Assumes the Linux execution environment (native Linux,
+WSL2, Podman-managed Linux VM, or separately approved Linux VM) preserves
+worker-observed distinct `SO_PEERCRED` UIDs across socket mounts. Host labels,
+configured container UIDs and `id -u` alone are not proof. An unmapped,
+unknown, collapsed or unmeasurable peer UID is `STOP-DEPLOYMENT`.
 
 **Required deployment.** Socket absolute path, owner UID/GID, mode, allowed
 admin UID, directory mount. Values in §8.
@@ -232,7 +299,9 @@ interactive-user token for an operator subject with a persisted binding, and
 that the verifier is safe to use outside a Tenant session.
 
 **Required deployment.** Existing `mtmf-dev` Keycloak + committed baselines;
-no regeneration.
+no regeneration. The only proposed portable browser-to-ephemeral-operator
+Authorization Code callback transport and secret-custody path is frozen in
+§5B.6A; it is a development-only login transport, not a control TCP endpoint.
 
 **Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
 **Approved text / amendment / conditions:** ______________________________________
@@ -250,8 +319,17 @@ stewardship. A one-time, owner-controlled **installation ceremony** creates the
 initial assignment with an externally approved operator/identity/role and an
 append-only event, using an explicit `approval_correlation_id` and
 `approved_by` installation-decision reference. It is not a runtime self-grant,
-not an environment-variable bootstrap, not a dev initializer, and not derived
-from root. Revocation is an installation-only ACTIVE→REVOKED transition;
+not an environment-variable source of authority, and not derived from root. In
+production, it is never installed by a development initializer or by an
+environment flag; it requires the separately approved owner-controlled human
+installation ceremony. The sole proposed exception is the explicitly opt-in,
+canonical-MTMF-development, one-shot fixture in §5B: it may create or verify
+exactly one dedicated non-root operator and its exact approved SYSTEM Role
+assignment under owner installation authority, with immutable
+development-fixture provenance and strict fail-closed reconciliation. The §5B
+exception is NOT APPROVED until the human explicitly approves it alongside this
+field, and cannot be generalized to production or ordinary runtime.
+Revocation is an installation-only ACTIVE→REVOKED transition;
 regrant uses a new UUID and a new decision. Dynamic grant management is
 deferred. No automatic root assignment at any point.
 
@@ -267,6 +345,11 @@ assumption.
 **Required deployment.** An installation-only reviewed script/function run in
 the `mtmf_migrator`/`SET ROLE mtmf_owner` installation context; no runtime or
 control-login EXECUTE.
+
+Development-only exception: the exact fixture, process identity, installation
+sequencing, provenance and isolation requirements in §5B are normative proposed
+constraints; §8 host values and §9 approval remain mandatory. The present source
+contains no such installer, Role-assignment table or worker.
 
 **Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
 **Approved text / amendment / conditions:** ______________________________________
@@ -329,7 +412,10 @@ cannot execute v014/v015 owner-only mutations directly. The runtime allowlist
 stays exactly **78**. Which wrapper performs which check, and the one
 transaction that spans them, are frozen in **§6B**. The fifth entrypoint is the
 pre-Tenant history/entitlement read frozen in **§5A.7**; it is not an operator
-wrapper and cannot return ALLOW.
+wrapper and cannot return ALLOW. Migration `0016` installs the five functions
+without requiring or granting `mtmf_control_exec`; the separate approved
+installation phase grants the five EXECUTEs only after migration and role
+provisioning (§5B.4/§7).
 
 **Supporting evidence.** `roles.py` (`provision_roles`, role verifiers,
 `expected_runtime_signatures` = 78), `scripts/mtmf-provision-roles.py`;
@@ -458,7 +544,7 @@ runtime policy; no network calls under the transaction.
 
 ---
 
-### Field 11 — Secret custody and rotation; explicit host Podman/WSL2/Linux namespaces and privileges
+### Field 11 — Secret custody and rotation; verified Linux execution namespaces and privileges
 
 **PROPOSED.** The `mtmf_control_exec` credential is delivered only through an
 owner-only secret file or Podman secret mount to the isolated control process —
@@ -474,11 +560,15 @@ holds, separately, the existing restricted-runtime read credential for PR 23
 identities; `scripts/mtmf-provision-roles.py` handles migrator/runtime
 passwords; there is no control secret.
 
-**Threat assumptions.** Host/WSL2 secret-mount semantics must be verified;
-if secrets are mutually readable by the runtime UID, STOP.
+**Threat assumptions.** Verify POSIX permissions and secret mounts inside
+the actual Linux execution environment. Do not assume Windows/macOS-host-shared
+filesystem mounts preserve Linux Unix sockets or owner-only permissions.
+If secrets are readable by the ordinary runtime, STOP.
 
 **Required deployment.** Secret mount path, perms, and rotation runbook; host
-resource identifiers in §8.
+resource identifiers in §8. For development, §5B fixes the one-shot installer
+versus worker/runtime secret-custody separation; the exact secret mount and
+rotation data still require §8 approval.
 
 **Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
 **Approved text / amendment / conditions:** ______________________________________
@@ -511,7 +601,9 @@ image) does not demonstrate distinct runtime/control UIDs or secret separation.
 **Threat assumptions.** Network/mount/UID isolation is real, not simulated.
 
 **Required deployment.** The full §8 values plus a runnable negative-control
-harness; otherwise ISO-03/ISO-04 are `BLOCKED_ENV`, never PASS.
+harness; otherwise ISO-03/ISO-04 are `BLOCKED_ENV`, never PASS. Development-mode
+bootstrap does not relax the real compromised-runtime UID/socket/secret/role
+negative controls, which §5B.6 requires before readiness.
 
 **Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
 **Approved text / amendment / conditions:** ______________________________________
@@ -970,6 +1062,665 @@ test must be recorded as blocked, never PASS. SH13–SH14 require deterministic
 barriers to control the two read instants, not timing sleeps. Every real-DB
 mutation fixture must be rolled back/cleaned under the approved test harness.
 
+## 5B. Development-only automated operator bootstrap (Amendment E — proposed)
+
+This section is an unapproved, development-only installation proposal; no
+startup, operator grant, or control-plane capability is implemented by this
+revision.
+
+### 5B.1 Activation and canonical development profile (E-I01)
+
+A development-only exception may exist **only** in the canonical isolated
+`mtmf` development profile, with exact `MTMF_SERVICE_DEPLOYMENT_MODE=development`,
+Compose project `mtmf`, and issuer:
+
+```text
+https://keycloak.mtmf.test:28443/realms/mtmf-dev
+```
+
+A future explicit opt-in **`MTMF_DEV_CONTROL_BOOTSTRAP_ENABLED=true`** may enable
+the reviewed fixture orchestration. Its default is **disabled**. Only exact
+`true` and `false` are valid; unset means `false`, and malformed values cause
+configuration failure. **The flag is not authorization evidence** and may not
+select the operator, Role, issuer, database, port, UID, or privilege level.
+Installation privileges come exclusively from the short-lived installer identity
+and the human-approved immutable manifest. The public `mtmf-service` must never
+read the flag to unlock management behavior.
+
+An explicit human topology decision later must approve this literal development
+profile before any installer acts on it. No implicit approval arises from `up`,
+a `git merge`, a passing test, an environment flag, or this plan. Non-development
+deployment modes, noncanonical issuers/projects, or unapproved manifests STOP
+before any privileged action.
+
+### 5B.2 Dedicated Keycloak operator and exact SYSTEM assignment (E-I02/E-I03)
+
+The sole proposed local SYSTEM operator username is the exact development
+fixture **`mtmf-dev-operator`** in realm `mtmf-dev`. It is **not** the Keycloak
+master administrator `mtmf-admin` and must be **distinct from** the current
+ordinary fixture user `MTMF_DEV_USER_USERNAME`. There is **one** development
+operator; no arbitrary list or user-selected Role. The operator is a Keycloak
+interactive user, not a service account and not the canonical MTMF
+root Identity/Principal.
+
+Its MTMF `Principal`, `Identity`, `ExternalSubjectBinding`, and
+`system_operator_assignment` are separate from ordinary dev-user and root
+records. No Tenant membership, Tenant Role assignment, stewardship, or ownership
+is created for this SYSTEM operator by this fixture. The Keycloak user's actual
+immutable subject comes from the approved `KeycloakDevUserProvisioner`
+verification path; **no literal, derived, guessed, username-derived or
+environment-provided `sub` is acceptable**.
+
+The sole Role is exactly:
+
+```text
+urn:mtmf:iam:roles:system:application-administrator
+```
+
+It must be an already approved/protected SYSTEM built-in definition with the
+PR 21-approved permission manifest. Do not synthesize it, substitute a Tenant
+Role, select a Role from environment variables, or repair a drifted definition.
+If the approved seed is missing or mismatched, future initialization STOP-SEED,
+not an on-the-fly grant.
+
+Future fixture implementation must reuse the existing validated development
+Keycloak user provisioner and its admin-REST exact-username +
+authoritative-subject rules. It may **create** `mtmf-dev-operator` only if all of
+the following are true: explicit bootstrap opt-in, genuinely absent exact user,
+approved canonical realm/client/issuer, an owner-only development-only password
+file supplied by the developer, and valid Keycloak Admin REST create/read-back
+correlation. It must **never** print, commit, synthesize a default plaintext
+password, reset an existing password, enable a disabled account, impersonate an
+account, or auto-recover an ambiguous create result.
+
+For a repeated startup: verify the exact Keycloak subject **and** the previously
+installed MTMF binding, operator Principal/Identity and approved assignment. Do
+not change them. If the username already exists but the MTMF fixture/binding/
+approved creation provenance does not exist, **STOP** as an adoption/
+partial-install case; no silent acquisition of authority. If creation failed
+after an uncertain remote result, **STOP**, no second POST. A supplied password
+file does not authorize takeover of an existing user.
+
+Existing standard Authorization Code user sign-in (using the approved client)
+remains mandatory for executing real operator requests. The precise on-demand
+operator CLI callback/PKCE/client-secret procedure is frozen in §5B.6A;
+bootstrap itself must not synthesize or require an interactive token. The installer may use
+privileged Keycloak Admin REST to validate/create the fixture, but may not mint
+an impersonated operator user token, use password grant, or bypass signed-token
+verification during control-plane execution. Automated isolated genuine-token
+acceptance must use a separately approved genuine user-interaction fixture and
+never fabricated JWTs.
+
+### 5B.3 Short-lived installer, fixture IDs, and audit provenance (E-I04)
+
+The fixture runs **only** as a short-lived installation job, using the privileged
+migrator with explicit `SET ROLE mtmf_owner` after approved migrations/role
+topology are verified. The public service and persistent control worker never
+receive the migrator, Keycloak Admin REST, root, or owner credentials.
+
+The installation job is authorized to use **only** the previously approved,
+owner-only installation path for `system_operator_assignment` and its
+append-only provenance. It must not expose a general runtime Role-grant function
+or grant privileges to `mtmf_runtime`/`mtmf_control_exec` beyond the
+independently approved five-function allowlist.
+
+The persisted approval provenance must distinguish fixture provenance from a
+genuine human production ceremony, without spoofing an operator or signing a
+human approver's name. The fixed literal source label is:
+
+```text
+dev-fixture:mtmf:pr24p:system-operator:v1
+```
+
+Store the eventual human decision ID as a separate exact
+installation-decision reference once approved. The future installer may not
+fabricate that ID. The proposed append-only event records the fixed source
+label, canonical operator Identity/Principal, Role URN, assignment UUID, event
+outcome (`CREATED` only for initial installation), correlation UUID, and
+timestamp. Repeated verified bootstrap produces **no new event**, no new Role
+assignment, and no inflated audit success. Do not add a general mutable
+`approval_source` column by assumption; the future schema/approved installer
+must map these provenance facts into its reviewed columns, or STOP-SCHEMA. The
+database's inability to cryptographically attest a human approver remains a
+documented trust assumption.
+
+Use the repository's existing `_deterministic(...)` UUIDv5 helper with its
+already-shipped namespace (not a new random seed) for future fixture IDs, with
+these fixed, distinct name inputs after the real Keycloak `sub` is verified:
+
+```text
+pr24p:dev-operator:principal:<actual-Keycloak-sub>
+pr24p:dev-operator:identity:<actual-Keycloak-sub>
+pr24p:dev-operator:binding:<actual-Keycloak-sub>
+pr24p:dev-operator:system-assignment:<actual-Keycloak-sub>
+pr24p:dev-operator:installation-correlation:<actual-Keycloak-sub>
+```
+
+Angle-bracket text means the actual exact Keycloak subject substituted at
+runtime, never the literal string `<actual-Keycloak-sub>`. This is only a
+proposed fixture identity derivation, not a SQL or code instruction. The
+canonical development issuer is fixed, so the namespace is issuer-specific by
+policy; any future multi-issuer dev support requires a new design rather than
+reusing these IDs across issuers.
+
+### 5B.4 Exact future startup and credential custody order (E-I06)
+
+The future order for `scripts/mtmf-dev-stack.py up` **when the approved opt-in
+is enabled** is prescribed here; it is not a command to execute in this
+amendment:
+
+```text
+0  PRE-FLIGHT: accept only exact MTMF_DEV_CONTROL_BOOTSTRAP_ENABLED=true for
+   privileged setup; mode=development, project=mtmf, canonical issuer/client,
+   reviewed manifest, admin/control/migrator/runtime credential custody, and
+   approved UID/socket/network/secret paths. Abort before side effects on
+   noncanonical/unknown configuration.
+1  START BASE: start only MTMF-owned PostgreSQL, Keycloak and canonical TLS
+   forwarder; perform the launcher’s existing health/issuer probes.
+2  MIGRATE + BASE FIXTURES: run the existing short-lived initializer in the
+   current sequence, including migration to head 0016, mandatory runtime
+   privilege postflight, and existing ordinary development fixture
+   verification. Revision 0016 creates owner-owned PUBLIC-denied functions
+   without requiring or creating mtmf_control_exec and without granting it
+   EXECUTE. Do not install a SYSTEM operator in --migrations-only mode.
+3  CONTROL LOGIN: only because exact opt-in was approved, run a separate
+   short-lived cluster-administrator role-provisioning action: CREATE a new
+   mtmf_control_exec LOGIN if absent and safely pristine, or verify a fully
+   provisioned, already approved existing control role. Require approved
+   secret custody. Never invoke the current default three-role password
+   provisioning action or rotate migrator/runtime credentials.
+4  CONTROL GRANTS: with the approved installation-only migrator/SET ROLE
+   mtmf_owner authority, install the exact five §7 EXECUTEs on a newly
+   provisioned role; scope CONNECT to the MTMF database and USAGE to the
+   mtmf schema as required. Verify every effective privilege and no other
+   EXECUTE, DML, role membership or PUBLIC/runtime reachability. For a
+   previously installed role, verify-only; unexpected partial state STOP.
+5  OPERATOR FIXTURE: only after steps 2–4 are verified, run the short-lived
+   installer using the existing verified Keycloak-sub flow and owner-approved
+   fixture installation path. Create the fixed mtmf-dev-operator only in a
+   clean fresh state; otherwise verify exact existing immutable provenance.
+   No self-grant, root impersonation, auto-adoption, auto-regrant or repair.
+6  EXIT INSTALLERS: terminate every administrator/migrator/Keycloak-master
+   installation context; prove admin/migrator secrets and mounts are absent
+   from the long-running worker and ordinary service.
+7  START ISOLATED WORKER + PUBLIC SERVICE: start non-root control worker with
+   only restricted control/read credentials and approved private sockets;
+   keep admission socket test-harness-only. Start unprivileged mtmf-service
+   with mtmf_runtime only and no control-role credentials or socket mounts.
+8  PROVE AND REPORT: run the planned real peer-UID, socket, role/grant,
+   effective-privilege, genuine-token and compromised-runtime negative
+   probes. Only if all required checks pass may the launcher report
+   'development stack ready (privileged control plane)'; otherwise FAIL
+   CLOSED with no privileged-ready claim.
+```
+
+**Role-independent migration.** Future `0016` is unconditional and independent
+of the bootstrap flag and of `mtmf_control_exec` existence. Under the
+already-authenticated `mtmf_migrator` / `SET ROLE mtmf_owner`, it creates the
+reviewed owner-owned schema objects and exactly five §7 private functions with
+PUBLIC EXECUTE revoked and no externally observable PUBLIC-callable interval. It
+**must not** issue `CREATE ROLE mtmf_control_exec`, `GRANT ... TO
+mtmf_control_exec`, or any other SQL requiring that role to exist; it must not
+branch on the deployment profile or flag; and it must not add any
+`mtmf_runtime` grant, membership, elevation or owner-only v014/v015 access. It
+must pass the mandatory effective runtime privilege postflight whether the
+control role is absent or previously present. Installing the five functions is
+not the same as making them executable by a new control login. An ordinary
+migration rerun must not strip or rotate a previously approved control role or
+its grants as an incidental opt-out, but it must fail on any unexpected
+effective grant surface. Implementation discovery that this cannot be
+represented in the existing migration/owner model is
+`STOP-MIGRATION-ROLE-COUPLING`, not a conditional migration branch or a
+privileged role secret in Alembic.
+
+**Future role/grant interface.** Control-role creation is a distinct, opt-in,
+administrator-authorized action in the existing
+`scripts/mtmf-provision-roles.py` model, with an explicitly named future
+`--provision-control` mode and a separately named future read-only
+`--verify-control` mode. Neither mode exists today; neither may be invoked in
+this fixup; neither may change the current default/no-argument or `--verify`
+behavior. `--provision-control` runs only after `0016` and under administrator
+credentials: it creates an absent role with a restricted dedicated credential,
+verifies a fully existing approved role without changing its password, and
+rejects drift or partial installation. The owner-authorized job grants or
+reconciles exactly the five §7 functions with an explicit initial-install versus
+verify-only branch. `--verify-control` verifies exact effective role, database,
+schema and function privileges without creating or repairing anything. If the
+approved implementation cannot separate these duties and credentials, STOP and
+seek a revised design. Cluster `CREATE ROLE` requires administrator authority;
+owner-owned function grants require authenticated migrator/owner authority.
+Never assume the migrator can create a cluster LOGIN; never give the worker,
+service, `mtmf_runtime` or Keycloak operator administrator/migrator secrets. No
+transaction spans a remote Keycloak request and PostgreSQL locks.
+
+**Opt-out and previous state.** When `MTMF_DEV_CONTROL_BOOTSTRAP_ENABLED` is
+unset or exactly `false`: run the current `up` flow including migration to head
+`0016` and ordinary fixture; do not call control provisioning/verification,
+install control grants, install the SYSTEM operator, start the worker, or mount
+its secrets/sockets. On a fresh database, observe no new control role,
+assignment, grant or worker. On a previously opted-in database, **retain the
+existing role, grants and fixture without mutation**; the flag is not
+revocation. Normal runtime cannot exploit them because it lacks privileged
+grants, credentials and socket access. If prior control privileges cause
+PUBLIC/runtime reachability, the mandatory runtime verifier must fail closed.
+Actual revocation requires a distinct human-approved rotation/revocation or
+explicit MTMF-only destructive reset outside normal `up`/`down`. “Standard `up`
+unchanged” means unchanged service/ordinary-fixture behavior, not that schema
+head remains `0015` and not that persisted control objects are dropped on
+opt-out. The existing `--migrations-only` path must never auto-install an
+operator fixture.
+
+This one-command goal assumes prior developer configuration of the needed
+secrets and a human-approved, verifiable UID/socket/secret topology; it is not
+an unattended install on a completely unconfigured host. Existing
+`mtmf_owner`/`mtmf_migrator`/`mtmf_runtime` provisioning remains the documented
+prerequisite for the current initializer; this fixup does not claim a bare
+PostgreSQL cluster with none of those roles can already be brought up with zero
+configuration, and it does not rewrite the existing bootstrap flow.
+
+### 5B.5 Idempotency, no-regrant policy, and failure rules (E-I05)
+
+| ID | Precondition | Only permitted future action | Forbidden behavior |
+|---|---|---|---|
+| D01 | Bootstrap flag absent/false | Run existing standard dev stack with no PR 24P fixture | Implicit operator assignment or socket creation |
+| D02 | Flag exact true, mode `development`, canonical issuer/project, approved values | Perform full preflight then one-shot installation | Treat flag as authority by itself |
+| D03 | Flag true, non-development mode, noncanonical issuer/project, or unapproved manifest | STOP before privileged action | Fallback issuer or weaker profile |
+| D04 | Canonical Keycloak operator genuinely absent, password file valid, no MTMF operator artifacts | Create exact user once; verify authoritative immutable `sub`; then install | Guess `sub`, default password, impersonate, retry uncertain POST |
+| D05 | Exact operator exists with full matching, previously audited ACTIVE fixture | Validate all facts read-only; no new audit/assignment | Duplicate assignment or rolling credential reset |
+| D06 | Exact username exists without approved MTMF fixture | STOP for explicit human adoption/remediation | Automatically bind/preempt existing account |
+| D07 | Existing operator disabled/ambiguous/drifted, wrong `sub` or externally managed | STOP | Enable/rename/adopt/repair user |
+| D08 | MTMF operator binding absent after partial Keycloak creation | STOP; report partial-install evidence | Silent self-heal or delete/recreate user |
+| D09 | Operator Identity/Principal deleted, LOCAL, root, mismatch or Tenant membership unexpectedly granted by fixture | STOP | Root impersonation or alias to ordinary user |
+| D10 | SYSTEM Role missing, incorrect definition, stale permission manifest | STOP-SEED | Manufacture new Role or broad Permission |
+| D11 | Assignment ACTIVE and exactly matches approved fixture | Verify only | Regrant/revoke/update |
+| D12 | Assignment REVOKED, terminal/conflicting, duplicated or missing provenance | STOP; manual remediation | Automatic ACTIVE transition or new grant |
+| D13 | Fresh opt-in setup **before** control-role provisioning: role absent; or opt-in **after** provisioning/grants: role absent, partial, overprivileged, or grants drifted | Before provisioning, absence is expected: create via isolated approved administrator role-provisioning phase, then install and verify exactly five grants. After provisioning, absent/drifted role or grants: `STOP-ROLE-PROVISIONING` / `STOP-PRIVILEGE`. Previously installed role is verify-only; partially installed role requires explicit remediation. | Treat pre-provisioning absence as a STOP; use migrator/runtime login to CREATE ROLE; silently repair a partially installed or overprivileged role; rotate unrelated credentials; continue to worker on failed verification. |
+| D14 | Podman peers collapse UIDs or runtime can reach a socket | STOP-DEPLOYMENT | Group ACL fallback, shared UID/chmod-only proof |
+| D15 | Runtime sees secret, owner/migrator credential or worker memory/mount | STOP-PRIVILEGE | Start partially ready service |
+| D16 | Admin create committed remotely but result cannot be correlated | STOP-AUTH-FIXTURE | Second blind create or reinterpret response |
+| D17 | Bootstrap DB commit outcome unknown | STOP-TRANSACTION; explicit inspection required | Blind replay of privileged installer |
+| D18 | Operator is assigned but no genuine interactive user token can be produced | STOP-AUTH-PROFILE | Enable password grant or fake token |
+| D19 | Control plane probes fail | Do not claim privileged stack ready | Skip negative tests |
+| D20 | All reviewed values, commands, tests approved and verified | Only then mark privileged development readiness | Infer production approval from dev success |
+
+**Role-state phase classification (D13).** *Fresh* opt-in means the control role
+is absent because it has never been provisioned; this is expected and is not a
+STOP. *After provisioning/grants* means the trusted installer has created the
+role and is expected to complete or verify exactly five grants; a missing,
+partial, overprivileged or drifted surface is a STOP, not a transient state to
+repair automatically. *Previously installed* means a complete approved prior
+state exists; only read-only verification is permitted, with no password
+rotation, regrant, assignment mutation or audit inflation.
+
+Additional fixed rules:
+
+- Fresh approved fixture with no user/binding/assignment: create the validated
+  Keycloak account (if missing), then create exact MTMF objects/assignment and
+  the append-only event through the installer.
+- Exact existing Keycloak account with an exact valid, previously bootstrapped
+  MTMF fixture (matching immutable UUIDs, binding, ACTIVE Role definition,
+  assignment and source provenance): **verify-only/no write**.
+- Missing user but existing MTMF fixture, different Keycloak `sub`, changed
+  Principal/Identity, deleted/LOCAL/root Identity, revoked binding/assignment,
+  unexpected Role, duplicate assignment, or missing provenance: **STOP**, no
+  repair or regrant.
+- Existing unbound Keycloak user by the same username on an initial run: **STOP**,
+  no automatic adoption.
+- Keycloak account disabled, duplicate, federated/externally managed, or
+  drifted: **STOP**, no silent rewrite.
+- Fresh Keycloak user created but PostgreSQL write fails or commit outcome is
+  unknown: **STOP** with safe diagnostic; do not delete the Keycloak user or
+  retry privileged writes blindly; explicit development recovery is a separate
+  human action.
+- Reset is permissible only through an already approved explicit MTMF-only dev
+  reset that identifies exact MTMF project resources and warns about destroying
+  persistent Keycloak `sub` references. A normal `up`/`down` never resets,
+  revives, unrevokes, or wipes anything.
+
+### 5B.6 Portable Linux UID/socket/namespace and compromised-runtime proofs (E-I07)
+
+The future development deployment must use:
+
+- Separate non-root Linux/Podman process identities for control worker,
+  administrator/operator client, private admission test ingress, and ordinary
+  runtime; **no UID collapsing**, validated through real `SO_PEERCRED` observed
+  inside the worker under the chosen user namespaces.
+- Distinct private AF_UNIX operator/admission sockets governed by the existing
+  §5/§5A contracts, with only the approved peer UID admitted and no TCP or
+  group-only fallback.
+- Operator socket available to its approved administrative client only;
+  admission socket **test harness only in PR 24P**, never public or reachable
+  through `mtmf_runtime`.
+- Restricted worker secret mounts: no Keycloak master admin password, no
+  owner/migrator DB credential, no host Podman socket, no public-service shared
+  volume containing worker secrets; no secrets on command lines/logs/repository.
+- `mtmf_control_exec` restricted to exactly five approved function EXECUTEs; no
+  table/sequence DML, SUPERUSER, CREATEROLE, CREATEDB, BYPASSRLS, CREATE-on-schema,
+  owner/migrator membership, or other reachability. Database CONNECT and schema
+  USAGE, if required, are separately scoped and verified and never count as
+  extra function EXECUTEs. `mtmf_runtime` retains **78** previously approved
+  signatures, unchanged.
+- Strict MTMF-owned project selection: **`mtmf`** for the local developer stack.
+  No resource discovery or destructive action across ATI, Digr, Darkula or
+  unrelated Podman projects. Do not hardcode container network IPs; preserve
+  the existing canonical Keycloak TLS/issuer.
+- Readiness tests with real deployed UIDs, roles, socket permissions and mount
+  namespaces, not `chmod` on a shared UID, fake credentials, or mocked
+  `SO_PEERCRED`.
+
+Exact numerical UIDs/GIDs, paths, Podman user-namespace mapping, worker secret
+file mount/rotation owner and socket owner/mode are human-approved future
+deployment values, not values to guess here. The developer's host-level
+privileged account is a residual trust assumption; this profile protects against
+compromise of the ordinary service container, not a host owner with full
+Podman/container control.
+
+**Portable development deployment contract (PROPOSED; NOT APPROVED).**
+All privileged Unix sockets and `SO_PEERCRED` checks occur *inside* the Linux
+execution environment. Candidate supported configurations: native Linux with
+rootless Podman, WSL2 Linux with rootless Podman, and Windows/macOS with a
+Podman-managed Linux VM. Any other Linux VM needs the same evidence. No
+Windows/macOS host process connects directly to a privileged Unix socket.
+Instead, a separate ephemeral MTMF-owned Linux operator-CLI container runs
+under its own UID; host terminals may launch it. Interactive operator
+authentication still requires a genuine signed token from the approved OIDC
+Authorization Code flow; no device/password-flow or token bypass is inferred.
+
+**Candidate Linux-container IDs, not measured host UIDs:** control worker
+`24501`, operator CLI `24502`, admission test ingress `24503`, public runtime
+`24504`. These are proposed manifest inputs ONLY; §8/§8A requires a human
+to approve their actual mapping. Worker-observed `SO_PEERCRED` values for
+operator and ingress must be unique, exact and never an overflow/unmapped UID.
+Reject runtime, worker-self, cross-socket, missing or unknown peer credentials.
+Unexpected mapping means `STOP-DEPLOYMENT`, not automatic UID selection.
+
+**Candidate sockets (Linux-native/project-scoped volumes only):**
+
+| Interface | Proposed worker/container path | Filesystem + peer gate |
+|---|---|---|
+| Operator | `/run/mtmf-control/operator/operator.sock` | Separate named volume mounted only by worker and operator CLI; exact operator UID |
+| Admission | `/run/mtmf-control/admission/admission.sock` | Different named volume mounted only by worker and admission test harness; exact ingress UID |
+
+Use two distinct socket directories with proposed worker-owned directory
+mode `0710` and socket mode `0660`, each with a *different* narrow access
+group for the permitted client. Group permissions enable pathname access
+but never authorize a caller without exact `SO_PEERCRED` UID verification.
+The worker must create these controls without privileged long-running
+containers; if actual rootless Podman mappings or POSIX mounts cannot support
+them, STOP. Never use mode `0777`, shared UID, TCP/localhost proxy or a
+host-mounted Podman socket as a fallback. The admission socket remains
+test-harness-only and not publicly callable in PR 24P.
+
+Proposed control DB secret location: `/run/secrets/mtmf-control-db`,
+worker-only restricted Linux-native mount with owner-only `0400` or `0600`
+file permission as approved. Keep sockets and secrets off unverified host
+shares. Retain the `mtmf` Compose project; add a project-scoped private
+control network with no published worker port. Worker and required database/
+Keycloak TLS-forwarder dependencies may attach to it; public `mtmf-service`
+must not. Normal loopback-published dev service ports remain unchanged.
+
+**Gate C per-installation measured evidence, not Gate A/B prerequisites:**
+record the Linux environment/kernel, rootless Podman version, actual
+namespace UID/GID maps, socket owner/group/mode, exact mounts, secret
+permissions, network attachments and worker-observed `SO_PEERCRED` values.
+Exercise allowed and rejected callers from their real containers; prove
+ordinary runtime cannot read sockets or worker secrets; verify exact five
+`mtmf_control_exec` function grants and 78 `mtmf_runtime` signatures.
+Record real signed-token checks before privileged readiness. Passing on one
+environment does not certify another. A host owner with Podman/VM control
+remains outside the compromised-runtime containment claim.
+
+Human architecture approval (Gate A) and target manifest approval (Gate B)
+do not assert a tested machine. A portable Gate B manifest may be reused on
+other machines *without a new human decision* only when its static profile
+and security predicates are unchanged and Gate C per-machine evidence proves
+exact socket/UID mappings, mounts, grants and §5B.6A callback forwarding.
+On drift or failed proof, STOP and require human revision, not automatic
+fallback. No deployment resource, migration, role, grant, socket or test is
+authorized by this proposed text.
+
+### 5B.6A. On-demand portable operator Authorization Code callback (proposed — frozen for approval)
+
+**Only development sign-in path.** The dedicated ephemeral Linux
+`mtmf-operator-cli` (UID from the approved manifest) obtains a real
+`mtmf-dev-operator` **user-class access token** through the already-approved
+Keycloak confidential OIDC client. The committed
+`dev/keycloak/expected-client-policy.json` is unchanged:
+
+| Frozen item | Required exact value |
+|---|---|
+| Client | `mtmf-evidence-same-client` (confidential; `client-secret`) |
+| Audience on user access token | `mtmf-same-client-api` |
+| Public issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-dev` |
+| Registered redirect URI | `http://127.0.0.1:28400/callback` |
+| Browser flow | Authorization Code + PKCE S256; `scope=openid`; no implicit, direct password, impersonation, device-code or exchange fallback |
+| Callback host port | Host IPv4 loopback `127.0.0.1:28400` only, temporary |
+| Callback container listener | Port `28400` in ephemeral CLI container; separate from operator `AF_UNIX` socket |
+
+**Exact transport boundary and lifecycle (one interactive CLI invocation):**
+
+1. The MTMF launcher creates a separate *ephemeral* non-root operator CLI
+   container only upon an explicit operator command, **not on ordinary `up`**.
+   It mounts only the operator Unix-socket volume, the public development
+   CA trust and its own client-secret file (never the worker DB credential,
+   Keycloak master-admin password, owner/migrator password or admission socket).
+   An isolated project-scoped operator-auth network connects the CLI only
+   to the canonical Keycloak TLS forwarder; no shared general application
+   network, host network, Podman admin socket or permanent callback service.
+2. Before opening a browser, ensure local port `28400` is free. Create a
+   **single-use** callback listener on TCP port `28400` inside the ephemeral
+   CLI container; for rootless Podman forwarding it may bind the container's
+   private interface (`0.0.0.0:28400`), **never a host-wide interface**.
+   Publish **only** `127.0.0.1:28400:28400` on the developer host via
+   the approved project-scoped rootless Podman forwarding mechanism.
+   This is a temporary browser login endpoint, **not** a control-worker
+   TCP listener. No control-worker or admission port is published.
+3. Verify from the developer-host browser context that the exact HTTP
+   loopback redirect reaches this one-time CLI listener. On Windows/macOS
+   Podman Machine and Windows/WSL2, forwarding across the VM/WSL boundary
+   is **not assumed**; it must work on the actual environment, map only the
+   exact IPv4 loopback port and have no LAN/external listener. On native
+   Linux, perform the same check. Any absent, remapped or externally exposed
+   forwarding path is `STOP-AUTH-PROFILE`; do not change registered URI,
+   publish `0.0.0.0` on host, enable host networking or install SSH tunnels.
+4. Generate fresh cryptographically random per-invocation `state` (at least
+   256 bits), PKCE `code_verifier` (RFC 7636-compliant, at least 256 bits
+   of entropy), S256 `code_challenge`, and OIDC `nonce` (at least 128 bits).
+   Retain verifier/state/nonce in the CLI process memory only. Build an
+   `response_type=code`, exact client ID, exact redirect URI,
+   `scope=openid`, `code_challenge_method=S256`, challenge, state and nonce
+   authorization request against the canonical HTTPS issuer.
+5. Present the authorization URL for the developer to open in a real
+   browser, completing existing Keycloak interactive login. Accept one
+   bounded `GET /callback` at exact `Host: 127.0.0.1:28400`, with one
+   matching, unconsumed `state` and **exactly one** nonempty authorization
+   `code` on success. Keycloak may also return `iss` and `session_state`:
+   when present, `iss` must occur once and match the canonical issuer
+   **exactly**; `session_state` must occur at most once and is bounded
+   opaque data (never an identity or authority input). Ignore other
+   non-security extension parameters as OAuth 2.0 §4.1.2 requires, but
+   reject duplicate parameter names, duplicate sensitive fields,
+   malformed percent-encoding, invalid UTF-8, unexpected method/path/host,
+   excessive parameter count/size and replay. The entire raw request
+   line plus headers is at most 8 KiB; at most 16 query parameters and
+   each percent-decoded value at most 2048 UTF-8 bytes; authorization
+   `code` and `state` each must be nonempty and at most 2048 bytes.
+   If `error` appears, require exactly one bounded nonempty OAuth error
+   and the correct one-time `state`, permit only bounded optional
+   `error_description`/`error_uri`/`iss`/`session_state` and ignore
+   unrelated extensions; **do not exchange any code** and return
+   a generic failure. An `error` alongside `code` is invalid. State
+   mismatches, missing/duplicate code on success, or issuer mismatches
+   fail closed; no alternate redirect/client configuration is permitted.
+   Use one 120-second flow deadline, consume the callback only once,
+   and perform exactly one code-to-token exchange only on success.
+   On a valid callback, respond with HTTP `303 See Other` to relative
+   `/complete`, with `Cache-Control: no-store` and
+   `Referrer-Policy: no-referrer`; `/complete` is a static, no-script,
+   no-token/no-code completion page with those headers and
+   `Content-Security-Policy: default-src 'none'`, no CORS and no
+   subresources. Permit at most one subsequent `GET /complete` in the
+   short cleanup window (maximum 3 seconds), then terminate the listener.
+   No response body or `Location` reflects `code`, `state` or any
+   other callback parameter. Authorization codes necessarily transit
+   the browser redirect URL; preventing that is **not** an invariant.
+6. Exchange the code **once**, from inside the CLI, over validated
+   HTTPS to the canonical token endpoint using the exact redirect URI,
+   original PKCE verifier and the confidential client's **HTTP Basic**
+   authentication. The client secret comes only from a separately
+   provisioned owner-restricted, read-only CLI secret file
+   `/run/secrets/mtmf-operator-oidc-client`, never argv/env/logs/
+   browser/worker/public runtime. The **client secret**, unlike the
+   support client-secret Basic and PKCE S256 as specified,
+   `STOP-AUTH-PROFILE`; do not substitute a token grant or auth mode.
+7. Require a genuine ID token with valid signature, issuer, client
+   audience, temporal claims, exact nonce and subject corresponding to
+   the obtained access-token subject. Never use the ID token as an
+   operator access token. The control worker independently validates
+   the genuine **access token**, signed `azp`, audience, subject binding,
+   user class and SYSTEM Role under Field 4 and §§5/6A/6B before
+   authorizing any control action.
+8. On success, timeout, user cancellation, conflict, malformed callback,
+   denied token, or any error: terminate the listener and container,
+   unpublish `28400`, release the secret mount and zero/discard transient
+   state and tokens to the extent the runtime permits. One-shot tokens
+   are passed only over the approved private operator `AF_UNIX` request
+   and are never stored on disk, printed or sent through public HTTP.
+
+**Callback disclosure boundary.** Because standard Authorization Code
+Flow places the transient code in the browser redirect request, the
+code is **not** required to be absent from that one browser URL.
+Do not persist, log, print, echo in HTML, reflect in the clean
+completion redirect, include in a Referer to another origin, or
+forward the code outside its single approved HTTPS token exchange.
+Prevent HTTP server access logs from recording full query strings;
+do not enable browser analytics or external content on the completion
+page. The one-use code and PKCE verifier are short-lived and
+in-memory only. Browser history/cache behavior is outside the CLI's
+ability to erase reliably; `303` to a clean same-origin URL,
+`Cache-Control: no-store`, `Referrer-Policy: no-referrer` and no
+subresources reduce residual disclosure. This is a bounded
+trust assumption, not a claim that the browser never sees a code.
+
+**Confidential client dual-use risk.** The existing
+`dev/keycloak/expected-client-policy.json` defines
+`mtmf-evidence-same-client` with `serviceAccountsEnabled=true`
+**and** `standardFlowEnabled=true`. Thus the CLI-mounted client
+secret can also authenticate the client-credentials service principal.
+This is a deliberate **development-only residual capability** of
+the existing approved client, not an extra SYSTEM authorization.
+The worker must reject service-only access tokens irrespective of
+their valid signature, issuer, audience or `azp`: only genuine
+user-class tokens with the exact persisted ACTIVE `(issuer, subject)`
+binding, active non-root Identity/Principal and approved SYSTEM
+assignment may perform operator actions. The secret must never
+reach the public service, worker, admission harness, normal
+initializer or other projects. Record an end-to-end negative
+acceptance case in which a genuine Keycloak client-credentials token
+from this exact client is rejected as an operator; if it is
+accepted or the dual-use capability cannot be safely bounded,
+`STOP-AUTH-PROFILE` and seek a separately approved client-policy
+amendment rather than guessing one in the implementation.
+
+**Trust and acceptance.** A loopback-published HTTP callback is allowed
+**only** for interactive OAuth login; it is not an exception to Field 2's
+no-TCP privileged worker boundary. It must be shown unreachable from
+LAN/external interfaces and unrelated containers; no unauthenticated
+token/log disclosure or persistent socket/port is allowed. The CLI's
+callback listener is short-lived and restricted to the approved
+operator-auth network; if a separate network/forwarder cannot be
+constructed without exposing the callback, STOP rather than share the
+ordinary runtime network. The rootless Podman/VM host owner remains a
+trusted platform actor.
+
+**Future tests, NOT EXECUTED:**
+
+| ID | Required actual-platform acceptance | Failure |
+|---|---|---|
+| CB01 | Native Linux/WSL2/Podman Machine browser redirect to exact `127.0.0.1:28400/callback`, as individually claimed | `STOP-AUTH-PROFILE` |
+| CB02 | Host publish limited to IPv4 loopback; no remote/LAN or unrelated-container callback reachability | `STOP-AUTH-PROFILE` |
+| CB03 | PKCE S256, unpredictable state/nonce, one code exchange, 120-second expiry, replay rejection; real Keycloak `code`/`state`/`iss`/`session_state` response and OAuth error handled correctly; duplicates/issuer mismatch denied | `STOP-AUTH-PROFILE` |
+| CB04 | Client secret and tokens only in authorized CLI memory/mounts; unavoidable one-time browser URL carries `code` but no code leaks to logs, HTML, clean completion `Location`, Referer, other network paths or persistent storage; redirection strips visible query | `STOP-PRIVILEGE` |
+| CB05 | Genuine Keycloak user flow yields signed access token with issuer/audience/azp, exact subject binding and approved Role; genuine service-credentials token from same dual-use client is denied as operator | `STOP-AUTH-PROFILE` |
+| CB06 | State/nonce/issuer mismatch, duplicate code/state, invalid OAuth error, redirect mismatch, bad Basic/PKCE, occupied port and missing VM forwarding all deny with no fallback | `STOP-AUTH-PROFILE` |
+| CB07 | Session timeout/failure/success removes port publish, container and temporary secret mount | `STOP-AUTH-PROFILE` |
+| CB08 | Standard `up` and opt-out never auto-open a browser, start callback listener or expose port `28400` | `STOP-DEPLOYMENT` |
+
+CB01–CB08 are **future feature acceptance** after Gate A+B, never
+pre-implementation approval evidence. Eliminate cached or historical
+interactive-login **attestation reuse** entirely: there is no
+environment fingerprint, reuse token, or stale CB01–CB08 PASS shortcut.
+Each unattended `up` must independently recheck the deployable Gate C
+properties: actual manifest match, mapped peer IDs, socket/mount
+access restrictions, exact DB privileges, issuer/client attestation,
+and absence of unintended privileged transport. Without an
+operator command it must not open the browser or callback port.
+Report only `development control-plane infrastructure ready; operator
+interactive login not verified on this startup`, **not** the stronger
+`privileged operator ready` state. On every explicitly invoked
+operator session, perform a new genuine browser Authorization Code
+flow with CB01–CB08 applicable negative controls before claiming
+`privileged operator ready` for that authenticated session.
+On failure or token expiration, discard the session and return to
+the infrastructure-only state. No interactive login is required
+simply to run unattended infrastructure startup, and no previous
+session's genuine token/evidence authorizes a new session.
+Bootstrap never logs in as an operator automatically.
+
+### 5B.7 Production prohibition and residual trust model (E-I08)
+
+No production build, environment, image, config parsing path, or startup script
+may activate this development fixture. On any non-development deployment mode,
+an explicit opt-in `true` is an error **before** touching Keycloak/PostgreSQL.
+An issuer/client other than the canonical dev issuer/client is an error, not a
+dynamically supported alternative. The flag is never sufficient without the
+reviewed manifest and actual isolated deployment topology.
+
+The production operator assignment still requires the separately approved human
+installation ceremony from Field 5: an authorized human decision ID, exact
+verified Identity and Role, immutable append-only audit, and revocation through
+an installation-only procedure. No production automatic bootstrap, auto-grant,
+or dev fixture label is acceptable. The database cannot cryptographically attest
+a human approver; the trusted installer/fixture process remains the authority
+boundary and residual risk.
+
+### 5B.8 Planned acceptance obligations (NOT EXECUTED)
+
+These are **planned**, not executed. A future approved implementation must use
+real PostgreSQL, genuine runtime/control credentials, actual rootless Podman
+containers with distinct UIDs/mounts, and genuine signed local Keycloak user
+tokens with the approved realm/client; mocked authorizers or fabricated JWTs are
+not acceptance evidence.
+
+| ID | Required scenario | Future required evidence |
+|---|---|---|
+| E01 | Missing/false bootstrap flag | Test both fresh opt-out and opt-out after prior opt-in: existing dev stack runs unchanged; no new control mutation or worker; prior persisted role/grants/fixture may remain. |
+| E02 | Exact true + canonical dev mode/issuer/profile | Pre-provision role absence accepted (not STOP), then migration/postflight, administrator role creation, owner grants, fixture, and all preflight gates. |
+| E03 | True on non-dev mode/noncanonical issuer | STOP before DB, Keycloak or container privilege changes. |
+| E04 | Fresh isolated Keycloak + PostgreSQL, valid password file | Dedicated `mtmf-dev-operator` created once; actual `sub` verified from Keycloak REST response. |
+| E05 | Repeated `up` against unchanged fixture | Verify-only existing role/grants/fixture; same IDs, one ACTIVE assignment, one immutable creation event; no write, password reset, regrant or audit inflation. |
+| E06 | Existing same username without matching MTMF fixture | STOP; no automatic takeover. |
+| E07 | Disabled/ambiguous/drifted/federated Keycloak operator | STOP; no account repair. |
+| E08 | Different user subject from previous fixture | STOP; no cross-subject binding. |
+| E09 | Deleted/LOCAL/root operator Identity or inactive Principal | STOP; no assignment. |
+| E10 | Approved SYSTEM Role seed missing/drifted | STOP-SEED; no policy synthesis. |
+| E11 | Assignment previously REVOKED | STOP; no regrant or alternate UUID. |
+| E12 | Partial Keycloak create vs PostgreSQL failure | No blind retry or auto rollback of Keycloak; stable diagnostic/provenance. |
+| E13 | Real standard-flow signed operator token | Exact issuer/audience/client/subject ACTIVE binding and SYSTEM authorization succeed for allowed Action; denied Action remains DENY. |
+| E14 | Service-only token or forged user claims | Operator request denied; no DB mutation. |
+| E15 | Runtime UID tries operator Unix socket | Peer rejected under real container user-namespace mapping. |
+| E16 | Runtime UID tries admission socket and worker DB secret | Both unavailable; no public proxy or shared secret mount. |
+| E17 | Runtime DB role invokes any of five control functions or protected DML | Permission denied; exact 78-signature runtime allowlist intact and exact post-grant least-privilege surface. |
+| E18 | Control DB role tries direct table DML or `SET ROLE mtmf_owner` | Permission denied; exactly five reviewed EXECUTEs and no additional reachability. |
+| E19 | One-shot initializer exited, long-lived containers inspect | Neither public service nor control worker holds installer, Keycloak master-admin, owner or migrator credentials. |
+| E20 | Restart/reset/transport failures | No premature readiness; partial-install state STOPs; MTMF-only resource scope; opt-out is not revocation; explicit destructive reset gate; no other project touched. |
+
+The future acceptance topology also requires the canonical `./build.sh --qa`,
+`--sec`, `--rust`, `--integration`, `scripts/mtmf-provision-roles.py --verify`,
+and the deployed negative-control harness. Runtime versions and hardware must be
+recorded when benchmarking is actually approved; no benchmark is run by this
+documentation revision.
+
 ## 6. Frozen canonical mutation fingerprint (worker-generated, SHA-256 — proposed, verbatim)
 
 Encode each field as a 4-byte unsigned big-endian byte length plus exact bytes;
@@ -1225,7 +1976,9 @@ implementation.
 
 ## 7. Frozen private SQL signatures for revision `0016` (proposed — verbatim)
 
-Owner-owned; granted only to `mtmf_control_exec`:
+Owner-owned functions; the migration installs them without a control-role
+dependency, and a separately approved installation phase grants them only to
+`mtmf_control_exec`:
 
 ```sql
 mtmf.control_entitlement_grant(
@@ -1278,6 +2031,18 @@ mtmf.control_pre_tenant_admission_read(
 ) RETURNS jsonb
 ```
 
+Revision `0016` installs the exact five owner-owned `SECURITY DEFINER` functions
+with PUBLIC EXECUTE revoked and **no `mtmf_control_exec` role dependency or
+grant in the migration itself**. The separately approved deployment/install
+phase, after `0016` has migrated and the control LOGIN has been provisioned,
+grants exactly these five EXECUTEs to `mtmf_control_exec` and then verifies its
+full effective privilege surface. The worker cannot start until that
+verification succeeds. An absent role before first installation is expected; an
+absent or drifted role after installation is a STOP. This distinction applies to
+development and to the separate, human-controlled production installation
+ceremony; it does not expand runtime privileges or authorize production
+auto-bootstrap.
+
 Arguments are **data supplied by the trusted control process after JWT
 verification**, not cryptographic DB authentication evidence. The operator
 wrapper independently checks that the ACTIVE exact `(issuer, subject)` binding
@@ -1304,8 +2069,16 @@ protocol. If these are already allocated on the branch, the agent stops
 
 ## 8. Deployment-specific values the approving human must record (not agent-selectable)
 
-These are factual host resources. They cannot be responsibly invented in a
-portable plan. **Any missing value keeps `STOP-P24P-TOPOLOGY` active.**
+These are **Gate B static deployment-manifest choices**, not claims about
+an already deployed Linux host. Gate A approves the fields and their policy;
+Gate B records a concrete reusable deployment manifest (including approved
+UID/GID identities, socket paths/modes, network and secrets) before
+implementation authorization. Live mapped-peer, kernel/Podman observations,
+socket/mount outcomes and signed-token tests are **Gate C evidence** after
+authorized implementation. A fresh machine may reuse the same approved
+manifest if Gate C verifies it conforms; machine-specific evidence is not
+a new discretionary approval. Any absent Gate A/B human decision still
+keeps `STOP-P24P-TOPOLOGY` active.
 
 | Value | Required decision / recorded value |
 | --- | --- |
@@ -1320,28 +2093,113 @@ portable plan. **Any missing value keeps `STOP-P24P-TOPOLOGY` active.**
 | Isolated control DB secret mount path + permissions | ______________________________ |
 | Podman/Compose project name for the control plane | ______________________________ |
 | Control-network attachment (and absence of published ports) | ______________________________ |
-| Host platform confirmation (WSL2/rootless Podman version, peer-credential behaviour) | ______________________________ |
+| Approved Linux execution modes, rootless Podman version constraints, user-namespace/peer-ID *acceptance predicates* (actual kernel/version/maps/observed peer behavior recorded later at Gate C) | ______________________________ |
 | Rotation/runbook owner | ______________________________ |
+| Operator OAuth callback manifest: exact host loopback publish `127.0.0.1:28400:28400`, operator-auth network, CLI-only OIDC client-secret file, expiry and teardown controls (§5B.6A) | ______________________________ |
 
-## 9. Top-level decision record (to be completed by the human)
+### 8A. Development-profile approval items (Amendment E)
+
+These fixed non-secret values are **Gate A/B architecture and static-manifest
+candidates, not permission to proceed**. A human selects/approves one
+versioned static profile at Gate B. Real machine-specific mapping and
+callback reachability are automatically measured at Gate C, never guessed
+from `id -u` or accepted from the host OS label.
+
+| Development-profile approval item | Value/state |
+|---|---|
+| Profile ID | `mtmf-pr24p-local-development-v1` (**PROPOSED, NOT APPROVED**) |
+| Deployment-mode literal | `development` (**PROPOSED**) |
+| Canonical Compose project | `mtmf` (**PROPOSED**) |
+| Canonical issuer | `https://keycloak.mtmf.test:28443/realms/mtmf-dev` (**PROPOSED**) |
+| Fixed Keycloak operator username | `mtmf-dev-operator` (**PROPOSED**) |
+| Fixed SYSTEM Role | `urn:mtmf:iam:roles:system:application-administrator` (**PROPOSED**) |
+| Bootstrap opt-in env selector | `MTMF_DEV_CONTROL_BOOTSTRAP_ENABLED=true` (**PROPOSED; unset/false disables**) |
+| Human-approved dev operator password-file path and file/mount permissions | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
+| Admin/provisioner/initializer/control/runtime UID/GID and user-namespace mapping | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
+| Operator/admission socket absolute paths/UID owners/modes | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
+| Control DB secret path, file ownership, rotation owner, Podman network attachment | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
+| Human-approved fixture decision ID/provenance reference | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
+| Operator CLI callback profile, client-secret file custody, isolated auth network and temporary host-loopback publish (§5B.6A) | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
+
+**Portable candidate profile (NOT APPROVED / NOT MEASURED):** Linux-container
+UIDs `24501` (worker), `24502` (operator CLI), `24503` (admission harness),
+`24504` (runtime); paths `/run/mtmf-control/operator/operator.sock`,
+`/run/mtmf-control/admission/admission.sock`; secret file
+`/run/secrets/mtmf-control-db`; two separate MTMF-project socket volumes
+(proposed directory/socket modes `0710`/`0660`, distinct approved groups),
+private control network without published worker ports. Exact GIDs,
+effective maps, socket ownership, secret mount custody, platform and
+human decision ID remain **UNRESOLVED — HUMAN APPROVAL REQUIRED**.
+
+Portable architecture (Gate A) and one reusable static manifest (Gate B)
+may be approved once. Each installation must then prove worker-observed
+peers, mounts, callback routing and effective privileges (Gate C); a
+passing instance never authorizes a nonconforming one. A candidate number
+is not an approved host value and a fresh machine does not require
+human reapproval when it passes the unchanged manifest predicates.
+
+**Callback candidate, NOT approved:** one ephemeral operator CLI container
+and dedicated operator-auth network, temporary host-loopback mapping
+`127.0.0.1:28400:28400`, registered redirect
+`http://127.0.0.1:28400/callback`, restricted client secret at
+`/run/secrets/mtmf-operator-oidc-client`, PKCE S256, state and nonce,
+120-second maximum flow. No persistent callback port and no worker TCP
+listener. §5B.6A is authoritative; browser-to-container VM forwarding
+must be verified independently for each claimed execution platform.
+
+## 9. Human architecture/manifest decision (Gate A+B) and later deployment acceptance (Gate C)
+
+**Do not fill this record without explicit human authorization.** Gate A is
+architecture approval; Gate B approves a static, versioned target manifest
+and authorizes implementation. The post-implementation Gate C evidence
+belongs to the acceptance report, not to a pre-implementation YES/NO
+question. Neither an accepted documentation fixup nor a GitHub PR merge
+automatically completes either human gate.
 
 ```text
+GATE A — HUMAN ARCHITECTURE DECISION (required before Gate B)
 Decision ID:        ______________________________________
 Date (UTC):         ______________________________________
 Approving party:    ______________________________________
-Plan/version approved: MTMF PR 24P detailed execution plan, version 2026-11-12 (rev 3, Findings A–D)
+Approved document/revision/commit: ______________________________________
 Exact approved text reference / evidence: ______________________________________
 Conditions / amendments: ______________________________________
-All 12 fields approved verbatim?   YES / NO
+All 12 topology fields approved verbatim? YES / NO
 Operator protocol §5 approved verbatim? YES / NO
-Pre-Tenant admission protocol §5A (including §5A.6 executor port and §5A.7 subject-history read) approved verbatim? YES / NO
-Amendment D subject-history read (§5A.7 and revised §7 fifth signature) approved verbatim? YES / NO
-Fingerprint §6 approved verbatim?  YES / NO
+Pre-Tenant admission protocol §5A, §5A.6 and §5A.7 approved verbatim? YES / NO
+Amendment D historical-subject read and fifth §7 signature approved? YES / NO
+Fingerprint §6 approved verbatim? YES / NO
 Authorization snapshot §6A approved verbatim? YES / NO
-Policy/SQL responsibility + transaction boundary §6B approved verbatim? YES / NO
-SQL signatures §7 approved verbatim? YES / NO
-Deployment values §8 complete (including ingress UID + admission socket)? YES / NO
+Policy/SQL split §6B approved verbatim? YES / NO
+All five private SQL signatures and reserved SQLSTATEs §7 approved? YES / NO
+Development-only fixture Field 5/§5B, no-regrant, exact Role/provenance approved? YES / NO
+Portable Linux execution boundary §5B.6 approved? YES / NO
+Portable OAuth callback §5B.6A (exact existing redirect and no worker TCP) approved? YES / NO
+Manifest schema/static constraints in §8/§8A + Gate C test obligations approved? YES / NO
+Production automatic bootstrap independently prohibited? YES / NO
+
+GATE B — HUMAN STATIC DEPLOYMENT MANIFEST / IMPLEMENTATION AUTHORIZATION
+Decision ID and approving party/date: ______________________________________
+Gate A decision ID referenced: ______________________________________
+Static manifest version/hash and exact approved values: _______________________
+§8 operator/ingress/worker/runtime IDs, socket ownership/modes, secrets, networks approved? YES / NO
+§8A dedicated dev operator, password-file custody, fixture decision reference approved? YES / NO
+Callback manifest (loopback forwarding, CLI OIDC secret and ephemeral auth network) approved? YES / NO
+Manifest reuse policy (same static values; Gate C required for each machine) approved? YES / NO
+Implementation of PR 24P Parts A–E authorized, subject to STOP sub-gates? YES / NO
 ```
+
+**GATE C — NOT EXECUTED; post-implementation deployed acceptance, not a
+pre-implementation human checkbox.** The future acceptance report must
+record actual target environment, kernel/Podman/user-namespace maps, worker
+`SO_PEERCRED`, both socket and mount/access probes, the five control grants,
+78 runtime signatures, genuine browser→loopback→CLI Authorization Code flow,
+correct token handling, and negative controls. Only a passing Gate C allows
+the privileged-ready claim. On failure remain `STOP-DEPLOYMENT`,
+`STOP-PRIVILEGE` or `STOP-AUTH-PROFILE` as applicable. An approved and
+unchanged static manifest may be reused by another machine after its own
+successful Gate C evidence; no additional human decision is required unless
+the manifest or security predicates need to change.
 
 ## 10. What this document is not
 
@@ -1354,15 +2212,35 @@ Deployment values §8 complete (including ingress UID + admission socket)? YES /
 
 ## 11. Consequence of the decision
 
-- **All 12 approved verbatim + operator protocol §5 + admission protocol §5A +
-  subject-history read §5A.7 + fingerprint §6 + snapshot §6A +
+- **Gate A+B recorded by a human**: all 12 approved verbatim + operator
+  protocol §5 + admission protocol §5A +
+  subject-history read §5A.7 + §5B development bootstrap exception and
+  §5B.6A portable OAuth callback + approved static §8/§8A manifest values
+  + fingerprint §6 + snapshot §6A +
   responsibility/transaction split §6B + signatures §7 approved + deployment
   values supplied:** the agent resumes
   Parts A–E in order, stopping again at any of the named sub-gates
   (AUTH-PROFILE, POLICY-ENGINE, SEED, ROLE-PROVISIONING, SIGNATURE,
   LOCK-ORDER, AUDIT-POLICY, TRANSACTION, DEPLOYMENT, PRIVILEGE).
-- **Any field rejected/amended, or any frozen literal (including §5A/§5A.7/
-  §6A/§6B) changed:** the agent records the differences, returns a revised plan,
-  and stays blocked. Findings A–D must be approved as frozen text; accepting
-  only the concept is not approval.
+- **Gate C is distinct from implementation authorization:** only after
+  approved implementation exists can real worker-observed `SO_PEERCRED`,
+  user-namespace, socket/mount, control/runtime privilege, signed-token
+  and on-demand browser callback tests be executed. No unverified platform
+  can claim privileged readiness. A developer machine may reuse an
+  unchanged Gate B manifest with fresh automated Gate C verification;
+  no manual per-machine approval is required for a matching deployment.
+  A different static design or failed mapping requires human review.
+- The staged boundary is mandatory: role-independent migration `0016` runs and
+  passes runtime postflight first; control-role provisioning and the exact five
+  owner grants occur only in the separately approved installation phase; the
+  fixture follows; the worker starts only after effective-privilege
+  verification.
+- **Any Gate A/B decision missing or rejected, any static §8/§8A manifest
+  value missing, any Gate C failure, or any frozen literal
+  (including §5A/§5A.7/§5B/§6A/§6B) changed:** the agent records the
+  differences, returns a revised plan, and stays blocked. Findings A–E must be
+  approved as frozen text; accepting only the concept is not approval.
+- Amendment E documentation completion does **not** authorize implementation and
+  permits **no** production automatic bootstrap. The gate remains active until a
+  named human approval covers all relevant fields.
 - **No decision recorded:** status remains `PR24P_BLOCKED_TOPOLOGY_APPROVAL`.

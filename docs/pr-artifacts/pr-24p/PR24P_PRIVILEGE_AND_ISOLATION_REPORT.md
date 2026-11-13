@@ -15,3 +15,7 @@ claimed. ISO-03/ISO-04 would be `BLOCKED_ENV`, never PASS.
 Current verified baseline only: `mtmf_runtime` has exactly 78 EXECUTE signatures
 and `mtmf_control_exec` does not exist. See
 [PR24P_BASELINE_AND_SCOPE_RECONCILIATION.md](PR24P_BASELINE_AND_SCOPE_RECONCILIATION.md).
+
+Amendment E note: the proposed development fixture also requires actual distinct
+UIDs, peer-credential denial, worker secret/DB isolation, and production-disabled
+negative tests (§5B.6–§5B.8). No isolation test has been executed.
