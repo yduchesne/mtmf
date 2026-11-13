@@ -2,12 +2,22 @@
 
 **PR:** roadmap **PR 24P** — Operator and Pre-Tenant Privileged Execution Prerequisite
 **Artifact directory:** `docs/pr-artifacts/pr-24p/`
-**Plan version:** 2026-11-12 (rev 4: independent-review Findings A–D + Amendment E development bootstrap) · `DESIGN PROPOSED`
+**Plan version:** 2026-11-12 (rev 4: independent-review Findings A–D + Amendment E development bootstrap) · `GATE A APPROVED` against merged architecture commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; Gate B remains pending
 **Prepared by:** coding agent (Phase 0, documentation only)
 **Baseline reconciled at:** `28d5de85ccf63c9ffb5bdc8298156e6038cbdadd` (= `origin/main`, rev 3 merged via PR #76); original Phase 0 baseline `8712418a3d2de212791ae75a6235d3e00fced450`
-**Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`** — `STOP-P24P-TOPOLOGY` is **ACTIVE**
+**Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`** — Gate A approved (`MTMF-PR24P-GATE-A-2026-11-13-01`); Gate B unapproved; `STOP-P24P-TOPOLOGY` is **ACTIVE**
 
 ## 0. Amendment history and independent-review disposition
+
+**Subsequent human decision (2026-11-13).** The user explicitly answered
+**yes** to approving *without amendments* Gate A of the precise architecture
+merged by PR #77 at commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`. The normative text below
+is the originally proposed, now Gate A-approved architecture snapshot.
+Historical "proposed/not approved" language below describes the earlier
+Phase-0 state and does not authorize Gate B, privileged implementation,
+operator deployment or Gate C readiness. See
+[PR24P_GATE_A_APPROVAL_AND_GATE_B_MANIFEST_PROPOSAL.md](PR24P_GATE_A_APPROVAL_AND_GATE_B_MANIFEST_PROPOSAL.md)
+for the attributable decision record and still-unapproved Gate B candidate.
 
 This revision addresses findings from independent review while staying in
 documentation-only Phase 0. **No topology field is approved by this amendment,
@@ -55,10 +65,11 @@ preserved unchanged. The frozen operator protocol (§5), fingerprint (§6), and
 (pre-Tenant) signature is replaced by §5A.7/§7. §5A/§5A.7/§5B/§6A/§6B are
 **additive** and must be approved together with the existing twelve fields.
 
-> **This document is a decision request, not an approval.** Nothing in this
-> repository, in the PR 21 Action approval, in `docs/ROADMAP_V01.md`, in the
-> execution plan that commissioned this artifact, or in any chat/session
-> message is a topology approval. The coding agent has implemented **no**
+> **Historical Phase-0 statement, superseded for Gate A only:** no
+> architecture approval existed when this proposal was prepared. Human
+> approval was subsequently given for Gate A on 2026-11-13; **Gate B is
+> NOT approved** and the implementation STOP remains active. The
+> coding agent has implemented **no**
 > migration, SQL function, role, grant, socket, listener, deployment, or
 > authorization code for PR 24P. See
 > [PR24P_BASELINE_AND_SCOPE_RECONCILIATION.md](PR24P_BASELINE_AND_SCOPE_RECONCILIATION.md)
@@ -110,6 +121,11 @@ Summary relevant to this decision:
 | Deployment isolation | Only `compose.yaml` (PostgreSQL) and `Dockerfile.service`; **no** separate control process/UID/socket/secret mount exists, so compromised-runtime isolation is **not yet demonstrated** | `compose.yaml`; `Dockerfile.service` |
 
 ## 3. How to record a decision
+
+**Gate A was explicitly approved on 2026-11-13** for the immutable PR #77
+merged proposal; Gate B implementation authorization is **PENDING**. The
+instructions below describe the approval contract, not a new request to
+repeat Gate A. Nothing in this record claims Gate C verification.
 
 The decision is valid **only** if it is written, named, and covers **all
 twelve** fields in §4 plus the frozen protocol/signatures in §5–§7. A partial,
@@ -168,7 +184,13 @@ pick a fallback design, or invent a substitute.
 
 ---
 
-## 4. The twelve fields (all `PROPOSED — NOT APPROVED`)
+## 4. The twelve fields (Gate A approved by `MTMF-PR24P-GATE-A-2026-11-13-01`; Gate B pending)
+
+**Status annotation:** the original `**PROPOSED.**` wording in the frozen
+field bodies is preserved as part of the exact merged source approved by
+the human. It describes the not-yet-implemented design, not a still-pending
+Gate A decision. Checkmarks and provenance entries below record the later
+human decision; operational deployment remains unapproved.
 
 ### Field 1 — Separate operator/private control process and separation from public `mtmf-service`
 
@@ -196,9 +218,9 @@ secret volume. Exact UID/GID in §8. The proposed one-shot development
 installation in §5B is a separate short-lived process and must never be part of
 `mtmf-service` startup or the persistent worker.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -226,9 +248,9 @@ unknown, collapsed or unmeasurable peer UID is `STOP-DEPLOYMENT`.
 **Required deployment.** Socket absolute path, owner UID/GID, mode, allowed
 admin UID, directory mount. Values in §8.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -268,9 +290,9 @@ dedicated ingress UID/GID and admission-socket path/mode are recorded in §8;
 they must differ from the operator admin UID, the control worker UID, and the
 `mtmf_runtime` UID.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -303,9 +325,9 @@ no regeneration. The only proposed portable browser-to-ephemeral-operator
 Authorization Code callback transport and secret-custody path is frozen in
 §5B.6A; it is a development-only login transport, not a control TCP endpoint.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -351,9 +373,9 @@ sequencing, provenance and isolation requirements in §5B are normative proposed
 constraints; §8 host values and §9 approval remain mandatory. The present source
 contains no such installer, Role-assignment table or worker.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -388,9 +410,9 @@ rather than build a second evaluator.
 **Required deployment.** None beyond the package; this is a code-contract
 decision.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -433,9 +455,9 @@ its exact-Action check is a deny-only equality guard (see §6B).
 private mount. If the existing provisioning topology cannot create and verify
 this distinctly, STOP-ROLE-PROVISIONING.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -465,9 +487,9 @@ append-only.
 
 **Required deployment.** PostgreSQL `0016` tables with owner-only permissions.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -494,9 +516,9 @@ fields, exact bytes, no case folding) is the sole canonicalization and that
 **Required deployment.** Unique constraint/index plus row lock inside the
 wrapper's transaction.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -538,9 +560,9 @@ revocation it did not observe.
 **Required deployment.** Statement/lock timeouts consistent with existing
 runtime policy; no network calls under the transaction.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -570,9 +592,9 @@ resource identifiers in §8. For development, §5B fixes the one-shot installer
 versus worker/runtime secret-custody separation; the exact secret mount and
 rotation data still require §8 approval.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -605,9 +627,9 @@ harness; otherwise ISO-03/ISO-04 are `BLOCKED_ENV`, never PASS. Development-mode
 bootstrap does not relax the real compromised-runtime UID/socket/secret/role
 negative controls, which §5B.6 requires before readiness.
 
-**Decision (human, required):** ☐ APPROVED ☐ REJECTED ☐ AMEND
-**Approved text / amendment / conditions:** ______________________________________
-**Approver / date / decision ID:** ______________________________________________
+**Decision (human, required):** ☑ APPROVED ☐ REJECTED ☐ AMEND
+**Approved text / amendment / conditions:** Verbatim architecture at merged commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`; no amendments. Gate B not approved.
+**Approver / date / decision ID:** MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval); 2026-11-13 UTC; `MTMF-PR24P-GATE-A-2026-11-13-01`.
 
 ---
 
@@ -2149,8 +2171,10 @@ must be verified independently for each claimed execution platform.
 
 ## 9. Human architecture/manifest decision (Gate A+B) and later deployment acceptance (Gate C)
 
-**Do not fill this record without explicit human authorization.** Gate A is
-architecture approval; Gate B approves a static, versioned target manifest
+**Human authorization has been explicitly given for Gate A only** (decision
+`MTMF-PR24P-GATE-A-2026-11-13-01`, 2026-11-13 UTC, against PR #77 merged commit). Gate A is
+architecture approval; Gate B still requires separate explicit authorization
+of a static, versioned target manifest
 and authorizes implementation. The post-implementation Gate C evidence
 belongs to the acceptance report, not to a pre-implementation YES/NO
 question. Neither an accepted documentation fixup nor a GitHub PR merge
@@ -2158,25 +2182,25 @@ automatically completes either human gate.
 
 ```text
 GATE A — HUMAN ARCHITECTURE DECISION (required before Gate B)
-Decision ID:        ______________________________________
-Date (UTC):         ______________________________________
-Approving party:    ______________________________________
-Approved document/revision/commit: ______________________________________
-Exact approved text reference / evidence: ______________________________________
-Conditions / amendments: ______________________________________
-All 12 topology fields approved verbatim? YES / NO
-Operator protocol §5 approved verbatim? YES / NO
-Pre-Tenant admission protocol §5A, §5A.6 and §5A.7 approved verbatim? YES / NO
-Amendment D historical-subject read and fifth §7 signature approved? YES / NO
-Fingerprint §6 approved verbatim? YES / NO
-Authorization snapshot §6A approved verbatim? YES / NO
-Policy/SQL split §6B approved verbatim? YES / NO
-All five private SQL signatures and reserved SQLSTATEs §7 approved? YES / NO
-Development-only fixture Field 5/§5B, no-regrant, exact Role/provenance approved? YES / NO
-Portable Linux execution boundary §5B.6 approved? YES / NO
-Portable OAuth callback §5B.6A (exact existing redirect and no worker TCP) approved? YES / NO
-Manifest schema/static constraints in §8/§8A + Gate C test obligations approved? YES / NO
-Production automatic bootstrap independently prohibited? YES / NO
+Decision ID:        MTMF-PR24P-GATE-A-2026-11-13-01
+Date (UTC):         2026-11-13
+Approving party:    MTMF project owner (linked GitHub @yduchesne; explicit ChatGPT approval)
+Approved document/revision/commit: PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md, rev 4, PR #77 merged commit 4b48f5a14bbadf99b5b30be99a256cf3d47304b4
+Exact approved text reference / evidence: User explicitly replied "yes" in ChatGPT to unamended Gate A question for merged PR #77; documented by assistant, no cryptographic signature.
+Conditions / amendments: None to approved architecture. Gate B not approved; Gate C untested; STOP active.
+All 12 topology fields approved verbatim? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Operator protocol §5 approved verbatim? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Pre-Tenant admission protocol §5A, §5A.6 and §5A.7 approved verbatim? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Amendment D historical-subject read and fifth §7 signature approved? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Fingerprint §6 approved verbatim? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Authorization snapshot §6A approved verbatim? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Policy/SQL split §6B approved verbatim? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+All five private SQL signatures and reserved SQLSTATEs §7 approved? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Development-only fixture Field 5/§5B, no-regrant, exact Role/provenance approved? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Portable Linux execution boundary §5B.6 approved? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Portable OAuth callback §5B.6A (exact existing redirect and no worker TCP) approved? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Manifest schema/static constraints in §8/§8A + Gate C test obligations approved? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
+Production automatic bootstrap independently prohibited? YES (approved MTMF-PR24P-GATE-A-2026-11-13-01)
 
 GATE B — HUMAN STATIC DEPLOYMENT MANIFEST / IMPLEMENTATION AUTHORIZATION
 Decision ID and approving party/date: ______________________________________
@@ -2212,7 +2236,8 @@ the manifest or security predicates need to change.
 
 ## 11. Consequence of the decision
 
-- **Gate A+B recorded by a human**: all 12 approved verbatim + operator
+- **Gate A is recorded; Gate B remains required before resuming code:** all
+  12 approved verbatim + operator
   protocol §5 + admission protocol §5A +
   subject-history read §5A.7 + §5B development bootstrap exception and
   §5B.6A portable OAuth callback + approved static §8/§8A manifest values

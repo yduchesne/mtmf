@@ -2,7 +2,7 @@
 
 **PR:** roadmap **PR 24P**
 **Artifact directory:** `docs/pr-artifacts/pr-24p/`
-**Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`**
+**Status:** **`PR24P_BLOCKED_TOPOLOGY_APPROVAL`** — Gate A approved `MTMF-PR24P-GATE-A-2026-11-13-01`; Gate B remains pending
 **STOP code:** **`STOP-P24P-TOPOLOGY`** (mandatory Phase-0 STOP)
 **Decision record revision:** **4** (Findings A–D retained; Amendment E with portability review callback/approval-gate fixup proposed, documentation only)
 **Baseline SHA:** `28d5de85ccf63c9ffb5bdc8298156e6038cbdadd` (= `origin/main`, rev 3 merged via PR #76); historical Phase 0 baseline `8712418a3d2de212791ae75a6235d3e00fced450`
@@ -11,10 +11,10 @@
 
 | Item | Detail |
 | --- | --- |
-| Condition | None of the twelve process/transport/DB-role/actor/transaction/secret/threat-model fields in the PR 24P execution topology has an explicit human approval. |
+| Condition | The original Phase-0 stop required approval of all twelve fields. That requirement is now satisfied at Gate A by `MTMF-PR24P-GATE-A-2026-11-13-01`; the remaining blocker is Gate B static manifest/implementation authorization. |
 | Governing authority | `docs/ROADMAP_V01.md` §PR 24P; `docs/ONBOARDING_ARCHITECTURE.md` §19.3; `docs/pr-artifacts/pr-21/PR21_AMENDMENT02_STOP03_OPERATOR_BOUNDARY.md` §3–4; the PR 24P execution plan §4. |
 | Expected invariant | Privileged execution, its DB role/grants, its transport, and its secret custody may only be implemented after a recorded human decision approving the exact topology and frozen protocol/signatures. |
-| Observed result | No decision record exists. The topology proposal is still `PROPOSED — NOT APPROVED`. |
+| Observed result | Gate A decision is recorded against immutable merged PR #77 architecture. Gate B still has no human approval or completed manifest; Gate C has not executed. |
 | Classification | **Not a code defect and not an environment failure.** Deliberate, policy-mandated blocking gate. Failure class: *none applicable* — the plan classifies this as a mandatory pre-implementation stop, not a regression. |
 | Current SHA | `28d5de85ccf63c9ffb5bdc8298156e6038cbdadd` (branch `dev/pr24p-part-deux`); original Phase 0 SHA `8712418a3d2de212791ae75a6235d3e00fced450` is historical evidence |
 | Specific file/function involved | No production file or function was touched. The stop is triggered by the absence of an approval for the not-yet-created `packages/mtmf-control-plane/`, `sql/v016/`, and `system_operator_assignment` artifacts. |
@@ -181,6 +181,21 @@ See
 [PR24P_PR77_OAUTH_CALLBACK_REVIEW_FIXUP_REPORT.md](PR24P_PR77_OAUTH_CALLBACK_REVIEW_FIXUP_REPORT.md).
 `STOP-P24P-TOPOLOGY` remains ACTIVE.
 
+## 2G. Human Gate A approval after PR #77 merge (2026-11-13)
+
+The MTMF project owner explicitly replied **yes** to the question
+"Do you approve the Gate A architecture specified in the merged PR #77
+decision record, without amendments?" The decision is transcribed as
+`MTMF-PR24P-GATE-A-2026-11-13-01` against merge commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`.
+All twelve §4 field decisions and the frozen contracts in §§5–7 are
+approved under Gate A. The user was **not** asked to approve a particular
+Gate B manifest, so **Gate B remains unapproved**. Neither a completed
+container/secret/socket deployment nor Gate C test evidence is claimed.
+The candidate manifest and approval provenance are in
+[PR24P_GATE_A_APPROVAL_AND_GATE_B_MANIFEST_PROPOSAL.md](PR24P_GATE_A_APPROVAL_AND_GATE_B_MANIFEST_PROPOSAL.md).
+No PR 24P implementation has been resumed; `STOP-P24P-TOPOLOGY`
+remains ACTIVE until an approved Gate B static manifest authorizes it.
+
 ## 3. Zero unapproved changes
 
 Phase 0 changed **documentation only**, inside `docs/pr-artifacts/pr-24p/`:
@@ -253,42 +268,33 @@ One *observation* is recorded, not elevated to a STOP: the
 repository functions" while the map contains 43 (total still correctly 78).
 Pre-existing documentation-only defect; no action taken in Phase 0.
 
-## 5. Smallest decision required
+## 5. Smallest decision still required
 
-A single recorded human decision that:
+**Gate A is approved and documented** as `MTMF-PR24P-GATE-A-2026-11-13-01` for immutable merge
+commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`. Do **not** request its approval again.
 
-1. approves **all twelve** topology fields in
-   [PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md) §4,
-   **verbatim or with an explicit revised plan**;
-2. approves the frozen operator protocol (§5), the **pre-Tenant admission
-   protocol (§5A)**, the **subject-history/entitlement read (§5A.7 and the
-   revised fifth §7 signature)**, the **development-only bootstrap exception
-   (Field 5 + §5B)** with its dedicated operator, exact Role, provenance and
-   no-regrant rules, the canonical fingerprint (§6), the
-   **persisted-domain-identity authorization snapshot (§6A)**, the
-   **policy-vs-SQL responsibility and transaction boundary (§6B)**, and the
-   exact five private SQL signatures plus reserved SQLSTATEs (§7), including the
-   fixed **role-independent migration `0016` followed by separate
-   post-migration control-role provisioning, exact five-grant installation and
-   effective-privilege verification**;
-3. **Gate B:** approves complete static §8/§8A target manifest values:
-   container/peer identities, socket paths and access modes, secret custody,
-   project networks, dedicated operator-auth network and loopback OAuth
-   callback (no registered client policy change), and fixture decision ID;
-4. records the named human Gate A+B decision ID(s), date, approving party,
-   exact approved version/manifest and any conditions in §9.
+The sole remaining **pre-implementation** approval is **Gate B**:
+the MTMF project owner must explicitly approve a complete, versioned
+portable static deployment manifest, including operator/ingress/worker/
+runtime and installer/provisioner UIDs/GIDs, socket volumes and modes,
+the control DB and OIDC client-secret mounts, canonical Keycloak issuer,
+operator password secret, project networks, on-demand loopback OAuth
+callback, rotation owner and immutable development fixture provenance.
+The prepared candidate is
+[PR24P_GATE_A_APPROVAL_AND_GATE_B_MANIFEST_PROPOSAL.md](PR24P_GATE_A_APPROVAL_AND_GATE_B_MANIFEST_PROPOSAL.md).
+Nothing in the candidate is approved merely by Gate A or this commit.
 
-Actual mapped-peer, secret access, deployed permissions, browser callback
-and signed-token evidence belong to **Gate C after implementation**.
-An unchanged approved manifest can be automatically attested on a new
-machine; there is no per-machine human approval in that conforming case.
+Once Gate B is explicitly approved and recorded, **resume the in-progress
+PR 24P branch from its existing Phase-0 STOP checkpoint**, reconciling
+the then-current `main` source and preserving earlier PR 24P work.
+The approved agent is then allowed to implement remaining Parts A–E
+subject to their individual STOP gates. Gate C is a separate real
+post-implementation acceptance requirement and is **NOT EXECUTED**.
 
-Until that exists, the correct response to a request to "implement PR 24P" is
-`PR24P_BLOCKED_TOPOLOGY_APPROVAL`, not code.
-
+Until Gate B is approved: `PR24P_BLOCKED_TOPOLOGY_APPROVAL`, not code.
 ## 6. Final status
 
-**`PR24P_BLOCKED_TOPOLOGY_APPROVAL`.**
+**`PR24P_BLOCKED_TOPOLOGY_APPROVAL` — Gate A approved; Gate B pending.**
 
 Not `DONE`. Not `PARTIAL_BLOCKED` due to a test failure — blocked *before*
 implementation by the mandatory human topology gate. No dependent PR (PR 22B,
