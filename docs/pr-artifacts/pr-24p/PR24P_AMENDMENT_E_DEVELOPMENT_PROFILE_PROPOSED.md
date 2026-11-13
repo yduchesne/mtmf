@@ -53,33 +53,60 @@ grant type, or token flow is introduced.
 This is a future design, **not current behavior** and not a command to run:
 
 ```text
-0  Preflight: opt-in exact true; development mode only; project mtmf; canonical
-   issuer; reviewed manifest ID and approved operator username; owner-only
-   secret paths; no ambiguous config.
-1  Start only MTMF-owned PostgreSQL, Keycloak and existing TLS forwarder; await
-   existing health/issuer proof from host and container.
-2  Separate one-shot administrator context provisions/verifies
-   mtmf_control_exec via the existing role-provisioning model; its secret never
-   enters the public service or long-running worker argv/env.
-3  Existing privileged one-shot initializer under the authenticated migrator
-   migrates to approved head, runs exact postflight, and in the same
-   installation-only phase runs the dev-operator create-or-verify fixture.
-4  Terminate the one-shot initializer; revoke its mounts from long-lived
-   services; verify no installer/master-admin secret leaks.
-5  Start isolated non-root mtmf-control-plane with only mtmf_control_exec plus
-   the approved read credential and public trust material; attach the operator
-   private AF_UNIX socket and assert SO_PEERCRED semantics.
-6  Keep the admission socket test-harness-only; no public or runtime access.
-7  Start unprivileged mtmf-service with mtmf_runtime only; prove it cannot read
-   worker secrets, reach either socket, invoke private functions, SET ROLE, or
-   execute protected DML.
-8  Report privileged development readiness only if exact positive and negative
-   probes passed; otherwise fail closed.
+0  PRE-FLIGHT: accept only exact MTMF_DEV_CONTROL_BOOTSTRAP_ENABLED=true for
+   privileged setup; mode=development, project=mtmf, canonical issuer/client,
+   reviewed manifest, credential custody, and approved UID/socket/network/
+   secret paths. Abort before side effects on noncanonical/unknown config.
+1  START BASE: start only MTMF-owned PostgreSQL, Keycloak and canonical TLS
+   forwarder; perform existing health/issuer probes.
+2  MIGRATE + BASE FIXTURES: run the existing short-lived initializer, including
+   migration to head 0016, mandatory runtime privilege postflight, and ordinary
+   fixture verification. Revision 0016 installs owner-owned PUBLIC-denied
+   functions without requiring or creating mtmf_control_exec and without
+   granting it EXECUTE. No SYSTEM operator in --migrations-only mode.
+3  CONTROL LOGIN: only because exact opt-in was approved, run a separate
+   short-lived cluster-administrator action: CREATE mtmf_control_exec if absent
+   and pristine, or verify a fully provisioned approved existing role. Never
+   invoke default three-role password provisioning or rotate migrator/runtime.
+4  CONTROL GRANTS: with approved installation-only migrator/SET ROLE mtmf_owner
+   authority, install exactly five §7 EXECUTEs; scope CONNECT/USAGE as needed;
+   verify no other EXECUTE, DML, membership or PUBLIC/runtime reachability.
+   Previously installed role: verify-only; unexpected partial state STOP.
+5  OPERATOR FIXTURE: only after steps 2–4 verify, run the short-lived installer
+   with the existing verified Keycloak-sub flow and owner-approved fixture path.
+   Create mtmf-dev-operator only in a clean fresh state; otherwise verify exact
+   immutable provenance. No self-grant, adoption, regrant or repair.
+6  EXIT INSTALLERS: terminate admin/migrator/Keycloak-master contexts; prove
+   their secrets and mounts are absent from worker and ordinary service.
+7  START ISOLATED WORKER + PUBLIC SERVICE: non-root worker with only restricted
+   control/read credentials and private sockets; admission socket
+   test-harness-only. Unprivileged service with mtmf_runtime only.
+8  PROVE AND REPORT: run real peer-UID, socket, role/grant, effective-privilege,
+   genuine-token and compromised-runtime probes; report privileged readiness
+   only if all pass, otherwise fail closed.
 ```
 
-Without explicit opt-in, `up` preserves the existing canonical development stack
-and creates no PR 24P operator, control role, or socket. `--migrations-only` must
-not auto-install the fixture.
+## Migration, role-provisioning, and opt-out semantics
+
+- Future `0016` is **role-independent and unconditional**: it installs the
+  owner-owned, PUBLIC-denied schema/functions for all instances and does not
+  create `mtmf_control_exec`, grant it EXECUTE, branch on the flag/profile, or
+  add any `mtmf_runtime` grant. It must pass the runtime postflight with the
+  control role absent or present. A migration rerun must not strip or rotate a
+  previously approved control role.
+- Only the opt-in installation phase, after migration, may use administrator
+  authority to create/verify the restricted control LOGIN, then owner authority
+  to install/verify exactly five grants, then install the operator fixture.
+  `--provision-control` and `--verify-control` are future modes; neither exists
+  or may be invoked now, and neither changes current default/`--verify`
+  behavior.
+- Opt-out (unset/exact false) runs the ordinary stack and does **not** create,
+  repair, revoke, drop or rotate control role/grants/fixture, and never starts
+  the worker. Fresh opt-out leaves no new control objects. A previously opted-in
+  database may retain role/grants/fixture; the flag is **not** revocation.
+  Actual revocation requires a distinct human-approved process or explicit
+  MTMF-only destructive reset.
+
 
 ## Keycloak user/subject and operator binding provenance
 
@@ -138,7 +165,8 @@ assignment, or root bootstrap is permitted. D01–D20 in §5B.5 are normative.
   credentials, host Podman socket, and public-service secret volumes; no secrets
   in argv, logs, repository, or shell history.
 - `mtmf_control_exec` has exactly five approved function EXECUTEs and no table/
-  sequence DML, owner/migrator membership, SUPERUSER, or BYPASSRLS;
+  sequence DML, owner/migrator membership, SUPERUSER, CREATEROLE, CREATEDB,
+  BYPASSRLS or CREATE-on-schema; CONNECT/USAGE is separately scoped and verified.
   `mtmf_runtime` keeps exactly 78 signatures.
 - Only the `mtmf` Compose project may be managed; no discovery or destructive
   action against ATI, Digr, Darkula, or unrelated projects.
@@ -169,11 +197,11 @@ or benchmark was executed in Amendment E.
 
 | ID | Required scenario | Future required evidence |
 |---|---|---|
-| E01 | Missing/false bootstrap flag | Existing dev stack runs unchanged; no operator row or private socket created. |
-| E02 | Exact true + canonical dev mode/issuer/profile | One-shot path selected; all preflight gates run. |
+| E01 | Missing/false bootstrap flag | Test both fresh opt-out and opt-out after prior opt-in: existing dev stack unchanged; no new control mutation/worker; prior persisted role/grants/fixture may remain. |
+| E02 | Exact true + canonical dev mode/issuer/profile | Pre-provision role absence accepted (not STOP), then migration/postflight, administrator role creation, owner grants, fixture, and all gates. |
 | E03 | True on non-dev mode/noncanonical issuer | STOP before DB, Keycloak or container privilege changes. |
 | E04 | Fresh isolated Keycloak + PostgreSQL, valid password file | Dedicated `mtmf-dev-operator` created once; actual `sub` verified from Keycloak REST response. |
-| E05 | Repeated `up` against unchanged fixture | Same IDs, one ACTIVE assignment, one immutable creation event; no write or password reset. |
+| E05 | Repeated `up` against unchanged fixture | Verify-only existing role/grants/fixture; same IDs, one ACTIVE assignment, one immutable creation event; no write, password reset, regrant or audit inflation. |
 | E06 | Existing same username without matching MTMF fixture | STOP; no automatic takeover. |
 | E07 | Disabled/ambiguous/drifted/federated Keycloak operator | STOP; no account repair. |
 | E08 | Different user subject from previous fixture | STOP; no cross-subject binding. |
@@ -185,10 +213,10 @@ or benchmark was executed in Amendment E.
 | E14 | Service-only token or forged user claims | Operator request denied; no DB mutation. |
 | E15 | Runtime UID tries operator Unix socket | Peer rejected under real container user-namespace mapping. |
 | E16 | Runtime UID tries admission socket and worker DB secret | Both unavailable; no public proxy or shared secret mount. |
-| E17 | Runtime DB role invokes any of five control functions or protected DML | Permission denied; exact 78-signature runtime allowlist intact. |
-| E18 | Control DB role tries direct table DML or `SET ROLE mtmf_owner` | Permission denied; five reviewed EXECUTEs only. |
+| E17 | Runtime DB role invokes any of five control functions or protected DML | Permission denied; exact 78-signature runtime allowlist intact and exact post-grant least-privilege surface. |
+| E18 | Control DB role tries direct table DML or `SET ROLE mtmf_owner` | Permission denied; exactly five reviewed EXECUTEs and no additional reachability. |
 | E19 | One-shot initializer exited, long-lived containers inspect | Neither public service nor control worker holds installer, Keycloak master-admin, owner or migrator credentials. |
-| E20 | Restart/reset/transport failures | No premature readiness; MTMF-only resource scope; explicit destructive reset gate; no other project touched. |
+| E20 | Restart/reset/transport failures | No premature readiness; partial-install state STOPs; MTMF-only resource scope; opt-out is not revocation; explicit destructive reset gate; no other project touched. |
 
 Future acceptance requires real PostgreSQL, actual rootless Podman containers with
 distinct UIDs/mounts, genuine signed local Keycloak user tokens, production worker

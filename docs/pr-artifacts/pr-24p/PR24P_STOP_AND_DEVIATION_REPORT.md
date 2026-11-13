@@ -75,6 +75,37 @@ summarized in
 [PR24P_AMENDMENT_E_DEVELOPMENT_PROFILE_PROPOSED.md](PR24P_AMENDMENT_E_DEVELOPMENT_PROFILE_PROPOSED.md),
 but §5B of the decision record is authoritative.
 
+## 2C. Amendment E independent-review fixup — migration/control-role sequencing
+
+This fixup corrects two defects in the unapproved Amendment E proposal, without
+changing approval state or implementation:
+
+1. **Migration/role ordering contradiction.** §5B.4 previously provisioned
+   `mtmf_control_exec` before the one-shot migration, while D13 treated an
+   absent role as an immediate STOP, falsely blocking a fresh installation.
+   The frozen correction makes future `0016` **role-independent, unconditional
+   and PUBLIC-denied**: the migration installs the five owner-owned private
+   functions and passes the 78-signature runtime postflight with the control
+   role absent or present, and issues no `CREATE ROLE`/control grant. Only
+   after migration does the opt-in installation phase use administrator
+   authority to create/verify the restricted LOGIN, then owner authority to
+   grant and verify exactly five EXECUTEs, then install the operator fixture.
+2. **Opt-out persistence.** On a previously opted-in database, disabling the
+   flag **retains** the role/grants/fixture and does not revoke, drop, repair or
+   rotate them; the flag is not revocation. A fresh opt-out creates no new
+   control objects and never starts the worker. Actual revocation is a separate
+   human-approved action.
+3. **D13 phase awareness.** Role absence is expected only before first
+   provisioning; absent/partial/overprivileged/drifted state after provisioning
+   is `STOP-ROLE-PROVISIONING`/`STOP-PRIVILEGE`; a complete prior installation
+   is verify-only.
+4. **Approval reference.** The §9 development-profile line now correctly cites
+   §8A, not §8.
+
+This remains **documentation only**: no implementation, feature test, service
+start, database mutation, role/grant, secret, socket, container, or benchmark.
+`STOP-P24P-TOPOLOGY` remains active.
+
 ## 3. Zero unapproved changes
 
 Phase 0 changed **documentation only**, inside `docs/pr-artifacts/pr-24p/`:
@@ -104,6 +135,21 @@ baseline gate results describe the unimplemented base only.**
 
 Earlier Amendment D artifacts remain historical, committed evidence. No files
 outside `docs/pr-artifacts/pr-24p/` were touched.
+
+**Amendment E targeted fixup actual documentation delta (this change):**
+
+- `PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md` (§5B.4, D13, §5B.8, Field 7, §7, §9, §11)
+- `PR24P_AMENDMENT_E_DEVELOPMENT_PROFILE_PROPOSED.md` (startup sequence, migration/role/opt-out section, E rows)
+- `PR24P_STOP_AND_DEVIATION_REPORT.md` (this fixup record)
+- `PR24P_AMENDMENT_E_FIXUP_ROLE_MIGRATION_REVIEW_REPORT.md` (new evidence report)
+
+Prior Amendment E and A–D deltas above remain historical. No files outside
+`docs/pr-artifacts/pr-24p/` were touched.
+
+**Current branch baseline:** `901a0a48a433edc57bd7397b57fef9c31361485a`
+(Amendment E) on `dev/pr24p-part-deux`; `origin/main` is
+`28d5de85ccf63c9ffb5bdc8298156e6038cbdadd`. The earlier `8712418...` baseline is
+historical Phase 0 evidence.
 
 **Rollback status:** nothing to roll back. This amendment's repository delta is
 the PR 24P documentation set only. The local development database was
@@ -146,7 +192,10 @@ A single recorded human decision that:
    no-regrant rules, the canonical fingerprint (§6), the
    **persisted-domain-identity authorization snapshot (§6A)**, the
    **policy-vs-SQL responsibility and transaction boundary (§6B)**, and the
-   exact five private SQL signatures plus reserved SQLSTATEs (§7);
+   exact five private SQL signatures plus reserved SQLSTATEs (§7), including the
+   fixed **role-independent migration `0016` followed by separate
+   post-migration control-role provisioning, exact five-grant installation and
+   effective-privilege verification**;
 3. supplies the deployment-specific host values in §8 (operator admin UID,
    control UID/GID, runtime UID/GID, operator socket path/owner/mode, **ingress
    UID/GID and admission socket path/owner/mode**, secret mount, Podman project,
