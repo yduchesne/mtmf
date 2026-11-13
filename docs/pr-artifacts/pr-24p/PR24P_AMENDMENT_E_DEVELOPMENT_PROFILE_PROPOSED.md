@@ -176,6 +176,43 @@ assignment, or root bootstrap is permitted. D01–D20 in §5B.5 are normative.
 Exact numerical UIDs/GIDs, paths, namespace mapping, secret mount/rotation owner,
 and socket modes remain **UNRESOLVED — HUMAN APPROVAL REQUIRED**.
 
+## Portable Linux development deployment profile (PROPOSED — NOT APPROVED)
+
+The developer host may be native Linux, Windows, or macOS, but privileged
+Unix sockets and identity checks execute *only inside* native Linux/WSL2 or
+a Podman-managed Linux VM. The operator CLI is an ephemeral non-root
+MTMF-owned container, never a Windows/macOS host-side direct socket client.
+The approved OIDC Authorization Code verification remains mandatory.
+
+| Role | Candidate Linux-container UID | Socket/secret access |
+|---|---:|---|
+| Control worker | `24501` | Both private socket volumes; worker-only DB secret |
+| Operator CLI | `24502` | Operator socket only; no worker secret |
+| Admission test | `24503` | Admission socket only; PR 24P test harness |
+| Ordinary runtime | `24504` | Neither socket nor control secret |
+
+Proposed socket locations: `/run/mtmf-control/operator/operator.sock` and
+`/run/mtmf-control/admission/admission.sock` on different MTMF-scoped
+Linux-native volumes. Proposed directory/socket modes: `0710`/`0660`,
+with distinct narrow groups and exact worker-observed `SO_PEERCRED` UID
+checks. Proposed worker secret path: `/run/secrets/mtmf-control-db`,
+owner-only file. Proposed network: private project-scoped control network
+with no worker published ports; public service is excluded.
+
+These are **candidates**, not observed user-namespace IDs, approved §8
+values, or compatibility evidence. Windows/macOS shared filesystem paths
+do not automatically provide POSIX socket/permission semantics. Each
+installation must record Linux/kernel/Podman version, effective UID/GID
+mapping, peer creds, socket modes, mounts, control network and DB grants.
+Run genuine permitted/denied peer and secret probes as real containers.
+Failure or unmeasurable mapping triggers `STOP-DEPLOYMENT`; no TCP,
+shared UID, `0777`, Podman-socket proxy, or automatic mapping substitution.
+Passing on one Linux environment does not certify another.
+
+§5B.6 in the topology decision record is authoritative. All original
+§8/§8A host choices and §9 approval questions remain unresolved.
+No code, deployment, role, socket or test is authorized by this profile.
+
 ## Forbidden deployment modes and emergency stop
 
 - Any non-`development` mode with the flag `true`: error before Keycloak/

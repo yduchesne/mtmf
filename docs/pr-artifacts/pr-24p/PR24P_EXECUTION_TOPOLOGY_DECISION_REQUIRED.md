@@ -22,6 +22,13 @@ created.**
 | **D** | Revoked-only external subject history was indistinguishable from a new subject in the proposed pre-Tenant admission read; §5A also mentioned unsupported entitlement expiration. | Freeze three-argument history-aware read, historical precedence, internal result, handler mapping, and remove unsupported expiry reference; no implementation or approval. See **§5A.7**. |
 | **E** | Field 5 prohibited a development initializer from creating a SYSTEM operator; local deterministic bootstrap cannot be automated without an approved narrow exception. | Amend Field 5 only for an opt-in, canonical-development, one-shot **dedicated operator** fixture; new §5B freezes identity/provenance, installation order, idempotency, deployment isolation, negative tests and production exclusion; §8/§9/§11 explicitly require separate human approval. No code or deployment is changed. |
 
+**Amendment E portable-development clarification (documentation proposal; no approval).**
+Native Linux, WSL2 Linux, and Podman-managed Linux VMs on Windows/macOS are
+candidate execution environments under ONE Linux socket/UID security contract.
+Worker-observed peer credentials, mounts and privilege verification are
+required for each deployment; example UIDs are neither host facts nor approval.
+`STOP-P24P-TOPOLOGY` remains active.
+
 **Amendment E targeted fixup (documentation): role/migration order + §8A reference.**
 This fixup corrects two review defects without creating a new amendment: it makes
 future migration `0016` explicitly role-independent and stages control-role
@@ -137,8 +144,10 @@ builds the public HTTP service; no `packages/mtmf-control-plane/` exists.
 
 **Threat assumptions.** Assumes the deployment can give the control process a
 *distinct* process identity and filesystem/network namespace from the public
-service. If both run as the same host UID with mutually readable secrets and
-socket paths, the compromised-runtime model fails and the agent must STOP.
+service. If the public runtime and worker are indistinguishable at the actual Linux
+security boundary, or their protected sockets/secrets are mutually readable,
+the compromised-runtime model fails and the agent must STOP. One rootless
+Podman host owner is a residual trusted host actor, not proof of isolation.
 
 **Required deployment.** A new workspace distribution and a dedicated
 non-root container/UID, no public ports, no shared service env file, no shared
@@ -167,9 +176,11 @@ the boundary.
 **Supporting evidence.** No socket or listener exists today; no client
 transport contract enumerates a peer-credential model.
 
-**Threat assumptions.** Assumes rootless Podman/WSL2 preserves distinct peer
-UIDs across the mount boundary. If peer mapping collapses identities, the agent
-must STOP (`STOP-DEPLOYMENT`).
+**Threat assumptions.** Assumes the Linux execution environment (native Linux,
+WSL2, Podman-managed Linux VM, or separately approved Linux VM) preserves
+worker-observed distinct `SO_PEERCRED` UIDs across socket mounts. Host labels,
+configured container UIDs and `id -u` alone are not proof. An unmapped,
+unknown, collapsed or unmeasurable peer UID is `STOP-DEPLOYMENT`.
 
 **Required deployment.** Socket absolute path, owner UID/GID, mode, allowed
 admin UID, directory mount. Values in §8.
@@ -490,7 +501,7 @@ runtime policy; no network calls under the transaction.
 
 ---
 
-### Field 11 — Secret custody and rotation; explicit host Podman/WSL2/Linux namespaces and privileges
+### Field 11 — Secret custody and rotation; verified Linux execution namespaces and privileges
 
 **PROPOSED.** The `mtmf_control_exec` credential is delivered only through an
 owner-only secret file or Podman secret mount to the isolated control process —
@@ -506,8 +517,10 @@ holds, separately, the existing restricted-runtime read credential for PR 23
 identities; `scripts/mtmf-provision-roles.py` handles migrator/runtime
 passwords; there is no control secret.
 
-**Threat assumptions.** Host/WSL2 secret-mount semantics must be verified;
-if secrets are mutually readable by the runtime UID, STOP.
+**Threat assumptions.** Verify POSIX permissions and secret mounts inside
+the actual Linux execution environment. Do not assume Windows/macOS-host-shared
+filesystem mounts preserve Linux Unix sockets or owner-only permissions.
+If secrets are readable by the ordinary runtime, STOP.
 
 **Required deployment.** Secret mount path, perms, and rotation runbook; host
 resource identifiers in §8. For development, §5B fixes the one-shot installer
@@ -1319,7 +1332,7 @@ Additional fixed rules:
   persistent Keycloak `sub` references. A normal `up`/`down` never resets,
   revives, unrevokes, or wipes anything.
 
-### 5B.6 Host UID/socket/namespace and compromised-runtime proofs (E-I07)
+### 5B.6 Portable Linux UID/socket/namespace and compromised-runtime proofs (E-I07)
 
 The future development deployment must use:
 
@@ -1356,6 +1369,66 @@ deployment values, not values to guess here. The developer's host-level
 privileged account is a residual trust assumption; this profile protects against
 compromise of the ordinary service container, not a host owner with full
 Podman/container control.
+
+**Portable development deployment contract (PROPOSED; NOT APPROVED).**
+All privileged Unix sockets and `SO_PEERCRED` checks occur *inside* the Linux
+execution environment. Candidate supported configurations: native Linux with
+rootless Podman, WSL2 Linux with rootless Podman, and Windows/macOS with a
+Podman-managed Linux VM. Any other Linux VM needs the same evidence. No
+Windows/macOS host process connects directly to a privileged Unix socket.
+Instead, a separate ephemeral MTMF-owned Linux operator-CLI container runs
+under its own UID; host terminals may launch it. Interactive operator
+authentication still requires a genuine signed token from the approved OIDC
+Authorization Code flow; no device/password-flow or token bypass is inferred.
+
+**Candidate Linux-container IDs, not measured host UIDs:** control worker
+`24501`, operator CLI `24502`, admission test ingress `24503`, public runtime
+`24504`. These are proposed manifest inputs ONLY; §8/§8A requires a human
+to approve their actual mapping. Worker-observed `SO_PEERCRED` values for
+operator and ingress must be unique, exact and never an overflow/unmapped UID.
+Reject runtime, worker-self, cross-socket, missing or unknown peer credentials.
+Unexpected mapping means `STOP-DEPLOYMENT`, not automatic UID selection.
+
+**Candidate sockets (Linux-native/project-scoped volumes only):**
+
+| Interface | Proposed worker/container path | Filesystem + peer gate |
+|---|---|---|
+| Operator | `/run/mtmf-control/operator/operator.sock` | Separate named volume mounted only by worker and operator CLI; exact operator UID |
+| Admission | `/run/mtmf-control/admission/admission.sock` | Different named volume mounted only by worker and admission test harness; exact ingress UID |
+
+Use two distinct socket directories with proposed worker-owned directory
+mode `0710` and socket mode `0660`, each with a *different* narrow access
+group for the permitted client. Group permissions enable pathname access
+but never authorize a caller without exact `SO_PEERCRED` UID verification.
+The worker must create these controls without privileged long-running
+containers; if actual rootless Podman mappings or POSIX mounts cannot support
+them, STOP. Never use mode `0777`, shared UID, TCP/localhost proxy or a
+host-mounted Podman socket as a fallback. The admission socket remains
+test-harness-only and not publicly callable in PR 24P.
+
+Proposed control DB secret location: `/run/secrets/mtmf-control-db`,
+worker-only restricted Linux-native mount with owner-only `0400` or `0600`
+file permission as approved. Keep sockets and secrets off unverified host
+shares. Retain the `mtmf` Compose project; add a project-scoped private
+control network with no published worker port. Worker and required database/
+Keycloak TLS-forwarder dependencies may attach to it; public `mtmf-service`
+must not. Normal loopback-published dev service ports remain unchanged.
+
+**Per-installation measured evidence, not implied by architecture approval:**
+record the Linux environment/kernel, rootless Podman version, actual
+namespace UID/GID maps, socket owner/group/mode, exact mounts, secret
+permissions, network attachments and worker-observed `SO_PEERCRED` values.
+Exercise allowed and rejected callers from their real containers; prove
+ordinary runtime cannot read sockets or worker secrets; verify exact five
+`mtmf_control_exec` function grants and 78 `mtmf_runtime` signatures.
+Record real signed-token checks before privileged readiness. Passing on one
+environment does not certify another. A host owner with Podman/VM control
+remains outside the compromised-runtime containment claim.
+
+Human approval of a portable profile does not approve a machine with
+unmeasured or mismatched values. The §8/§8A manifest/UID/mount/secret
+values must be recorded, approved and independently attested. No deployment
+resource, migration, role, grant, socket or test is authorized by this text.
 
 ### 5B.7 Production prohibition and residual trust model (E-I08)
 
@@ -1759,8 +1832,11 @@ protocol. If these are already allocated on the branch, the agent stops
 
 ## 8. Deployment-specific values the approving human must record (not agent-selectable)
 
-These are factual host resources. They cannot be responsibly invented in a
-portable plan. **Any missing value keeps `STOP-P24P-TOPOLOGY` active.**
+These are factual resources of the Linux execution environment, not
+assumptions about a developer host OS. A human-approved deployment manifest
+must describe the selected execution environment and UID/mount/socket/security
+values; each installation must also measure its actual peer/namespace behavior.
+**Any missing human-approved value keeps `STOP-P24P-TOPOLOGY` active.**
 
 | Value | Required decision / recorded value |
 | --- | --- |
@@ -1775,7 +1851,7 @@ portable plan. **Any missing value keeps `STOP-P24P-TOPOLOGY` active.**
 | Isolated control DB secret mount path + permissions | ______________________________ |
 | Podman/Compose project name for the control plane | ______________________________ |
 | Control-network attachment (and absence of published ports) | ______________________________ |
-| Host platform confirmation (WSL2/rootless Podman version, peer-credential behaviour) | ______________________________ |
+| Linux execution mode, kernel/rootless Podman versions, user-namespace map and worker-observed `SO_PEERCRED` behavior | ______________________________ |
 | Rotation/runbook owner | ______________________________ |
 
 ### 8A. Development-profile approval items (Amendment E)
@@ -1799,6 +1875,20 @@ locally discovered numbers or `id -u` guesses.
 | Control DB secret path, file ownership, rotation owner, Podman network attachment | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
 | Human-approved fixture decision ID/provenance reference | `UNRESOLVED — HUMAN APPROVAL REQUIRED` |
 
+**Portable candidate profile (NOT APPROVED / NOT MEASURED):** Linux-container
+UIDs `24501` (worker), `24502` (operator CLI), `24503` (admission harness),
+`24504` (runtime); paths `/run/mtmf-control/operator/operator.sock`,
+`/run/mtmf-control/admission/admission.sock`; secret file
+`/run/secrets/mtmf-control-db`; two separate MTMF-project socket volumes
+(proposed directory/socket modes `0710`/`0660`, distinct approved groups),
+private control network without published worker ports. Exact GIDs,
+effective maps, socket ownership, secret mount custody, platform and
+human decision ID remain **UNRESOLVED — HUMAN APPROVAL REQUIRED**.
+
+Portable architecture may be approved once, but each installation must
+attest worker-observed peers, mounts and effective privileges against its
+human-approved manifest. A candidate number is not an approved host value.
+
 ## 9. Top-level decision record (to be completed by the human)
 
 ```text
@@ -1820,6 +1910,9 @@ Deployment values §8 complete (including ingress UID + admission socket)? YES /
 Development-only bootstrap exception Field 5 + §5B approved verbatim? YES / NO
 Dedicated dev operator fixture, SYSTEM Role, provenance + no-regrant rule approved? YES / NO
 §8A development-profile values complete, verified and approved? YES / NO
+Portable Linux execution contract (§5B.6) approved verbatim? YES / NO
+Target Linux deployment manifest with exact UIDs/GIDs/mounts/sockets/secrets/network human approved? YES / NO
+Target installation conformance evidence recorded? YES / NO (NOT EXECUTED)
 Production auto-bootstrap forbidden independently of dev exception? YES / NO
 ```
 
@@ -1842,6 +1935,10 @@ Production auto-bootstrap forbidden independently of dev exception? YES / NO
   Parts A–E in order, stopping again at any of the named sub-gates
   (AUTH-PROFILE, POLICY-ENGINE, SEED, ROLE-PROVISIONING, SIGNATURE,
   LOCK-ORDER, AUDIT-POLICY, TRANSACTION, DEPLOYMENT, PRIVILEGE).
+- Portable §5B.6/§8A approval is separate from each machine's measured
+  `SO_PEERCRED`, user-namespace, socket/mount and privilege evidence. No
+  unverified platform can claim privileged readiness or automatically select
+  another UID/mapping when the candidate fails.
 - The staged boundary is mandatory: role-independent migration `0016` runs and
   passes runtime postflight first; control-role provisioning and the exact five
   owner grants occur only in the separately approved installation phase; the

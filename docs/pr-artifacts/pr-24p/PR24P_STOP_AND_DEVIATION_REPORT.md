@@ -106,6 +106,26 @@ This remains **documentation only**: no implementation, feature test, service
 start, database mutation, role/grant, secret, socket, container, or benchmark.
 `STOP-P24P-TOPOLOGY` remains active.
 
+## 2D. Amendment E portable Linux development clarification (documentation only)
+
+Platform-neutral execution clarifies §5B.6 and Fields 1/2/11: privileged
+`AF_UNIX` sockets and `SO_PEERCRED` run inside a Linux execution environment.
+Native Linux, WSL2 and Linux VMs used by Podman on Windows/macOS are
+candidates subject to identical worker-observed peer, mount and privilege
+tests. A host label or common rootless Podman owner does not establish
+runtime/worker separation.
+
+Proposed candidate container UIDs `24501`–`24504`, separate socket volumes
+and paths, worker-only secret and private network are NOT approved or
+measured. An ephemeral Linux operator CLI is the socket caller, not the
+host OS. Each deployment needs approved §8/§8A values and per-installation
+conformance evidence. No fallback to TCP, chmod/same UID or host Podman
+socket is permitted. All §9 answers remain unanswered.
+
+This update modifies only PR 24P documentation. No service, migration,
+role, grant, secret, socket, container, test or benchmark is run or created.
+`STOP-P24P-TOPOLOGY` remains active.
+
 ## 3. Zero unapproved changes
 
 Phase 0 changed **documentation only**, inside `docs/pr-artifacts/pr-24p/`:
@@ -199,7 +219,8 @@ A single recorded human decision that:
 3. supplies the deployment-specific host values in §8 (operator admin UID,
    control UID/GID, runtime UID/GID, operator socket path/owner/mode, **ingress
    UID/GID and admission socket path/owner/mode**, secret mount, Podman project,
-   control network, host platform confirmation, rotation owner) **and all §8A
+   control network, Linux execution mode, worker-observed peer/namespace
+   evidence, rotation owner) **and all §8A
    development-profile values** (password file, UIDs/GIDs, namespaces, sockets,
    control secret, fixture decision ID);
 4. records decision ID, date, approving party, exact approved text/version,
