@@ -5,6 +5,7 @@
 **Branch:** `dev/pr24p-part-deux`
 **Approved main:** `9f8190e8d053cae529632f0dff468d42637d2851`
 **Implementation base:** `507faec85c2ea7eeace9b7c0353b21c8d7e89ea4`
+**Seed implementation commit:** `8394ca1c14b7c96c4e2ba98ad9875d10e5732fc2`
 **Gate A:** `MTMF-PR24P-GATE-A-2026-11-13-01`
 **Gate B:** `MTMF-PR24P-GATE-B-2026-11-13-01`
 **Gate C:** NOT EXECUTED
