@@ -301,3 +301,30 @@ nonconforming platform, unapproved static change or failed predicate must STOP.
 
 Not `DONE` and not privileged-ready. PR 22B and PR 24 remain dependent on
 successful PR 24P implementation and acceptance.
+
+## 7. 2026-11-13 post-PR78 resumption — STOP-SEED
+
+**DISPOSITION:** `STOP-SEED` (mandatory approved-seed availability stop).
+
+**Observed after reconciling `dev/pr24p-part-deux` to `origin/main` `9f8190e` and migrating the real MTMF database to `0016`:**
+
+```sql
+select urn from mtmf.role where urn = 'urn:mtmf:iam:roles:system:application-administrator';
+-- (0 rows)
+select role_urn from mtmf.builtin_role where role_urn = 'urn:mtmf:iam:roles:system:application-administrator';
+-- (0 rows)
+select count(*) from mtmf.permission p
+  join mtmf.permission_set ps on ps.id = p.permission_set_id
+ where ps.role_urn = 'urn:mtmf:iam:roles:system:application-administrator';
+-- 0
+```
+
+The PR 21-approved `application-administrator` Role is approved **design**, not an installed seed. The PR 24P resumption plan expressly forbids inventing or synthesizing that Role/PermissionSet/Permission seed in migration `0016`. Without the protected builtin Role, the snapshot/exact-Action guard and the dedicated operator fixture cannot validly install or execute.
+
+**Required invariant:** the approved SYSTEM Role must already exist in `mtmf.role` and `mtmf.builtin_role` with its PR 21-approved permission manifest before any operator assignment/fixture. **No seed was created.**
+
+**Implemented safely before the stop:** additive `0016` schema/five private functions (owner-owned, PUBLIC-denied, no control-role dependency), role-independent migration postflight, `mtmf_control_exec` provisioning/verification modes, core operator/admission contracts and global authorization path, and an isolated `mtmf-control-plane` package skeleton/protocol. Unit QA passed with coverage above the gate; no operator fixture, successful grant/revoke integration, Gate C, or acceptance was claimed.
+
+**Not run/not claimed:** operator fixture installation, real operator grant/revoke/get vertical slice, admission socket/harness live acceptance, Gate C UID/socket/secret/browser proofs, `--integration`/`--sec`/`--rust` final feature gates (to be run at the final feature SHA when the STOP is cleared), and any PR22B composite.
+
+**Smallest human decision needed:** provide/record the separately approved implementation/seed path for the PR 21 `application-administrator` builtin Role and its exact manifest, or explicitly authorize a reviewed seed migration/PR. Do not synthesize it as part of PR 24P without that decision.

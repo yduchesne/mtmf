@@ -53,6 +53,7 @@ SCHEMA = "mtmf"
 OWNER_ROLE = "mtmf_owner"
 MIGRATOR_ROLE = "mtmf_migrator"
 RUNTIME_ROLE = "mtmf_runtime"
+CONTROL_ROLE = "mtmf_control_exec"
 
 _LOGIN_ATTRIBUTES = "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
 
@@ -286,6 +287,25 @@ def expected_runtime_signatures() -> frozenset[str]:
     }
     return frozenset(
         f"{SCHEMA}.{name}({arguments_text})" for name, arguments_text in arguments.items()
+    )
+
+
+#: The exact five PR24P private control functions. They are installed by
+#: migration 0016 without a control-role dependency; a separate installation
+#: phase grants them to CONTROL_ROLE.
+_CONTROL_FUNCTION_ARGUMENTS = {
+    "control_entitlement_grant": ("uuid, uuid, text, text, uuid, uuid, bigint, text, uuid, bytea"),
+    "control_entitlement_revoke": ("uuid, uuid, text, text, uuid, uuid, text, uuid, bytea"),
+    "control_entitlement_get": ("uuid, uuid, text, text, uuid, uuid"),
+    "control_operator_authorization_snapshot": ("uuid, uuid, text, text, uuid, uuid"),
+    "control_pre_tenant_admission_read": ("uuid, text, text"),
+}
+
+
+def expected_control_signatures() -> frozenset[str]:
+    """Return the exact five PR24P control-role EXECUTE identities."""
+    return frozenset(
+        f"{SCHEMA}.{name}({arguments})" for name, arguments in _CONTROL_FUNCTION_ARGUMENTS.items()
     )
 
 
@@ -900,3 +920,188 @@ def adopt_existing_schema(connection: psycopg.Connection) -> None:
         connection.execute(function)
     _verify_schema_ownership(connection)
     verify_role_topology(connection)
+
+
+def provision_control_role(connection: psycopg.Connection, *, control_password: str) -> None:
+    """Create or normalize the restricted PR24P control LOGIN.
+
+    Only an administrator connection may create a cluster LOGIN. An existing
+    fully provisioned role is normalized but its password is never reset; the
+    separately authorized owner grant phase must then verify/install the five
+    EXECUTEs.
+    """
+    if not control_password:
+        raise RoleProvisioningError("a dedicated control password is required")
+    preexisting = _unexpected_membership_problems(_membership_rows(connection))
+    if preexisting:
+        raise RoleProvisioningError(
+            "unsafe MTMF role topology; an administrator must remove the unexpected "
+            "membership(s): " + "; ".join(preexisting)
+        )
+    if not _role_exists(connection, CONTROL_ROLE):
+        connection.execute(_create_role_statement(CONTROL_ROLE, can_login=True))
+        connection.execute(_set_password_statement(CONTROL_ROLE, control_password))
+    else:
+        # Never rotate an existing credential; verify the approved attributes.
+        row = connection.execute(
+            "SELECT rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, rolbypassrls "
+            "FROM pg_catalog.pg_roles WHERE rolname = %s",
+            (CONTROL_ROLE,),
+        ).fetchone()
+        if row is None or row[0] or row[1] or row[2] or not row[3] or row[4]:
+            raise RoleProvisioningError(
+                "existing mtmf_control_exec is not the approved restricted LOGIN"
+            )
+    connection.execute(_revoke_membership_statement(OWNER_ROLE, CONTROL_ROLE))
+    connection.execute(_revoke_membership_statement(MIGRATOR_ROLE, CONTROL_ROLE))
+    connection.execute(_revoke_membership_statement(RUNTIME_ROLE, CONTROL_ROLE))
+    database = connection.execute("SELECT current_database()").fetchone()
+    if database is not None:
+        connection.execute(_grant_database_statement("CONNECT", str(database[0]), CONTROL_ROLE))
+
+
+def grant_control_privileges(connection: psycopg.Connection) -> None:
+    """Grant exactly the five private functions as the MTMF owner.
+
+    The caller must already be operating as ``mtmf_owner`` (for example the
+    migrator with an explicit ``SET ROLE``). This function never creates the
+    role and never grants runtime/ordinary access.
+    """
+    statements = (
+        "GRANT USAGE ON SCHEMA mtmf TO mtmf_control_exec",
+        "GRANT EXECUTE ON FUNCTION mtmf.control_entitlement_grant"
+        "(uuid, uuid, text, text, uuid, uuid, bigint, text, uuid, bytea) TO mtmf_control_exec",
+        "GRANT EXECUTE ON FUNCTION mtmf.control_entitlement_revoke"
+        "(uuid, uuid, text, text, uuid, uuid, text, uuid, bytea) TO mtmf_control_exec",
+        "GRANT EXECUTE ON FUNCTION mtmf.control_entitlement_get"
+        "(uuid, uuid, text, text, uuid, uuid) TO mtmf_control_exec",
+        "GRANT EXECUTE ON FUNCTION mtmf.control_operator_authorization_snapshot"
+        "(uuid, uuid, text, text, uuid, uuid) TO mtmf_control_exec",
+        "GRANT EXECUTE ON FUNCTION mtmf.control_pre_tenant_admission_read"
+        "(uuid, text, text) TO mtmf_control_exec",
+    )
+    for statement in statements:
+        connection.execute(statement)
+
+
+def verify_control_privileges(connection: psycopg.Connection) -> None:
+    """Read-only fail-closed verification of the complete control surface."""
+    problems: list[str] = []
+    row = connection.execute(
+        "SELECT rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, rolbypassrls "
+        "FROM pg_catalog.pg_roles WHERE rolname = %s",
+        (CONTROL_ROLE,),
+    ).fetchone()
+    if row is None:
+        raise PrivilegeVerificationError(
+            "MTMF control privilege verification failed: mtmf_control_exec does not exist"
+        )
+    if row[0] or row[1] or row[2] or not row[3] or row[4]:
+        problems.append("mtmf_control_exec has unsafe role attributes")
+    for elevated in (OWNER_ROLE, MIGRATOR_ROLE, RUNTIME_ROLE):
+        reachability = connection.execute(
+            "SELECT pg_has_role(%s, %s, 'MEMBER')", (CONTROL_ROLE, elevated)
+        ).fetchone()
+        if reachability is not None and reachability[0]:
+            problems.append(f"{CONTROL_ROLE} must not be a member of {elevated}")
+    database = connection.execute("SELECT current_database()").fetchone()
+    if database is not None:
+        name = str(database[0])
+        connect = connection.execute(
+            "SELECT has_database_privilege(%s, %s, 'CONNECT')", (CONTROL_ROLE, name)
+        ).fetchone()
+        create = connection.execute(
+            "SELECT has_database_privilege(%s, %s, 'CREATE')", (CONTROL_ROLE, name)
+        ).fetchone()
+        if connect is None or not connect[0]:
+            problems.append(f"{CONTROL_ROLE} is missing database CONNECT")
+        if create is not None and create[0]:
+            problems.append(f"{CONTROL_ROLE} must not have database CREATE")
+    usage = connection.execute(
+        "SELECT has_schema_privilege(%s, %s, 'USAGE'), has_schema_privilege(%s, %s, 'CREATE')",
+        (CONTROL_ROLE, SCHEMA, CONTROL_ROLE, SCHEMA),
+    ).fetchone()
+    if usage is None or not usage[0]:
+        problems.append(f"{CONTROL_ROLE} is missing schema USAGE")
+    if usage is not None and usage[1]:
+        problems.append(f"{CONTROL_ROLE} must not have schema CREATE")
+
+    expected = expected_control_signatures()
+    actual = {
+        signature
+        for signature in _executable_signatures_for(connection, CONTROL_ROLE)
+        if signature.split("(", 1)[0].startswith(f"{SCHEMA}.control_")
+    }
+    for signature in sorted(expected - actual):
+        problems.append(f"{CONTROL_ROLE} cannot EXECUTE approved function {signature}")
+    for signature in sorted(actual - expected):
+        problems.append(f"{CONTROL_ROLE} can EXECUTE unapproved function {signature}")
+    for signature in sorted(expected):
+        oid_row = connection.execute("SELECT to_regprocedure(%s)", (signature,)).fetchone()
+        if oid_row is None or oid_row[0] is None:
+            problems.append(f"approved control function is missing: {signature}")
+            continue
+        public_execute = connection.execute(
+            "SELECT has_function_privilege('public', %s, 'EXECUTE')", (oid_row[0],)
+        ).fetchone()
+        if public_execute is not None and public_execute[0]:
+            problems.append(f"PUBLIC can EXECUTE {signature}")
+    for relation, privilege in _table_offenders_for(connection, CONTROL_ROLE):
+        problems.append(f"{CONTROL_ROLE} has {privilege} on table/view {relation}")
+    for relation, privilege in _sequence_offenders_for(connection, CONTROL_ROLE):
+        problems.append(f"{CONTROL_ROLE} has {privilege} on sequence {relation}")
+    if problems:
+        raise PrivilegeVerificationError(
+            "MTMF control privilege verification failed: " + "; ".join(problems)
+        )
+
+
+def _executable_signatures_for(connection: psycopg.Connection, role: str) -> set[str]:
+    rows = connection.execute(
+        "SELECT n.nspname || '.' || p.proname || '(' "
+        "|| pg_get_function_identity_arguments(p.oid) || ')' "
+        "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = %s AND has_function_privilege(%s, p.oid, 'EXECUTE')",
+        (SCHEMA, role),
+    ).fetchall()
+    return {_type_only_signature(str(row[0])) for row in rows}
+
+
+def _type_only_signature(signature: str) -> str:
+    """Drop argument names from a rendered function identity signature.
+
+    PostgreSQL 18 can include named argument identifiers in
+    ``pg_get_function_identity_arguments``. The approved manifests use
+    type-only identities, so normalize each simple argument to its final
+    type token.
+    """
+    head, separator, tail = signature.partition("(")
+    if not separator or not tail.endswith(")"):
+        return signature
+    arguments = tail[:-1]
+    if not arguments:
+        return head + "()"
+    normalized = ", ".join(part.split()[-1] for part in arguments.split(", "))
+    return f"{head}({normalized})"
+
+
+def _table_offenders_for(connection: psycopg.Connection, role: str) -> list[tuple[object, ...]]:
+    return connection.execute(
+        "SELECT c.relname, a.privilege_type FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "CROSS JOIN LATERAL aclexplode(c.relacl) a "
+        "WHERE n.nspname = %s AND c.relkind IN ('r','v','m','p') "
+        "AND a.grantee = (SELECT oid FROM pg_roles WHERE rolname = %s)",
+        (SCHEMA, role),
+    ).fetchall()
+
+
+def _sequence_offenders_for(connection: psycopg.Connection, role: str) -> list[tuple[object, ...]]:
+    return connection.execute(
+        "SELECT c.relname, a.privilege_type FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "CROSS JOIN LATERAL aclexplode(c.relacl) a "
+        "WHERE n.nspname = %s AND c.relkind = 'S' "
+        "AND a.grantee = (SELECT oid FROM pg_roles WHERE rolname = %s)",
+        (SCHEMA, role),
+    ).fetchall()

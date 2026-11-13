@@ -161,3 +161,13 @@ Baseline is **exactly** the plan's reference. No `STOP-00` condition fired.
 not a coding task. Required next action: a recorded decision covering all
 twelve topology fields and the frozen protocol/signatures in
 [PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md](PR24P_EXECUTION_TOPOLOGY_DECISION_REQUIRED.md).
+
+## 8. 2026-11-13 post-PR78 implementation resumption
+
+- Gate A merge present: `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`.
+- Gate B merge present: `9f8190e8d053cae529632f0dff468d42637d2851`.
+- Existing `dev/pr24p-part-deux` was fast-forwarded to `origin/main` `9f8190e8d053cae529632f0dff468d42637d2851`.
+- Live migration before feature work: `0015`; after the additive PR24P migration: `0016`. The mandatory runtime postflight passed with `mtmf_control_exec` absent, and `mtmf_runtime` remained exactly 78 signatures.
+- Live baseline/feature checks run with real PostgreSQL: `--qa` 2502 passed / 87.85%, `--sec` 0 findings, `--rust` PASS, `--integration` 646 passed / 94 skipped, `--verify` PASS, and `--verify-control` PASS with exactly five control EXECUTEs after the separately approved control-role installation.
+- **Mandatory seed inspection:** `mtmf.role`, `mtmf.builtin_role`, and the permission count for `urn:mtmf:iam:roles:system:application-administrator` are all empty. The PR 21 Role is approved design, not installed seed. This triggered `STOP-SEED` before any operator fixture/assignment was installed (see `PR24P_STOP_AND_DEVIATION_REPORT.md` §7 and `PR24P_IMPLEMENTATION_STOP_SEED_REPORT.md`).
+- No fixture, operator grant/revoke/get success path, Gate C, or feature acceptance is claimed. No approved seed or prior SQL v001–v015 was modified.

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import helpers
 
-from mtmf_core.persistence.postgres import expected_runtime_signatures
+from mtmf_core.persistence.postgres import expected_control_signatures, expected_runtime_signatures
 
 
 def test_fun01_proof_function_installed_from_versioned_sql(db) -> None:
@@ -55,7 +55,11 @@ def test_fun05_every_approved_function_uses_security_definer(db) -> None:
         (helpers.SCHEMA,),
     ).fetchall()
     signatures = {row[0] for row in rows}
-    assert signatures == set(expected_runtime_signatures())
+    runtime_signatures = {_type_only(signature) for signature in expected_runtime_signatures()}
+    control_signatures = {_type_only(signature) for signature in expected_control_signatures()}
+    normalized = {_type_only(signature) for signature in signatures}
+    assert runtime_signatures <= normalized
+    assert control_signatures <= normalized
     assert all(owner == "mtmf_owner" for _signature, _def, owner in rows)
     # The six membership-removal entry points remain present and elevated.
     assert sum(1 for signature in signatures if signature.startswith("mtmf.remove_")) == 6
@@ -87,3 +91,13 @@ def test_fun06_privileges_are_explicit_default_deny(db) -> None:
         (helpers.SCHEMA,),
     ).fetchone()[0]
     assert runtime_executable == len(expected_runtime_signatures())
+
+
+def _type_only(signature: str) -> str:
+    head, separator, tail = signature.partition("(")
+    if not separator or not tail.endswith(")"):
+        return signature
+    arguments = tail[:-1]
+    if not arguments:
+        return head + "()"
+    return head + "(" + ", ".join(part.split()[-1] for part in arguments.split(", ")) + ")"

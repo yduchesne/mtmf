@@ -40,29 +40,41 @@ import sys
 
 import psycopg
 
-from mtmf_core.persistence.postgres import PostgresConfig, PostgresConfigError
+from mtmf_core.persistence.postgres import PostgresConfig, PostgresConfigError, PostgresRole
 from mtmf_core.persistence.postgres.roles import (
     RUNTIME_ROLE,
     adopt_existing_schema,
+    grant_control_privileges,
+    provision_control_role,
     provision_roles,
+    verify_control_privileges,
     verify_runtime_privileges,
 )
 
 _MIGRATOR_PASSWORD_ENV = "MTMF_MIGRATOR_POSTGRES_PASSWORD"
 _RUNTIME_PASSWORD_ENV = "MTMF_RUNTIME_POSTGRES_PASSWORD"
+_CONTROL_PASSWORD_ENV = "MTMF_CONTROL_POSTGRES_PASSWORD"
 
 
 def main() -> None:
     arguments = sys.argv[1:]
-    unknown = [
-        argument
-        for argument in arguments
-        if argument not in {"--adopt-existing-schema", "--verify"}
-    ]
+    allowed = {"--adopt-existing-schema", "--verify", "--provision-control", "--verify-control"}
+    unknown = [argument for argument in arguments if argument not in allowed]
     if unknown:
-        raise SystemExit("usage: mtmf-provision-roles.py [--adopt-existing-schema] [--verify]")
+        raise SystemExit(
+            "usage: mtmf-provision-roles.py [--adopt-existing-schema] [--verify] "
+            "[--provision-control] [--verify-control]"
+        )
     adopt = "--adopt-existing-schema" in arguments
     verify = "--verify" in arguments
+    provision_control = "--provision-control" in arguments
+    verify_control = "--verify-control" in arguments
+    if provision_control and verify_control:
+        raise SystemExit("--provision-control and --verify-control are mutually exclusive")
+    if (provision_control or verify_control) and (adopt or verify):
+        raise SystemExit(
+            "control-role modes cannot be combined with ordinary provisioning/verification"
+        )
     # Provisioning is the default action; --verify alone is verification only.
     do_provision = not verify or adopt
 
@@ -73,6 +85,42 @@ def main() -> None:
             "MTMF administrator PostgreSQL configuration is missing or ambiguous; "
             "export MTMF_POSTGRES_* / MTMF_DATABASE_URL (see .env.example)"
         ) from exc
+
+    if verify_control:
+        with psycopg.connect(admin.psycopg_dsn, autocommit=True) as connection:
+            verify_control_privileges(connection)
+        print(
+            "verified mtmf_control_exec privileges on "
+            f"{admin.host}:{admin.port}/{admin.database}; exactly five private EXECUTEs"
+        )
+        return
+
+    if provision_control:
+        control_password = os.environ.get(_CONTROL_PASSWORD_ENV, "").strip()
+        if not control_password:
+            raise SystemExit(
+                f"{_CONTROL_PASSWORD_ENV} must be set; provide the dedicated control secret "
+                "through the environment, never in code"
+            )
+        with psycopg.connect(admin.psycopg_dsn, autocommit=True) as connection:
+            provision_control_role(connection, control_password=control_password)
+        try:
+            migrator = PostgresConfig.from_env(PostgresRole.MIGRATOR)
+        except PostgresConfigError as exc:
+            raise SystemExit(
+                "MTMF migrator PostgreSQL configuration is required to grant control privileges"
+            ) from exc
+        with psycopg.connect(migrator.psycopg_dsn) as connection:
+            connection.execute("SET ROLE mtmf_owner")
+            grant_control_privileges(connection)
+            connection.commit()
+        with psycopg.connect(admin.psycopg_dsn, autocommit=True) as connection:
+            verify_control_privileges(connection)
+        print(
+            "provisioned mtmf_control_exec on "
+            f"{admin.host}:{admin.port}/{admin.database}; exactly five private EXECUTEs"
+        )
+        return
 
     migrator_password = ""
     runtime_password = ""

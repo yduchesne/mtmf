@@ -227,7 +227,7 @@ def test_p23_i01_populated_upgrade_to_0015_preserves_data(
 
     manager = PostgresMigrationManager(migrator_config)
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0015"
+    assert manager.current_revision() == "0016"
 
     # Original rows survive verbatim and the audit taxonomy was extended in place.
     assert (
@@ -272,10 +272,10 @@ def test_p23_i02_noop_upgrade_and_runtime_manifest_unchanged(
     db: psycopg.Connection, migrator_config: PostgresConfig
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
-    assert manager.current_revision() == "0015"
-    assert manager.head_revision == "0015"
+    assert manager.current_revision() == "0016"
+    assert manager.head_revision == "0016"
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0015"
+    assert manager.current_revision() == "0016"
     executable = db.execute(
         "SELECT count(*) FROM pg_catalog.pg_proc p "
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "

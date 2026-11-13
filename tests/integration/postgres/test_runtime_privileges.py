@@ -27,6 +27,7 @@ import pytest
 from mtmf_core.persistence.postgres import (
     MigrationError,
     PostgresMigrationManager,
+    expected_control_signatures,
     expected_runtime_signatures,
 )
 from mtmf_core.persistence.postgres.roles import adopt_existing_schema
@@ -550,7 +551,9 @@ def test_priv15_privilege_surface_is_exactly_as_documented(db: psycopg.Connectio
         "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = 'mtmf' AND p.prosecdef"
     ).fetchone()[0]
-    assert definer_functions == len(expected_runtime_signatures())
+    assert definer_functions == len(expected_runtime_signatures()) + len(
+        expected_control_signatures()
+    )
     # Every definer entry point pins search_path to the empty string.
     unpinned = db.execute(
         "SELECT count(*) FROM pg_catalog.pg_proc p "
@@ -577,7 +580,7 @@ def test_priv16_populated_upgrade_rerun_preserves_data_and_acls(
     assert manager.current_revision() == manager.head_revision
     manager.upgrade_to_head()
     manager.upgrade_to_head()
-    assert manager.current_revision() == "0015"
+    assert manager.current_revision() == "0016"
     assert _membership_snapshot(db) == before_memberships
     assert helpers.audit_rows(db) == before_audit
     assert db.execute(
@@ -618,7 +621,7 @@ def test_priv16b_legacy_ownership_fails_loudly_then_adopts(
             "WHERE n.nspname = 'mtmf' "
             "AND pg_get_userbyid(c.relowner) <> 'mtmf_owner'"
         ).fetchone()[0]
-    assert revision == "0015"
+    assert revision == "0016"
     assert non_owner_objects == 0
 
 

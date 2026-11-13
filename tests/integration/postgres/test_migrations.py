@@ -30,6 +30,16 @@ from mtmf_core.persistence.postgres import (
 
 EXPECTED_FUNCTION_NAMES = {
     "mtf_schema_version",
+    "control_entitlement_grant",
+    "control_entitlement_revoke",
+    "control_entitlement_get",
+    "control_operator_authorization_snapshot",
+    "control_pre_tenant_admission_read",
+    "pr24p_require_operator",
+    "pr24p_require_exact_permission",
+    "pr24p_entitlement_json",
+    "guard_system_operator_assignment",
+    "guard_append_only",
     "identity_tenant_membership_precondition",
     "group_tenant_membership_precondition",
     "identity_group_membership_precondition",
@@ -226,7 +236,7 @@ def test_mig03_current_revision_available_through_mtmf_interface(
 ) -> None:
     manager = PostgresMigrationManager(migrator_config)
     revision = manager.current_revision()
-    assert revision == "0015"
+    assert revision == "0016"
     assert revision == manager.head_revision
 
 
