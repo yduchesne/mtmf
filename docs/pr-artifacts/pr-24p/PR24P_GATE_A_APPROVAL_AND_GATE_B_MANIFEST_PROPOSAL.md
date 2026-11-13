@@ -1,8 +1,8 @@
-# PR 24P — Recorded Gate A approval and proposed Gate B development manifest
+# PR 24P — Recorded Gate A approval and approved Gate B development manifest
 
-**Document type:** human-decision transcription plus **unapproved** implementation manifest candidate  
+**Document type:** human-decision transcription plus approved static development implementation manifest  
 **Baseline architecture:** [merged PR #77](https://github.com/yduchesne/mtmf/pull/77), immutable merge commit `4b48f5a14bbadf99b5b30be99a256cf3d47304b4`  
-**PR 24P status:** IN PROGRESS — `STOP-P24P-TOPOLOGY` remains ACTIVE pending Gate B  
+**PR 24P status:** IN PROGRESS — Gate A/B approved; topology-approval STOP cleared upon merge of PR #78; Gate C NOT EXECUTED  
 **Date (UTC):** 2026-11-13
 
 ## A. Human Gate A approval — RECORDED
@@ -16,19 +16,19 @@
 | Scope | All twelve topology fields, §§5/5A/5A.6/5A.7/5B/5B.6/5B.6A/6/6A/6B/7, five SQL signatures, immutable operator/security contracts, portable manifest schema and required Gate C acceptance obligations |
 | Amendments / conditions | **None** to the approved architecture; approval is for Gate A only |
 | Recorder | Assistant transcribing the user's explicit affirmative response; **not** an independently signed or cryptographically authenticated approval record |
-| Gate B | **NOT APPROVED** |
+| Gate B | Not included in Gate A decision; **separately APPROVED** by decision `MTMF-PR24P-GATE-B-2026-11-13-01` |
 | Gate C | **NOT EXECUTED** |
-| Implementation authorization | **NOT GRANTED** |
-| Mandatory STOP | `STOP-P24P-TOPOLOGY` **ACTIVE**, waiting for Gate B |
+| Implementation authorization | Not granted by Gate A alone; **GRANTED by separate Gate B decision** after this approval record merges |
+| Mandatory STOP | Held during proposal; **cleared for implementation after Gate B record merges** (other STOP gates remain enforceable) |
 
 The explicit user response authorizes recording the Gate A architecture decision
 **only**. It is not assent to any specific UID, GID, pathname, credential,
-secret, socket ACL, deployment topology, or implementation. Those remain a
-separate Gate B human choice.
+secret, socket ACL, deployment topology, or implementation. Those remained a
+separate Gate B human choice until the later explicit approval documented in §B6.
 
-## B. Gate B — concrete portable development manifest CANDIDATE (NOT APPROVED)
+## B. Gate B — concrete portable development manifest (APPROVED STATIC PROFILE; NOT DEPLOYED)
 
-**Candidate manifest ID:** `mtmf-pr24p-development-gateb-v1`  
+**Approved manifest ID:** `mtmf-pr24p-development-gateb-v1`  
 **Scope:** development only; rootless Podman inside a Linux execution environment
 (native Linux, WSL2 Linux, or Podman-managed Linux VM).  
 **Reference:** the merged PR #77 contract. No host-OS identity is trusted in
@@ -45,7 +45,7 @@ lieu of container/worker-observed credentials.
 | One-shot dev fixture initializer | `24505:24505` | None of the above | Short-lived Keycloak/owner fixture credentials only |
 | One-shot role provisioner | `24506:24506` | None of the above | Short-lived cluster-admin credential for `mtmf_control_exec` provisioning |
 
-These are **candidate numeric IDs**, not measured host/VM mappings. Each
+These are **approved static numeric IDs**, not measured host/VM mappings. Each
 container must have a distinct worker-observed effective identity. The
 provisioning code must not use a root or privileged long-lived worker to
 circumvent failed group ownership. Invalid/unmapped/collapsed identities:
@@ -149,19 +149,30 @@ No worker TCP listener and no host Podman socket.
    manifest after independent Gate C proof. Failure/unknown behavior is STOP,
    not implicit human approval or authorization to improvise.
 
-### B6. Decision still required (do not fill automatically)
+### B6. Gate B human decision — APPROVED WITHOUT AMENDMENT
 
-```text
-Gate B decision ID:            PENDING
-Approving party and UTC date:  PENDING
-Gate A decision reference:    MTMF-PR24P-GATE-A-2026-11-13-01
-Manifest candidate:           mtmf-pr24p-development-gateb-v1
-Exact approved manifest ref:  PENDING (commit/file version once approved)
-Static UID/GID/socket/secret/network values accepted?  YES / NO (UNANSWERED)
-OAuth login/secret policy accepted?               YES / NO (UNANSWERED)
-Automated per-machine Gate C checks accepted?     YES / NO (UNANSWERED)
-Resume existing PR 24P implementation authorized? YES / NO (UNANSWERED)
-```
+| Attribute | Recorded value |
+|---|---|
+| Decision ID | `MTMF-PR24P-GATE-B-2026-11-13-01` |
+| Date (UTC) | 2026-11-13 |
+| Approving party | MTMF project owner (connected GitHub account `@yduchesne`) |
+| Exact affirmative response | **"I approve this PR without amendment"**, explicitly identifying [PR #78](https://github.com/yduchesne/mtmf/pull/78), in this ChatGPT conversation |
+| Approved static manifest | `mtmf-pr24p-development-gateb-v1`, **§§B1–B5 above as originally proposed**, at immutable PR #78 source commit `14123a74e05871a3eaa81b17fd383cdd83a6a7f6` |
+| Gate A reference | `MTMF-PR24P-GATE-A-2026-11-13-01` and merged PR #77 architecture `4b48f5a14bbadf99b5b30be99a256cf3d47304b4` |
+| §§B1–B3 static UID/GID, peer/socket, volume and secret-custody choices | **YES — approved exactly, no amendments** |
+| §B4 project/network, Keycloak issuer, OAuth callback, client-secret and fixture policies | **YES — approved exactly, no amendments** |
+| §B5 phased implementation and per-machine Gate C obligations | **YES — approved exactly, no amendments** |
+| Implementation authorization | **YES — resume existing PR 24P Parts A–E, after this approval record merges, subject to every approved STOP sub-gate** |
+| Amendments / conditions | **No amendments** to the frozen manifest; all existing Gate A constraints, stop conditions, and Gate C obligations remain |
+| Recorder | Assistant transcribing the project owner's explicit response, **not** an independently signed or cryptographically authenticated approval |
+| Gate C | **NOT EXECUTED**; real deployment/privilege/OAuth acceptance remains required after implementation |
+| Current execution state | Documentation-only decision; no code, migration, role, grant, secret, container, socket, or benchmark executed as part of this approval |
 
-**Current terminal state:** `GATE_A_APPROVED — GATE_B_PENDING —
-PR24P_BLOCKED_TOPOLOGY_APPROVAL`. **Gate C NOT EXECUTED.**
+The human approval changes the **decision status only**, not any static
+implementation value in §§B1–B5. Source commit `14123a74...` is an immutable
+reference to the exact unamended proposal; this documentation commit records
+the later approval. After the approval-record PR merges, the prior
+`STOP-P24P-TOPOLOGY` approval blocker is cleared and the **existing**
+`dev/pr24p-part-deux` implementation can resume. No Gate C acceptance or
+privileged readiness is implied. A nonconforming host/VM deployment or changed
+static security policy must STOP according to the approved contract.
