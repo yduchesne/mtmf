@@ -54,7 +54,7 @@ A successful bootstrap transaction:
 2. Confirms the database is uninitialized or matches one complete canonical bootstrap record.
 3. Creates the single ROOT Tenant and ROOT Principal, with immutable creator/owner provenance.
 4. Creates the required local root Identity and the Principal/Identity Tenant memberships.
-5. Establishes the protected ROOT-scope Principal membership, root stewardship, designated root acting Identity, and built-in system administration Role/policy and applicable explicit assignment(s).
+5. Establishes the protected ROOT-scope Principal membership and the designated LOCAL root acting Identity. Protected built-in Role definitions are installed separately by the approved database seed; root bootstrap does **not** enroll a human SYSTEM operator or assign that operator global Permissions.
 6. Stores canonical identifiers in a protected singleton **bootstrap registry** and validates all root invariants before commit.
 
 The installed `mtmf.root_registry` identifies canonical objects by stable IDs, never by display names. Approved built-in Role definitions belong to the separate protected policy seed; no bootstrap process may invent broader wildcard Permissions.
